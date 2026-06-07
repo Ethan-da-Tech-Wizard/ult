@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>The Sacred Tech: Chronicles of the Source Code</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body class="retro-crt">
+    <!-- CRT Overlay lines -->
+    <div class="crt-overlay"></div>
+
+    <div id="game-container">
+        <!-- LEFT: JRPG Canvas viewport -->
+        <div id="jrpg-viewport">
+            <div id="ui-overlay-top">
+                <div class="ui-panel">
+                    <span id="location-text">Outpost Zero</span>
+                    <span id="currency-text">Gold: 200 | Tokens: 100</span>
+                </div>
+            </div>
+
+            <!-- JRPG Canvas screen -->
+            <canvas id="jrpg-canvas" width="512" height="448"></canvas>
+
+            <!-- Combat Overlay Screen -->
+            <div id="combat-overlay" class="hidden">
+                <div class="combat-grid">
+                    <div class="combat-enemies" id="enemies-list">
+                        <!-- Dynamic enemy sprites and HP -->
+                    </div>
+                    <div class="combat-party" id="party-list">
+                        <!-- Dynamic party members and HP/Tokens -->
+                    </div>
+                </div>
+                <div class="combat-actions ui-panel">
+                    <div class="combat-menu" id="combat-menu-options">
+                        <!-- Attack, Spell, Item, Flee -->
+                    </div>
+                    <div class="combat-log" id="combat-log-text">
+                        A wild Syntax Goblin appears!
+                    </div>
+                </div>
+            </div>
+
+            <!-- Onboarding Prologue Overlay -->
+            <div id="prologue-overlay" class="prologue-dark">
+                <div class="prologue-content">
+                    <p class="scrolling-text" id="prologue-dialog">Who turned out the light? It is so dark in here...</p>
+                    <p class="scrolling-text hidden" id="prologue-prompt">Use the console on the right to configure system environment variables and restore graphics.</p>
+                </div>
+            </div>
+
+            <!-- Dialogue box overlay -->
+            <div id="dialogue-box" class="ui-panel hidden">
+                <div class="dialogue-avatar" id="dialogue-avatar-sprite"></div>
+                <div class="dialogue-content">
+                    <h4 id="dialogue-speaker">Gitpus</h4>
+                    <p id="dialogue-text">Hey buddy! Welcome to the source code.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- RIGHT: Split screen IDE tab workspace -->
+        <div id="ide-workspace">
+            <div class="workspace-tabs">
+                <button class="tab-btn active" data-tab="editor">Alt+1 Editor</button>
+                <button class="tab-btn" data-tab="console">Alt+2 Console</button>
+                <button class="tab-btn" data-tab="chronicles">Alt+3 Chronicles</button>
+                <button class="tab-btn" data-tab="codex">Alt+4 Codex</button>
+                <button class="tab-btn" data-tab="terminal">Alt+5 Terminal</button>
+                <button class="tab-btn" data-tab="browser">Alt+6 Browser</button>
+                <button class="tab-btn" data-tab="templeos">Alt+7 TempleOS</button>
+            </div>
+
+            <div class="workspace-content">
+                <!-- Editor Tab -->
+                <div class="tab-pane active" id="pane-editor">
+                    <div class="editor-header">
+                        <span id="current-file-name">ch0_cli.sh</span>
+                        <div class="editor-actions">
+                            <button id="run-btn" title="Run Code (Ctrl + Enter)">Compile & Run</button>
+                        </div>
+                    </div>
+                    <div class="editor-container-split">
+                        <div class="editor-wrapper">
+                            <div class="line-numbers" id="editor-line-numbers">1</div>
+                            <textarea id="code-editor" spellcheck="false" placeholder="# Write your code solution here..."></textarea>
+                        </div>
+                        <!-- Specialist Overlay Speech Bubbles -->
+                        <div id="specialist-panel" class="hidden">
+                            <div class="specialist-header">Specialist Analysis</div>
+                            <div id="specialist-hints">
+                                <!-- Character hints speech bubbles -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Console Output Tab -->
+                <div class="tab-pane" id="pane-console">
+                    <div class="console-actions">
+                        <button id="clear-console-btn">Clear Logs</button>
+                    </div>
+                    <div class="console-output" id="console-log">
+                        [System Ready] waiting for compilation run...
+                    </div>
+                </div>
+
+                <!-- Chronicles / Quest Log Tab -->
+                <div class="tab-pane" id="pane-chronicles">
+                    <div class="chronicles-container">
+                        <h3>Quest Dependency Logs</h3>
+                        <div class="dependency-tree" id="quest-tree">
+                            <!-- Dynamic quest tree -->
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Codex Tab -->
+                <div class="tab-pane" id="pane-codex">
+                    <div class="codex-container">
+                        <div class="search-bar">
+                            <input type="text" id="codex-search-input" placeholder="Type key terms or ask offline helper...">
+                            <button id="codex-search-btn">Search</button>
+                        </div>
+                        <div class="codex-results" id="codex-search-results">
+                            <!-- Reference guides lookup -->
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Terminal Console Tab -->
+                <div class="tab-pane" id="pane-terminal">
+                    <div class="terminal-shell" id="ws-shell-terminal">
+                        <!-- Custom interactive command-line screen -->
+                        <div class="terminal-stdout" id="shell-output">
+                            Arch Linux kernel 6.9.1-arch1-1 (127.0.0.1 loopback)
+                            Type commands directly...
+                        </div>
+                        <div class="terminal-input-line">
+                            <span class="prompt">$</span>
+                            <input type="text" id="shell-input" autocomplete="off">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Whitelisted Search Browser Tab -->
+                <div class="tab-pane" id="pane-browser">
+                    <div class="browser-container">
+                        <div class="browser-address-bar">
+                            <span class="ssl-lock">🔒 Secure Local</span>
+                            <input type="text" id="browser-address" value="http://127.0.0.1:8000/docs" readonly>
+                        </div>
+                        <div class="browser-webview" id="mock-browser-view">
+                            <!-- Whitelisted Mock docs view -->
+                            <h3>Local Documentation Proxy</h3>
+                            <p>Loading secure documentation nodes...</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- TempleOS Terminal Tab -->
+                <div class="tab-pane" id="pane-templeos">
+                    <div class="templeos-shell" id="ws-templeos-terminal">
+                        <div class="templeos-stdout" id="templeos-output">
+                            TempleOS altar offline. Boot Chapter 21 VM to activate serial websocket link.
+                        </div>
+                        <div class="templeos-input-line">
+                            <span class="prompt">HolyC></span>
+                            <input type="text" id="templeos-input" autocomplete="off">
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- UI Palette/Theme Selection Tab -->
+    <div id="settings-menu" class="hidden ui-panel">
+        <h3>System Settings</h3>
+        <label>
+            Visual Palette:
+            <select id="palette-selector">
+                <option value="default">JRPG Navy Blue</option>
+                <option value="gameboy">GameBoy Green</option>
+                <option value="crt-amber">CRT Amber Terminal</option>
+                <option value="cyberpunk">Cyberpunk Neon Purple</option>
+                <option value="darkmode">Sleek Developer Dark</option>
+            </select>
+        </label>
+        <br>
+        <label>
+            Dialogue Speed:
+            <select id="dialogue-speed-selector">
+                <option value="scroll">Retro Char Scroll</option>
+                <option value="instant">Instant Print</option>
+            </select>
+        </label>
+        <br>
+        <label>
+            Focus Controls:
+            <select id="focus-settings-selector">
+                <option value="both">Both (Tab & Escape)</option>
+                <option value="tab">Tab Mode only</option>
+            </select>
+        </label>
+        <br>
+        <button id="close-settings-btn">Close</button>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
