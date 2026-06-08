@@ -1,0 +1,27 @@
+# Build artifacts
+build/
+dist/
+*.spec
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+.eggs/
+venv/
+.venv/
+
+# SQLite databases (runtime save data)
+save_data/save_state.db
+
+# macOS
+.DS_Store
+**/.DS_Store
+
+# Tauri / Rust build outputs
+client/src-tauri/target/
+
+# Exported binaries
+save_data/export/

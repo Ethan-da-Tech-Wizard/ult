@@ -1,0 +1,816 @@
+@import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Fira+Code:wght@400;600&family=Outfit:wght@400;600&display=swap');
+
+:root {
+    /* Theme Palette: Default JRPG Navy */
+    --bg-primary: #0a0e1c;
+    --bg-secondary: #12192c;
+    --border-color: #2b3956;
+    --text-color: #e2e8f0;
+    --accent-color: #3b82f6;
+    --accent-glow: rgba(59, 130, 246, 0.4);
+    --retro-font: 'Press Start 2P', monospace;
+    --code-font: 'Fira Code', monospace;
+    --ui-font: 'Outfit', sans-serif;
+    --shadow-color: rgba(0, 0, 0, 0.5);
+    
+    /* UI styling default variables */
+    --border-pixel-width: 4px;
+}
+
+/* Palette Variations */
+body.palette-gameboy {
+    --bg-primary: #0f380f;
+    --bg-secondary: #306230;
+    --border-color: #8bac0f;
+    --text-color: #9bbc0f;
+    --accent-color: #8bac0f;
+    --accent-glow: rgba(139, 172, 15, 0.4);
+}
+
+body.palette-crt-amber {
+    --bg-primary: #1a0f00;
+    --bg-secondary: #2c1a00;
+    --border-color: #ff9d00;
+    --text-color: #ffb700;
+    --accent-color: #ffb700;
+    --accent-glow: rgba(255, 183, 0, 0.4);
+}
+
+body.palette-cyberpunk {
+    --bg-primary: #12011a;
+    --bg-secondary: #240234;
+    --border-color: #ff0055;
+    --text-color: #00ffcc;
+    --accent-color: #ff0055;
+    --accent-glow: rgba(255, 0, 85, 0.5);
+}
+
+body.palette-darkmode {
+    --bg-primary: #181818;
+    --bg-secondary: #252526;
+    --border-color: #3e3e42;
+    --text-color: #d4d4d4;
+    --accent-color: #0e639c;
+    --accent-glow: rgba(14, 99, 156, 0.4);
+}
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    background-color: var(--bg-primary);
+    color: var(--text-color);
+    font-family: var(--ui-font);
+    overflow: hidden;
+    height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+/* CRT Screen Effect Overlay */
+.crt-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06));
+    background-size: 100% 4px, 6px 100%;
+    z-index: 9999;
+    pointer-events: none;
+}
+
+#game-container {
+    width: 100vw;
+    height: 100vh;
+    display: grid;
+    grid-template-columns: 520px 1fr;
+    background-color: var(--bg-primary);
+    border: var(--border-pixel-width) solid var(--border-color);
+}
+
+/* LEFT: JRPG Canvas screen */
+#jrpg-viewport {
+    background-color: #000;
+    border-right: var(--border-pixel-width) solid var(--border-color);
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    height: 100%;
+    overflow: hidden;
+}
+
+#jrpg-canvas {
+    image-rendering: pixelated;
+    box-shadow: 0 0 20px var(--shadow-color);
+    background-color: #111;
+}
+
+/* UI Panel Styling matching JRPG borders */
+.ui-panel {
+    background: var(--bg-secondary);
+    border: var(--border-pixel-width) double var(--border-color);
+    padding: 10px;
+    box-shadow: inset 0 0 8px rgba(0, 0, 0, 0.8), 0 4px 10px rgba(0, 0, 0, 0.6);
+    color: var(--text-color);
+    font-family: var(--retro-font);
+    font-size: 10px;
+    line-height: 1.5;
+}
+
+#ui-overlay-top {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    right: 10px;
+    z-index: 10;
+}
+
+#ui-overlay-top .ui-panel {
+    display: flex;
+    justify-content: space-between;
+}
+
+/* Combat Overlay layout */
+#combat-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.85);
+    z-index: 20;
+    display: flex;
+    flex-direction: column;
+    padding: 20px;
+    justify-content: space-between;
+}
+
+.combat-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    height: 60%;
+    gap: 15px;
+}
+
+.combat-enemies, .combat-party {
+    border: var(--border-pixel-width) solid var(--border-color);
+    background: var(--bg-primary);
+    padding: 15px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    justify-content: center;
+}
+
+.combat-actions {
+    display: grid;
+    grid-template-columns: 180px 1fr;
+    gap: 15px;
+    height: 30%;
+}
+
+.combat-menu {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    justify-content: center;
+}
+
+.combat-menu button {
+    background: none;
+    border: none;
+    color: var(--text-color);
+    font-family: var(--retro-font);
+    font-size: 11px;
+    text-align: left;
+    cursor: pointer;
+    padding: 4px;
+}
+
+.combat-menu button:hover, .combat-menu button.active {
+    background-color: var(--accent-color);
+    color: #fff;
+    box-shadow: 0 0 8px var(--accent-glow);
+}
+
+.combat-log {
+    display: flex;
+    align-items: center;
+    padding: 10px;
+    font-size: 9px;
+}
+
+/* Character combat entry blocks */
+.combat-char-row {
+    display: flex;
+    justify-content: space-between;
+    font-family: var(--retro-font);
+    font-size: 8px;
+    padding: 4px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+/* Onboarding Prologue styles */
+#prologue-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 30;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 40px;
+    text-align: center;
+    transition: background-color 1s ease;
+}
+
+.prologue-dark {
+    background-color: #000000;
+}
+
+.prologue-bw {
+    background-color: #222222;
+}
+
+.prologue-content {
+    color: #fff;
+    font-family: var(--retro-font);
+    font-size: 12px;
+    line-height: 2;
+}
+
+/* Dialogue Box overlay layout */
+#dialogue-box {
+    position: absolute;
+    bottom: 15px;
+    left: 15px;
+    right: 15px;
+    z-index: 15;
+    display: grid;
+    grid-template-columns: 48px 1fr;
+    gap: 15px;
+    min-height: 80px;
+}
+
+.dialogue-avatar {
+    width: 48px;
+    height: 48px;
+    background-color: var(--border-color);
+    border: var(--border-pixel-width) solid var(--text-color);
+    image-rendering: pixelated;
+}
+
+.dialogue-content h4 {
+    margin-bottom: 6px;
+    font-size: 10px;
+    color: var(--accent-color);
+}
+
+.dialogue-content p {
+    font-size: 8px;
+    line-height: 1.6;
+}
+
+/* RIGHT: Split IDE Workspace layout */
+#ide-workspace {
+    background-color: var(--bg-secondary);
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    overflow: hidden;
+}
+
+.workspace-tabs {
+    display: flex;
+    background: var(--bg-primary);
+    border-bottom: var(--border-pixel-width) solid var(--border-color);
+    overflow-x: auto;
+}
+
+.tab-btn {
+    background: none;
+    border: none;
+    border-right: 1px solid var(--border-color);
+    color: var(--text-color);
+    padding: 10px 15px;
+    font-family: var(--ui-font);
+    font-weight: 600;
+    cursor: pointer;
+    font-size: 12px;
+    white-space: nowrap;
+    transition: background-color 0.2s;
+}
+
+.tab-btn:hover {
+    background-color: rgba(255, 255, 255, 0.05);
+}
+
+.tab-btn.active {
+    background-color: var(--bg-secondary);
+    border-bottom: 2px solid var(--accent-color);
+}
+
+.workspace-content {
+    flex: 1;
+    overflow: hidden;
+    position: relative;
+}
+
+.tab-pane {
+    display: none;
+    height: 100%;
+    flex-direction: column;
+}
+
+.tab-pane.active {
+    display: flex;
+}
+
+/* Editor Styles */
+#pane-editor {
+    height: 100%;
+}
+
+.editor-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background-color: rgba(0, 0, 0, 0.2);
+    padding: 8px 15px;
+    border-bottom: 1px solid var(--border-color);
+    font-family: var(--code-font);
+    font-size: 13px;
+}
+
+#run-btn {
+    background-color: var(--accent-color);
+    border: none;
+    color: #fff;
+    font-family: var(--ui-font);
+    font-weight: 600;
+    padding: 4px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+#run-btn:hover {
+    background-color: #2563eb;
+    box-shadow: 0 0 10px var(--accent-glow);
+}
+
+.editor-container-split {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+}
+
+.editor-wrapper {
+    flex: 1;
+    display: flex;
+    background-color: rgba(0, 0, 0, 0.15);
+    font-family: var(--code-font);
+    overflow: hidden;
+}
+
+.line-numbers {
+    width: 45px;
+    text-align: right;
+    padding: 15px 10px;
+    color: rgba(255, 255, 255, 0.3);
+    user-select: none;
+    border-right: 1px solid var(--border-color);
+    background-color: rgba(0, 0, 0, 0.1);
+}
+
+#code-editor {
+    flex: 1;
+    background: none;
+    border: none;
+    outline: none;
+    color: var(--text-color);
+    font-family: var(--code-font);
+    font-size: 14px;
+    line-height: 1.6;
+    padding: 15px;
+    resize: none;
+    overflow-y: auto;
+}
+
+#specialist-panel {
+    width: 250px;
+    border-left: var(--border-pixel-width) solid var(--border-color);
+    background-color: var(--bg-primary);
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+}
+
+.specialist-header {
+    background: var(--bg-secondary);
+    padding: 10px;
+    font-weight: 600;
+    font-size: 13px;
+    border-bottom: 1px solid var(--border-color);
+    text-align: center;
+}
+
+#specialist-hints {
+    padding: 15px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.hint-bubble {
+    background: var(--bg-secondary);
+    border: 2px solid var(--border-color);
+    border-radius: 6px;
+    padding: 10px;
+    font-size: 11px;
+    line-height: 1.5;
+    position: relative;
+}
+
+.hint-bubble-speaker {
+    font-weight: 600;
+    color: var(--accent-color);
+    margin-bottom: 4px;
+}
+
+/* Console logs styling */
+.console-actions {
+    background-color: rgba(0, 0, 0, 0.1);
+    padding: 8px 15px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+#clear-console-btn {
+    background: none;
+    border: 1px solid var(--border-color);
+    color: var(--text-color);
+    padding: 4px 10px;
+    font-size: 12px;
+    cursor: pointer;
+    border-radius: 4px;
+}
+
+#clear-console-btn:hover {
+    background-color: rgba(255, 255, 255, 0.05);
+}
+
+.console-output {
+    flex: 1;
+    background-color: #050711;
+    color: #22c55e;
+    font-family: var(--code-font);
+    padding: 15px;
+    overflow-y: auto;
+    font-size: 13px;
+    white-space: pre-wrap;
+    line-height: 1.6;
+}
+
+/* Terminal Console styling */
+.terminal-shell, .templeos-shell {
+    flex: 1;
+    background-color: #03050c;
+    color: #38bdf8;
+    font-family: var(--code-font);
+    padding: 15px;
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+}
+
+.terminal-stdout, .templeos-stdout {
+    flex: 1;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    margin-bottom: 10px;
+    line-height: 1.5;
+}
+
+.terminal-input-line, .templeos-input-line {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.terminal-input-line input, .templeos-input-line input {
+    flex: 1;
+    background: none;
+    border: none;
+    outline: none;
+    color: #fff;
+    font-family: var(--code-font);
+    font-size: 14px;
+}
+
+/* Chronicles & Quest lists */
+.chronicles-container {
+    padding: 20px;
+    overflow-y: auto;
+    height: 100%;
+}
+
+.chronicles-container h3 {
+    margin-bottom: 15px;
+    font-family: var(--retro-font);
+    font-size: 11px;
+}
+
+.dependency-tree {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.quest-node {
+    background: var(--bg-primary);
+    border: 2px solid var(--border-color);
+    padding: 12px;
+    border-radius: 4px;
+    font-size: 13px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.quest-node.completed {
+    border-color: #22c55e;
+    background-color: rgba(34, 197, 94, 0.05);
+}
+
+.quest-status-pill {
+    padding: 2px 8px;
+    font-size: 10px;
+    border-radius: 9999px;
+    font-weight: 600;
+}
+
+.quest-node.completed .quest-status-pill {
+    background-color: #22c55e;
+    color: #fff;
+}
+
+/* Codex container styling */
+.codex-container {
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+}
+
+.search-bar {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 15px;
+}
+
+.search-bar input {
+    flex: 1;
+    background: var(--bg-primary);
+    border: 2px solid var(--border-color);
+    padding: 8px 12px;
+    color: var(--text-color);
+    border-radius: 4px;
+    outline: none;
+}
+
+.search-bar button {
+    background-color: var(--accent-color);
+    color: #fff;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.codex-results {
+    flex: 1;
+    overflow-y: auto;
+    background-color: rgba(0,0,0,0.1);
+    padding: 15px;
+    border-radius: 4px;
+}
+
+/* Sandboxed Browser styling */
+.browser-container {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+}
+
+.browser-address-bar {
+    background-color: var(--bg-primary);
+    padding: 8px 15px;
+    border-bottom: 1px solid var(--border-color);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.ssl-lock {
+    font-size: 11px;
+    color: #22c55e;
+    font-weight: 600;
+}
+
+.browser-address-bar input {
+    flex: 1;
+    background: rgba(0,0,0,0.2);
+    border: 1px solid var(--border-color);
+    color: var(--text-color);
+    padding: 4px 8px;
+    border-radius: 4px;
+    outline: none;
+}
+
+.browser-webview {
+    flex: 1;
+    padding: 20px;
+    overflow-y: auto;
+    background-color: #fff;
+    color: #333;
+}
+
+/* Settings Overlay */
+#settings-menu {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 100;
+    width: 320px;
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+
+#settings-menu h3 {
+    margin-bottom: 8px;
+    border-bottom: 2px solid var(--border-color);
+    padding-bottom: 6px;
+}
+
+#settings-menu select {
+    background: var(--bg-primary);
+    border: 2px solid var(--border-color);
+    color: var(--text-color);
+    padding: 4px;
+    margin-top: 4px;
+    width: 100%;
+}
+
+#close-settings-btn {
+    background-color: var(--border-color);
+    color: var(--text-color);
+    border: none;
+    padding: 6px;
+    cursor: pointer;
+    font-family: var(--retro-font);
+    font-size: 8px;
+}
+
+#close-settings-btn:hover {
+    background-color: var(--accent-color);
+}
+
+.hidden {
+    display: none !important;
+}
+
+/* Custom Scrollbar stylings */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: var(--bg-primary);
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--border-color);
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: var(--accent-color);
+}
+
+/* Retro select input styling */
+.retro-select {
+    background-color: var(--bg-primary);
+    border: 2px solid var(--border-color);
+    color: var(--text-color);
+    font-family: var(--code-font);
+    font-size: 12px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    outline: none;
+    cursor: pointer;
+}
+
+.retro-select:hover, .retro-select:focus {
+    border-color: var(--accent-color);
+    box-shadow: 0 0 5px var(--accent-glow);
+}
+
+/* Quest Tree node and connections styling */
+.quest-node {
+    cursor: pointer;
+    transition: transform 0.1s ease, border-color 0.2s;
+}
+
+.quest-node:hover {
+    transform: translateX(4px);
+    border-color: var(--accent-color);
+}
+
+.quest-node.active-target {
+    border-color: #f59e0b; /* Amber */
+    background-color: rgba(245, 158, 11, 0.05);
+}
+
+.quest-node.locked {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.quest-node.locked:hover {
+    transform: none;
+    border-color: var(--border-color);
+}
+
+.quest-node-details {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.quest-node-title {
+    font-weight: 600;
+}
+
+.quest-node-desc {
+    font-size: 11px;
+    color: rgba(255,255,255,0.6);
+}
+
+/* Codex search results styling */
+.codex-result-item {
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    padding: 12px;
+    margin-bottom: 12px;
+    line-height: 1.5;
+}
+
+.codex-result-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--accent-color);
+    margin-bottom: 6px;
+}
+
+.codex-result-content {
+    font-size: 12px;
+    color: rgba(255,255,255,0.8);
+}
+
+#dialogue-options {
+    display: flex;
+    gap: 8px;
+    margin-top: 8px;
+    flex-wrap: wrap;
+}
+
+.dialogue-opt-btn {
+    background-color: var(--bg-primary);
+    border: 1px solid var(--text-color);
+    color: var(--text-color);
+    font-family: var(--retro-font);
+    font-size: 8px;
+    padding: 3px 6px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.dialogue-opt-btn:hover {
+    background-color: var(--accent-color);
+    color: var(--bg-primary);
+    border-color: var(--accent-color);
+}
+
