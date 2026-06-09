@@ -17,6 +17,7 @@ venv/
 save_data/save_state.db
 save_data/TempleOS.ISO
 save_data/templeos_core.img
+save_data/relic_save/
 
 # macOS
 .DS_Store

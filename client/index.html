@@ -95,6 +95,7 @@
                 <button class="tab-btn" data-tab="browser">Alt+6 Browser</button>
                 <button class="tab-btn" data-tab="templeos">Alt+7 TempleOS</button>
                 <button class="tab-btn" data-tab="diagnostics">Alt+8 Diagnostics</button>
+                <button class="tab-btn" data-tab="library">Alt+9 Library</button>
             </div>
 
             <div class="workspace-content">
@@ -212,6 +213,31 @@
                         </div>
                         <div id="diagnostics-stats" class="diagnostics-stats"></div>
                         <div id="diagnostics-results" class="diagnostics-results"></div>
+                    </div>
+                </div>
+
+                <!-- In-Game Bookshelf / Manuals Tab -->
+                <div class="tab-pane" id="pane-library">
+                    <div class="library-container">
+                        <div class="library-sidebar">
+                            <h3>Bookshelf</h3>
+                            <div id="library-book-list"></div>
+                        </div>
+                        <div class="library-reader">
+                            <div class="library-reader-header">
+                                <div>
+                                    <h3 id="library-book-title">Library</h3>
+                                    <p id="library-book-subtitle">Unlock manuals by reaching chapters.</p>
+                                </div>
+                                <div class="library-page-controls">
+                                    <button id="library-prev-btn">Prev</button>
+                                    <span id="library-page-count">0 / 0</span>
+                                    <button id="library-next-btn">Next</button>
+                                </div>
+                            </div>
+                            <div id="library-page-content" class="library-page-content"></div>
+                            <div id="library-glossary-panel" class="library-glossary-panel"></div>
+                        </div>
                     </div>
                 </div>
             </div>

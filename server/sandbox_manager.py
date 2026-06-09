@@ -72,7 +72,7 @@ def execute_test(chapter_id: int):
             return {"success": False, "output": f"Test suite ch{chapter_id}_test.py not found."}
         try:
             res = subprocess.run(
-                ["python", local_test_path],
+                [sys.executable, local_test_path],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,

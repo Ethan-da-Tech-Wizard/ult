@@ -25,7 +25,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-DB_PATH = os.path.join("save_data", "save_state.db")
+DB_PATH = os.environ.get("ZEUS_SAVE_DB_PATH", os.path.join("save_data", "save_state.db"))
 EXPECTED_CHAPTER_IDS = list(range(22))
 CHAPTER_FILENAME_MAP = {
     0: "ch0_cli.sh",
@@ -54,6 +54,9 @@ CHAPTER_FILENAME_MAP = {
 
 # Initialize database schemas
 def init_db():
+    db_dir = os.path.dirname(DB_PATH)
+    if db_dir:
+        os.makedirs(db_dir, exist_ok=True)
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute("""
@@ -64,21 +67,27 @@ def init_db():
             unlocked_chapters TEXT DEFAULT '0',
             active_lead TEXT DEFAULT 'Low-Level Optimizer',
             inventory_json TEXT DEFAULT '[]',
-            stats_json TEXT DEFAULT '{}'
+            stats_json TEXT DEFAULT '{}',
+            state_json TEXT DEFAULT '{}'
         )
     """)
+    cursor.execute("PRAGMA table_info(player_state)")
+    existing_columns = {row[1] for row in cursor.fetchall()}
+    if "state_json" not in existing_columns:
+        cursor.execute("ALTER TABLE player_state ADD COLUMN state_json TEXT DEFAULT '{}'")
     # Insert default state if empty
     cursor.execute("SELECT COUNT(*) FROM player_state")
     if cursor.fetchone()[0] == 0:
         cursor.execute("""
-            INSERT INTO player_state (gold, compute_tokens, unlocked_chapters, active_lead, inventory_json, stats_json)
+            INSERT INTO player_state (gold, compute_tokens, unlocked_chapters, active_lead, inventory_json, stats_json, state_json)
             VALUES (
                 200, 
                 100, 
                 '0', 
                 'Low-Level Optimizer', 
                 '[]', 
-                '{"Optimizer": {"hp": 120, "max_hp": 120, "atk": 18, "def": 10, "spd": 14, "luc": 8}, "Architect": {"hp": 100, "max_hp": 100, "atk": 12, "def": 14, "spd": 10, "luc": 10}, "Orchestrator": {"hp": 90, "max_hp": 90, "atk": 10, "def": 8, "spd": 12, "luc": 12}, "PromptEng": {"hp": 80, "max_hp": 80, "atk": 16, "def": 6, "spd": 8, "luc": 14}}'
+                '{"Optimizer": {"hp": 120, "max_hp": 120, "atk": 18, "def": 10, "spd": 14, "luc": 8}, "Architect": {"hp": 100, "max_hp": 100, "atk": 12, "def": 14, "spd": 10, "luc": 10}, "Orchestrator": {"hp": 90, "max_hp": 90, "atk": 10, "def": 8, "spd": 12, "luc": 12}, "PromptEng": {"hp": 80, "max_hp": 80, "atk": 16, "def": 6, "spd": 8, "luc": 14}}',
+                '{"currentChapter": 0, "x": 8, "y": 7, "openedChests": [], "readManuals": []}'
             )
         """)
     conn.commit()
@@ -109,6 +118,7 @@ class SaveStateModel(BaseModel):
     active_lead: str
     inventory_json: str
     stats_json: str
+    state_json: str = "{}"
 
 @app.get("/api/health")
 def health():
@@ -145,6 +155,7 @@ def diagnostics():
                 if chapter_id in CHAPTER_FILENAME_MAP
             ],
             "save_db_configured": os.path.exists(DB_PATH),
+            "save_state_fields": ["gold", "compute_tokens", "unlocked_chapters", "active_lead", "inventory_json", "stats_json", "state_json"],
             "relic_save_dir": sandbox_manager.RELIC_SAVE_DIR,
         }
     except Exception as e:
@@ -171,9 +182,9 @@ def save_state(state: SaveStateModel):
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
         cursor.execute("""
-            INSERT INTO player_state (gold, compute_tokens, unlocked_chapters, active_lead, inventory_json, stats_json)
-            VALUES (?, ?, ?, ?, ?, ?)
-        """, (state.gold, state.compute_tokens, state.unlocked_chapters, state.active_lead, state.inventory_json, state.stats_json))
+            INSERT INTO player_state (gold, compute_tokens, unlocked_chapters, active_lead, inventory_json, stats_json, state_json)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (state.gold, state.compute_tokens, state.unlocked_chapters, state.active_lead, state.inventory_json, state.stats_json, state.state_json))
         conn.commit()
         conn.close()
         return {"status": "success"}
