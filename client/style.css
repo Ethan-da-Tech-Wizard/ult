@@ -787,6 +787,149 @@ body {
     color: #333;
 }
 
+/* Diagnostics wiring audit */
+.diagnostics-container {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    height: 100%;
+    padding: 20px;
+    overflow-y: auto;
+}
+
+.diagnostics-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 16px;
+    padding-bottom: 14px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.diagnostics-header h3 {
+    font-family: var(--retro-font);
+    font-size: 11px;
+    margin-bottom: 8px;
+}
+
+.diagnostics-header p {
+    color: rgba(255,255,255,0.7);
+    font-size: 13px;
+    line-height: 1.5;
+}
+
+#run-diagnostics-btn {
+    background-color: var(--accent-color);
+    border: none;
+    border-radius: 4px;
+    color: #fff;
+    cursor: pointer;
+    font-family: var(--ui-font);
+    font-weight: 600;
+    padding: 8px 14px;
+    white-space: nowrap;
+}
+
+#run-diagnostics-btn:hover {
+    box-shadow: 0 0 10px var(--accent-glow);
+}
+
+.diagnostics-stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 10px;
+}
+
+.diagnostic-stat {
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    padding: 10px;
+}
+
+.diagnostic-stat strong {
+    display: block;
+    color: var(--accent-color);
+    font-size: 20px;
+    line-height: 1.1;
+}
+
+.diagnostic-stat span {
+    color: rgba(255,255,255,0.68);
+    font-size: 11px;
+}
+
+.diagnostics-results {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.diagnostic-row {
+    display: grid;
+    grid-template-columns: 86px 1fr;
+    gap: 10px;
+    align-items: start;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-left-width: 5px;
+    border-radius: 4px;
+    padding: 10px;
+    font-size: 12px;
+    line-height: 1.45;
+}
+
+.diagnostic-row.pass {
+    border-left-color: #22c55e;
+}
+
+.diagnostic-row.info {
+    border-left-color: #3b82f6;
+}
+
+.diagnostic-row.warn {
+    border-left-color: #f59e0b;
+}
+
+.diagnostic-row.critical {
+    border-left-color: #ef4444;
+}
+
+.diagnostic-badge {
+    border: 1px solid var(--border-color);
+    border-radius: 999px;
+    font-family: var(--code-font);
+    font-size: 10px;
+    padding: 2px 8px;
+    text-align: center;
+    text-transform: uppercase;
+}
+
+.diagnostic-row.pass .diagnostic-badge {
+    color: #22c55e;
+}
+
+.diagnostic-row.info .diagnostic-badge {
+    color: #60a5fa;
+}
+
+.diagnostic-row.warn .diagnostic-badge {
+    color: #fbbf24;
+}
+
+.diagnostic-row.critical .diagnostic-badge {
+    color: #f87171;
+}
+
+.diagnostic-title {
+    font-weight: 600;
+    margin-bottom: 3px;
+}
+
+.diagnostic-detail {
+    color: rgba(255,255,255,0.7);
+}
+
 /* Settings Overlay */
 #settings-menu {
     position: fixed;
