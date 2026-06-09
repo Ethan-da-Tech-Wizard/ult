@@ -28,6 +28,26 @@ const BONFIRE_REST_COST = 25;
 const FINAL_CHAPTER = 21;
 const VERIDICUS_DEFEATED_FLAG = "veridicus_defeated";
 const OPENING_HINTS_FLAG = "opening_hints_seen";
+const ITEM_PREFIX = "item:";
+
+const SHOP_ITEMS = [
+    { id: "patch_potion", name: "Patch Potion", price: 30, desc: "Restore 45 HP to the full party." },
+    { id: "cache_tonic", name: "Cache Tonic", price: 45, desc: "Restore 35 Compute Tokens." },
+    { id: "compiler_charm", name: "Compiler Charm", price: 80, desc: "Permanently raise the active lead's ATK by 1." }
+];
+
+const NPC_PATROLS = {
+    3: { "7,7": { to: [7, 6], interval: 1500 } },
+    4: { "7,7": { to: [7, 6], interval: 1500 } },
+    6: { "7,7": { to: [8, 7], interval: 1600 } },
+    7: { "7,7": { to: [8, 7], interval: 1600 } },
+    11: { "7,7": { to: [8, 7], interval: 1600 } },
+    12: { "7,7": { to: [7, 6], interval: 1500 } },
+    16: { "7,7": { to: [7, 6], interval: 1500 } },
+    20: { "7,7": { to: [8, 7], interval: 1700 } }
+};
+
+let autosaveTimer = null;
 
 // Retro 8-bit pixel art character sprites
 const SPRITE_PLAYER = [
@@ -658,7 +678,7 @@ const NPCS = {
             dialogue: "Ahh, welcome to the Outpost Inn! Pull up a stool! We don't have much — just loopback cider and the gnawing existential dread of working in tech. But the fire is warm and the Wi-Fi is localhost-only, so nobody can steal it!",
             options: [
                 { text: "Ask about the bonfire", reply: "Oh THAT thing! A man with a DARK SOUL walked in earlier — actual darkness emanating from his cloak, very dramatic, 10/10 presentation — mumbled something about 'linking the first flame' and 'compiling the bonfire' then LEFT a coiled sword in our firepit. We tried to call the guards. The guards were... also impressed, honestly." },
-                { text: "Buy a drink", reply: "*slides over a bottle* Loopback Cider — brewed locally at 127.0.0.1. It's strictly confined to this machine, so it hits different every instance. This batch has notes of cedar, recursion anxiety, and undefined behavior." },
+                { text: "Buy supplies", action: () => openShop("Outpost Inn Supplies") },
                 { text: "Gossip about town", reply: "Between you and me? Gitpus has been doing unreviewed force-pushes to the main branch again. Docker Whale is seeing a therapist about dependency bloat. And someone keeps changing the Inn's WiFi password to 'correcthorsebatterystaple' which is supposedly secure but INCREDIBLY annoying to type." },
                 { text: "Ask about the town's history", reply: "Outpost Zero was founded by the First Compilers who fled the Closed-Weights Sovereignty. They built these walls from literal brick data — each one encodes a commit hash from the original open-source liberation. You're standing inside a git repository. Architecturally speaking." }
             ]
@@ -913,7 +933,7 @@ const NPCS = {
             dialogue: "Aha! The pilgrim arrives at Document Dunes! We trade exclusively in polymorphic key-value JSON documents here. No schema required! No migration pain! The downside: total chaos. But FLEXIBLE chaos!",
             options: [
                 { text: "Ask about JSON", reply: "Unlike relational tables, JSON allows dynamically nested values! {\"camel\": {\"goods\": [\"spice\", \"caches\", \"compute_tokens\"]}}. Flexible, but if you query the wrong nesting level you get undefined. I speak from experience." },
-                { text: "Buy supplies", reply: "I only trade in compute tokens! Compile the Cache modules on the right to earn some! No credit cards accepted. No credit in general. I had a bad experience with an uncollateralized join." },
+                { text: "Buy supplies", action: () => openShop("Dune Merchant Supplies") },
                 { text: "Ask about the dark traveler", reply: "He paid with a cached token — but the TTL had expired 30 minutes ago! Cache eviction is not a joke! He tried to argue that his soul was 'eventually consistent'. I told him that's not how transactions work. He left." },
                 { text: "Inspect the wares", reply: "*Unfolds a scroll* I have: one polymorphic item schema (includes null fields), one expired Redis key (sentimental value only), one BSON camel-case converter (works 80% of the time every time), and a mysterious nested JSON object that references itself. Do NOT query that last one." }
             ]
@@ -2778,6 +2798,248 @@ function restPartyAtBonfire() {
     showDialogue("Bonfire of the First Flame", `You rest beside the coiled sword. HP restored for the whole party. ${BONFIRE_REST_COST} Gold paid to keep the fire linked.`);
 }
 
+function getItemKey(itemId) {
+    return `${ITEM_PREFIX}${itemId}`;
+}
+
+function getInventoryItemIds() {
+    return player.inventory
+        .filter(entry => typeof entry === "string" && entry.startsWith(ITEM_PREFIX))
+        .map(entry => entry.slice(ITEM_PREFIX.length));
+}
+
+function addInventoryItem(itemId) {
+    player.inventory.push(getItemKey(itemId));
+}
+
+function removeInventoryItem(itemId) {
+    const index = player.inventory.indexOf(getItemKey(itemId));
+    if (index >= 0) player.inventory.splice(index, 1);
+}
+
+function countInventoryItem(itemId) {
+    return getInventoryItemIds().filter(id => id === itemId).length;
+}
+
+function findShopItem(itemId) {
+    return SHOP_ITEMS.find(item => item.id === itemId);
+}
+
+function openShop(shopName = "Outpost Supply") {
+    const overlay = document.getElementById("inventory-overlay");
+    const title = document.getElementById("inventory-title");
+    const content = document.getElementById("inventory-content");
+    if (!overlay || !title || !content) return;
+    if (dialogueActive) hideDialogue();
+
+    title.innerText = shopName;
+    content.innerHTML = SHOP_ITEMS.map(item => `
+        <div class="inventory-row">
+            <div>
+                <strong>${item.name} - ${item.price} Gold</strong>
+                <span>${item.desc}</span>
+            </div>
+            <button onclick="buyShopItem('${item.id}')">Buy</button>
+        </div>
+    `).join("");
+    overlay.classList.remove("hidden");
+}
+
+function openInventory() {
+    const overlay = document.getElementById("inventory-overlay");
+    const title = document.getElementById("inventory-title");
+    const content = document.getElementById("inventory-content");
+    if (!overlay || !title || !content) return;
+
+    title.innerText = "Inventory";
+    const items = SHOP_ITEMS.filter(item => countInventoryItem(item.id) > 0);
+    if (items.length === 0) {
+        content.innerHTML = `<div class="inventory-row"><div><strong>No usable items</strong><span>Buy supplies from merchants or innkeepers.</span></div></div>`;
+    } else {
+        content.innerHTML = items.map(item => `
+            <div class="inventory-row">
+                <div>
+                    <strong>${item.name} x${countInventoryItem(item.id)}</strong>
+                    <span>${item.desc}</span>
+                </div>
+                <button onclick="useInventoryItem('${item.id}')">Use</button>
+            </div>
+        `).join("");
+    }
+    overlay.classList.remove("hidden");
+}
+
+function buyShopItem(itemId) {
+    const item = findShopItem(itemId);
+    if (!item) return;
+
+    if (player.gold < item.price) {
+        showAutosaveIndicator("Need Gold");
+        return;
+    }
+
+    player.gold -= item.price;
+    addInventoryItem(itemId);
+    updateUIHeaders();
+    uploadSaveState();
+    openShop("Outpost Supply");
+}
+
+function useInventoryItem(itemId) {
+    const item = findShopItem(itemId);
+    if (!item || countInventoryItem(itemId) <= 0) return;
+
+    if (itemId === "patch_potion") {
+        player.party.forEach(char => {
+            char.hp = Math.min(char.max_hp, char.hp + 45);
+        });
+    } else if (itemId === "cache_tonic") {
+        player.tokens += 35;
+    } else if (itemId === "compiler_charm") {
+        getActivePartyMember().atk += 1;
+    }
+
+    removeInventoryItem(itemId);
+    updateUIHeaders();
+    uploadSaveState();
+    openInventory();
+}
+
+function isInventoryOpen() {
+    const overlay = document.getElementById("inventory-overlay");
+    return Boolean(overlay && !overlay.classList.contains("hidden"));
+}
+
+function showAutosaveIndicator(text = "Saved") {
+    const indicator = document.getElementById("autosave-indicator");
+    if (!indicator) return;
+
+    indicator.innerText = text;
+    indicator.classList.remove("hidden");
+    if (autosaveTimer) clearTimeout(autosaveTimer);
+    autosaveTimer = setTimeout(() => indicator.classList.add("hidden"), 1800);
+}
+
+function getCurrentObjective() {
+    if (screenMode === "dark") return "Objective: use Alt+5 Terminal to restore the environment.";
+    if (player.currentChapter === 0 && !player.unlockedChapters.includes(0)) return "Objective: compile Chapter 0 to restore Outpost Zero.";
+    if (!player.unlockedChapters.includes(player.currentChapter)) return `Objective: solve and compile Chapter ${player.currentChapter}.`;
+    if (player.currentChapter < FINAL_CHAPTER) return "Objective: step onto the purple portal to continue.";
+    if (getMissingRequiredChapters().length > 0) return "Objective: complete every earlier chapter lock.";
+    if (!hasInventoryFlag(VERIDICUS_DEFEATED_FLAG)) return "Objective: challenge Veridicus at the temple crossing.";
+    return "Objective: use Alt+7 TempleOS and finish the HolyC checksum.";
+}
+
+function updateObjectiveTracker() {
+    const objective = document.getElementById("objective-text");
+    if (objective) objective.innerText = getCurrentObjective();
+}
+
+function getPatrolPosition(mapId, key) {
+    const patrol = NPC_PATROLS[mapId]?.[key];
+    if (!patrol) {
+        const [x, y] = key.split(",").map(Number);
+        return { x, y };
+    }
+
+    const [fromX, fromY] = key.split(",").map(Number);
+    const [toX, toY] = patrol.to;
+    const step = Math.floor(Date.now() / patrol.interval) % 2;
+    return step === 0 ? { x: fromX, y: fromY } : { x: toX, y: toY };
+}
+
+function getNPCAtPosition(x, y) {
+    const mapId = getMapForChapter(player.currentChapter);
+    const chapterNPCs = NPCS[mapId] || {};
+
+    for (let key of Object.keys(chapterNPCs)) {
+        const pos = getPatrolPosition(mapId, key);
+        if (pos.x === x && pos.y === y) {
+            return { key, npc: chapterNPCs[key] };
+        }
+    }
+    return null;
+}
+
+function getAdjacentInteraction() {
+    if (dialogueActive || isCombat || focusMode === "code" || screenMode === "dark") return null;
+
+    const activeGrid = MAP_GRIDS[getMapForChapter(player.currentChapter)] || MAP_GRIDS[0];
+    const neighbors = [
+        { x: player.x + 1, y: player.y },
+        { x: player.x - 1, y: player.y },
+        { x: player.x, y: player.y + 1 },
+        { x: player.x, y: player.y - 1 }
+    ];
+
+    for (let pos of neighbors) {
+        if (pos.x < 0 || pos.x >= MAP_COLS || pos.y < 0 || pos.y >= MAP_ROWS) continue;
+        const npcHit = getNPCAtPosition(pos.x, pos.y);
+        if (npcHit) return { type: "npc", label: `Talk: ${npcHit.npc.name}`, pos, npcHit };
+
+        const tile = activeGrid[pos.y][pos.x];
+        if (tile === 3) return { type: "chest", label: "Open chest", pos };
+        if (tile === 4) return { type: "altar", label: "Use altar", pos };
+        if (tile === 6) return { type: "portal", label: "Enter portal", pos };
+    }
+    return null;
+}
+
+function updateInteractPrompt() {
+    const prompt = document.getElementById("interact-prompt");
+    if (!prompt) return;
+
+    const interaction = getAdjacentInteraction();
+    if (!interaction) {
+        prompt.classList.add("hidden");
+        return;
+    }
+
+    prompt.innerText = `Enter: ${interaction.label}`;
+    prompt.classList.remove("hidden");
+}
+
+function drawMinimap() {
+    const minimap = document.getElementById("minimap-canvas");
+    if (!minimap) return;
+    const mctx = minimap.getContext("2d");
+    const grid = MAP_GRIDS[getMapForChapter(player.currentChapter)] || MAP_GRIDS[0];
+    const cellW = minimap.width / MAP_COLS;
+    const cellH = minimap.height / MAP_ROWS;
+
+    mctx.clearRect(0, 0, minimap.width, minimap.height);
+    for (let r = 0; r < MAP_ROWS; r++) {
+        for (let c = 0; c < MAP_COLS; c++) {
+            const tile = grid[r][c];
+            if (tile === 1) mctx.fillStyle = "#4b5563";
+            else if (tile === 5) mctx.fillStyle = "#2563eb";
+            else if (tile === 6) mctx.fillStyle = "#a855f7";
+            else if (tile === 4) mctx.fillStyle = "#eab308";
+            else if (tile === 3) mctx.fillStyle = "#d97706";
+            else mctx.fillStyle = "#0d5c3a";
+            mctx.fillRect(c * cellW, r * cellH, Math.ceil(cellW), Math.ceil(cellH));
+        }
+    }
+
+    Object.keys(NPCS[getMapForChapter(player.currentChapter)] || {}).forEach(key => {
+        const pos = getPatrolPosition(getMapForChapter(player.currentChapter), key);
+        mctx.fillStyle = "#f8fafc";
+        mctx.fillRect(pos.x * cellW, pos.y * cellH, Math.ceil(cellW), Math.ceil(cellH));
+    });
+
+    mctx.fillStyle = "#ef4444";
+    mctx.fillRect(player.x * cellW, player.y * cellH, Math.ceil(cellW), Math.ceil(cellH));
+}
+
+function getEncounterRate(x, y) {
+    const mapId = getMapForChapter(player.currentChapter);
+    let rate = 0.08;
+    if ([0, 1, 2, 3, 6, 20, 21].includes(mapId)) rate = 0.025;
+    if (getAdjacentInteraction()) rate *= 0.3;
+    if (y <= 2 || y >= MAP_ROWS - 2) rate *= 0.6;
+    return rate;
+}
+
 function hasInventoryFlag(flag) {
     return player.inventory.includes(flag);
 }
@@ -2982,7 +3244,7 @@ function showOpeningHints() {
 
     addInventoryFlag(OPENING_HINTS_FLAG);
     uploadSaveState();
-    showDialogue("Outpost Zero Field Manual", "Color is restored. Move with WASD or Arrow keys. Press Enter beside NPCs, chests, altars, and the bonfire. Use Alt+1 for code, Alt+2 for compile logs, Alt+3 for quest progress, Alt+4 for Codex help, and Alt+5 for the terminal. Compile Chapter 0, then step onto the purple portal.");
+    showDialogue("Outpost Zero Field Manual", "Color is restored. Move with WASD or Arrow keys. Press Enter beside NPCs, chests, altars, and the bonfire. Press I for inventory. Use Alt+1 for code, Alt+2 for compile logs, Alt+3 for quest progress, Alt+4 for Codex help, and Alt+5 for the terminal. Compile Chapter 0, then step onto the purple portal.");
     renderSpecialistHints(0, true);
 }
 
@@ -3039,6 +3301,7 @@ async function fetchSaveState() {
 }
 
 async function uploadSaveState() {
+    showAutosaveIndicator("Saving...");
     const payload = {
         gold: player.gold,
         compute_tokens: player.tokens,
@@ -3053,7 +3316,10 @@ async function uploadSaveState() {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(payload)
         });
-    } catch (e) {}
+        showAutosaveIndicator("Saved");
+    } catch (e) {
+        showAutosaveIndicator("Offline");
+    }
 }
 
 function getMapForChapter(chapterId) {
@@ -3096,6 +3362,7 @@ function updateUIHeaders() {
     };
     const currentMap = getMapForChapter(player.currentChapter);
     document.getElementById("location-text").innerText = `${locationNames[currentMap] || "The Sacred Tech"} (Ch ${player.currentChapter})`;
+    updateObjectiveTracker();
 }
 
 // JRPG Overworld Canvas Renderer
@@ -3164,24 +3431,28 @@ function drawMap() {
     } else {
         drawPixelSprite(SPRITE_PLAYER, player.x, player.y);
     }
+    drawMinimap();
+    updateInteractPrompt();
 }
 
 function drawNPCs() {
     const activeGrid = MAP_GRIDS[getMapForChapter(player.currentChapter)] || MAP_GRIDS[0];
     const chapterNPCs = NPCS[getMapForChapter(player.currentChapter)] || {};
+    const currentMap = getMapForChapter(player.currentChapter);
     
     for (let r = 0; r < MAP_ROWS; r++) {
         for (let c = 0; c < MAP_COLS; c++) {
             if (activeGrid[r][c] === 2) {
                 const key = `${c},${r}`;
                 const npc = chapterNPCs[key] || { name: "Pilgrim", sprite: "🧙", dialogue: "The source code will guide us." };
+                const drawPos = getPatrolPosition(currentMap, key);
                 
                 if (screenMode === 'monochrome') {
                     ctx.fillStyle = "#ffffff";
                     ctx.font = "20px monospace";
                     ctx.textAlign = "center";
                     ctx.textBaseline = "middle";
-                    ctx.fillText("N", c * TILE_SIZE + TILE_SIZE / 2, r * TILE_SIZE + TILE_SIZE / 2);
+                    ctx.fillText("N", drawPos.x * TILE_SIZE + TILE_SIZE / 2, drawPos.y * TILE_SIZE + TILE_SIZE / 2);
                 } else {
                     const spriteMap = {
                         "🐙": SPRITE_GITPUS,
@@ -3249,7 +3520,7 @@ function drawNPCs() {
                         "📖": SPRITE_SHRINE
                     };
                     const spriteArray = spriteMap[npc.sprite] || SPRITE_PLAYER;
-                    drawPixelSprite(spriteArray, c, r);
+                    drawPixelSprite(spriteArray, drawPos.x, drawPos.y);
                 }
             }
         }
@@ -3289,7 +3560,7 @@ function transitionToNextChapter() {
 
 // Collisions and Movements checks
 function movePlayer(dx, dy) {
-    if (dialogueActive || isCombat || focusMode === 'code' || screenMode === 'dark') return;
+    if (dialogueActive || isCombat || isInventoryOpen() || focusMode === 'code' || screenMode === 'dark') return;
     
     const activeGrid = MAP_GRIDS[getMapForChapter(player.currentChapter)] || MAP_GRIDS[0];
     const newX = player.x + dx;
@@ -3297,7 +3568,8 @@ function movePlayer(dx, dy) {
     
     if (newX >= 0 && newX < MAP_COLS && newY >= 0 && newY < MAP_ROWS) {
         const targetTile = activeGrid[newY][newX];
-        if (targetTile !== 1 && targetTile !== 5) {
+        const npcHit = getNPCAtPosition(newX, newY);
+        if (targetTile !== 1 && targetTile !== 5 && !npcHit) {
             player.x = newX;
             player.y = newY;
             drawMap();
@@ -3308,7 +3580,7 @@ function movePlayer(dx, dy) {
             }
             
             // Random Battle probability in wild areas
-            if (targetTile === 0 && Math.random() < 0.08) {
+            if (targetTile === 0 && Math.random() < getEncounterRate(newX, newY)) {
                 triggerCombat();
             }
         }
@@ -3443,7 +3715,7 @@ let combatTurn = 'player'; // 'player' or 'enemy'
 
 // Trigger Interactions (chests, terminals, NPCs)
 function checkInteraction() {
-    if (focusMode === 'code' || screenMode === 'dark') return;
+    if (focusMode === 'code' || screenMode === 'dark' || isInventoryOpen()) return;
     
     const activeGrid = MAP_GRIDS[getMapForChapter(player.currentChapter)] || MAP_GRIDS[0];
     const chapterNPCs = NPCS[getMapForChapter(player.currentChapter)] || {};
@@ -3460,10 +3732,10 @@ function checkInteraction() {
         if (pos.x >= 0 && pos.x < MAP_COLS && pos.y >= 0 && pos.y < MAP_ROWS) {
             const tile = activeGrid[pos.y][pos.x];
             
-            if (tile === 2) {
+            const npcHit = getNPCAtPosition(pos.x, pos.y);
+            if (npcHit) {
                 // NPC Dialog
-                const key = `${pos.x},${pos.y}`;
-                const npc = chapterNPCs[key] || { name: "Pilgrim", dialogue: "The source code will guide us." };
+                const npc = npcHit.npc || { name: "Pilgrim", dialogue: "The source code will guide us." };
                 showDialogue(npc.name, npc.dialogue, npc.options);
                 return;
             }
@@ -3577,6 +3849,7 @@ function showDialogue(speaker, text, options = null, isBackOption = false) {
 function hideDialogue() {
     dialogueActive = false;
     document.getElementById("dialogue-box").classList.add("hidden");
+    updateInteractPrompt();
 }
 
 // Turn-based Combat logic
@@ -3955,6 +4228,14 @@ tabButtons.forEach(btn => {
 // Monaco Editor Mock / Custom Area setup
 const codeEditor = document.getElementById("code-editor");
 const lineNumbers = document.getElementById("editor-line-numbers");
+const inventoryOverlay = document.getElementById("inventory-overlay");
+const inventoryCloseBtn = document.getElementById("inventory-close-btn");
+
+if (inventoryCloseBtn && inventoryOverlay) {
+    inventoryCloseBtn.addEventListener("click", () => {
+        inventoryOverlay.classList.add("hidden");
+    });
+}
 
 codeEditor.addEventListener("input", () => {
     const lines = codeEditor.value.split("\n").length;
@@ -4576,6 +4857,13 @@ document.getElementById("editor-chapter-select").addEventListener("change", (e) 
 
 // Keyboard Listeners (exploring, hotkeys)
 window.addEventListener("keydown", (e) => {
+    if (isInventoryOpen()) {
+        if (e.key === "Escape" || e.key === "i") {
+            inventoryOverlay.classList.add("hidden");
+        }
+        return;
+    }
+
     if (dialogueActive) {
         if (e.key === "Enter") hideDialogue();
         return;
@@ -4598,6 +4886,7 @@ window.addEventListener("keydown", (e) => {
         if (e.key === "s" || e.key === "ArrowDown") movePlayer(0, 1);
         if (e.key === "a" || e.key === "ArrowLeft") movePlayer(-1, 0);
         if (e.key === "d" || e.key === "ArrowRight") movePlayer(1, 0);
+        if (e.key === "i") openInventory();
         
         if (e.key === "Enter") {
             checkInteraction();
@@ -4625,4 +4914,7 @@ window.addEventListener("load", () => {
     fetchSaveState();
     loadChapterCode(0);
     searchCodex("");
+    setInterval(() => {
+        if (screenMode !== "dark" && !dialogueActive && !isCombat) drawMap();
+    }, 700);
 });

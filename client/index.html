@@ -23,6 +23,18 @@
             <!-- JRPG Canvas screen -->
             <canvas id="jrpg-canvas" width="512" height="448"></canvas>
 
+            <div id="objective-tracker" class="ui-panel">
+                <span id="objective-text">Objective: boot the environment from Alt+5 Terminal.</span>
+            </div>
+
+            <div id="minimap-panel" class="ui-panel">
+                <canvas id="minimap-canvas" width="96" height="84"></canvas>
+            </div>
+
+            <div id="interact-prompt" class="ui-panel hidden">Enter: Interact</div>
+
+            <div id="autosave-indicator" class="ui-panel hidden">Saved</div>
+
             <!-- Combat Overlay Screen -->
             <div id="combat-overlay" class="hidden">
                 <div class="combat-grid">
@@ -60,6 +72,15 @@
                     <p id="dialogue-text">Hey buddy! Welcome to the source code.</p>
                     <div id="dialogue-options" class="hidden"></div>
                 </div>
+            </div>
+
+            <!-- Inventory / Shop overlay -->
+            <div id="inventory-overlay" class="ui-panel hidden">
+                <div class="inventory-header">
+                    <h3 id="inventory-title">Inventory</h3>
+                    <button id="inventory-close-btn" title="Close">×</button>
+                </div>
+                <div id="inventory-content"></div>
             </div>
         </div>
 
