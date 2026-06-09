@@ -22,7 +22,9 @@ let player = {
     ],
     inventory: [],
     unlockedChapters: [0],
-    currentChapter: 0
+    currentChapter: 0,
+    openedChests: [],
+    readManuals: []
 };
 
 const DEFAULT_PARTY_STATS = player.party.map(char => ({ ...char }));
@@ -3234,6 +3236,21 @@ function addInventoryFlag(flag) {
     }
 }
 
+function getChestKey(mapId, x, y) {
+    return `${mapId}:${x},${y}`;
+}
+
+function isChestOpened(mapId, x, y) {
+    return player.openedChests.includes(getChestKey(mapId, x, y));
+}
+
+function markChestOpened(mapId, x, y) {
+    const key = getChestKey(mapId, x, y);
+    if (!player.openedChests.includes(key)) {
+        player.openedChests.push(key);
+    }
+}
+
 function getMissingRequiredChapters() {
     const missing = [];
     for (let chapter = 0; chapter < FINAL_CHAPTER; chapter++) {
@@ -3428,7 +3445,7 @@ function showOpeningHints() {
 
     addInventoryFlag(OPENING_HINTS_FLAG);
     uploadSaveState();
-    showDialogue("Outpost Zero Field Manual", "Color is restored. Move with WASD or Arrow keys. Press Enter beside NPCs, chests, altars, and the bonfire. Press I for inventory. Use Alt+1 for code, Alt+2 for compile logs, Alt+3 for quest progress, Alt+4 for Codex help, and Alt+5 for the terminal. Compile Chapter 0, then step onto the purple portal.");
+    showDialogue("Outpost Zero Field Manual", "Color is restored. Move with WASD or Arrow keys. Press Enter beside NPCs, chests, altars, and the bonfire. Press I for inventory. Use Alt+1 for code, Alt+2 for compile logs, Alt+3 for quest progress, Alt+4 for Codex help, Alt+5 for the terminal, and Alt+9 for the Library. Compile Chapter 0, then step onto the purple portal.");
     renderSpecialistHints(0, true);
 }
 
@@ -3474,9 +3491,22 @@ async function fetchSaveState() {
                 } catch (e) {
                     player.party = normalizePartyStats();
                 }
+                try {
+                    const savedState = JSON.parse(data.state_json || "{}");
+                    player.currentChapter = Number.isFinite(savedState.currentChapter) ? savedState.currentChapter : player.currentChapter;
+                    player.x = Number.isFinite(savedState.x) ? savedState.x : player.x;
+                    player.y = Number.isFinite(savedState.y) ? savedState.y : player.y;
+                    player.openedChests = Array.isArray(savedState.openedChests) ? savedState.openedChests : [];
+                    player.readManuals = Array.isArray(savedState.readManuals) ? savedState.readManuals : [];
+                } catch (e) {
+                    player.openedChests = [];
+                    player.readManuals = [];
+                }
                 updateUIHeaders();
                 updateEditorChapterSelect();
                 renderChroniclesQuestTree();
+                renderLibrary();
+                drawMap();
             }
         }
     } catch (e) {
@@ -3492,7 +3522,14 @@ async function uploadSaveState() {
         unlocked_chapters: player.unlockedChapters.join(','),
         active_lead: player.activeLead,
         inventory_json: JSON.stringify(player.inventory),
-        stats_json: JSON.stringify(player.party)
+        stats_json: JSON.stringify(player.party),
+        state_json: JSON.stringify({
+            currentChapter: player.currentChapter,
+            x: player.x,
+            y: player.y,
+            openedChests: player.openedChests,
+            readManuals: player.readManuals
+        })
     };
     try {
         await fetch("http://127.0.0.1:8000/api/save", {
@@ -3629,7 +3666,7 @@ function drawMap() {
             
             // Draw Interactive Entities (Chests, Altars, NPCs)
             if (tile === 3) {
-                ctx.fillStyle = "#d97706";
+                ctx.fillStyle = isChestOpened(mapId, worldX, worldY) ? "#6b7280" : "#d97706";
                 ctx.fillRect(c * TILE_SIZE + 6, r * TILE_SIZE + 6, TILE_SIZE - 12, TILE_SIZE - 12);
             }
             
@@ -4083,6 +4120,10 @@ function checkInteraction() {
             if (tile === 3) {
                 // Per-map chest lore
                 const mapId = getMapForChapter(player.currentChapter);
+                if (isChestOpened(mapId, pos.x, pos.y)) {
+                    showDialogue("Opened Relic Cache", "This cache is already open. The useful notes are copied into your Codex, and the supplies have been packed away.");
+                    return;
+                }
                 const chestLore = {
                     0: {
                         title: "Rusted Supply Crate",
@@ -4125,7 +4166,12 @@ function checkInteraction() {
                     title: "Relic Cache",
                     text: "A weathered container. Inside: scattered compile tokens, a reminder that all knowledge accumulates, and a sticky note that says simply: \'Keep going. You\'re doing well. The altar is ahead.\'",
                 };
-                showDialogue(chestData.title, chestData.text);
+                markChestOpened(mapId, pos.x, pos.y);
+                player.gold += 20;
+                player.tokens += 10;
+                updateUIHeaders();
+                uploadSaveState();
+                showDialogue(chestData.title, `${chestData.text}\n\nRecovered: +20 Gold and +10 Compute Tokens.`);
                 return;
             }
         }
@@ -4561,6 +4607,8 @@ function activateWorkspaceTab(tabId) {
         renderChroniclesQuestTree();
     } else if (tabId === "diagnostics") {
         runWiringDiagnostics();
+    } else if (tabId === "library") {
+        renderLibrary(true);
     }
 }
 
@@ -4593,6 +4641,11 @@ codeEditor.addEventListener("input", () => {
     const lines = codeEditor.value.split("\n").length;
     lineNumbers.innerHTML = Array.from({ length: lines }, (_, i) => i + 1).join("<br>");
 });
+
+function formatValidatorHints(chapterId) {
+    const hints = VALIDATOR_HINTS[chapterId] || ["Read the field contract in Alt+3.", "Open Alt+9 Library for examples tied to this chapter."];
+    return hints.map((hint, index) => `Hint ${index + 1}: ${hint}`).join("\n");
+}
 
 // Compile and Run Logic
 const runBtn = document.getElementById("run-btn");
@@ -4645,6 +4698,8 @@ runBtn.addEventListener("click", async () => {
                 drawMap();
             } else {
                 log.innerHTML += `\n>>> Verification FAIL! Check trace logs.\n`;
+                log.innerHTML += `\n>>> Why this may have failed:\n${formatValidatorHints(player.currentChapter)}\n`;
+                renderSpecialistHints(player.currentChapter, true);
             }
         }
     } catch (e) {
@@ -4866,6 +4921,177 @@ function completeChapterContract(chapterId) {
     };
 }
 
+const GLOSSARY_TERMS = {
+    "PATH": "The shell environment variable listing directories where executable commands are searched.",
+    "stdout": "The standard output stream. Shell redirection can write it to files with > or append with >>.",
+    "parameterization": "Binding user input as data instead of inserting it directly into SQL text.",
+    "GIL": "Python's Global Interpreter Lock. It simplifies memory safety for Python objects but limits CPU-bound Python threads.",
+    "pybind11": "A C++ binding library that exposes native functions and classes to Python with thin wrapper code.",
+    "contiguous array": "A block of values stored next to each other in memory, improving cache locality and native loop speed.",
+    "QKV": "Query, Key, and Value projections used by transformer attention to score and mix token information.",
+    "softmax": "A normalization function that turns scores into probabilities that sum to one.",
+    "HolyC": "TempleOS's C-like language with direct, immediate compilation and ring-0 execution.",
+    "serial bridge": "A connection that routes typed bytes to a VM or device over a serial-like stream."
+};
+
+const LIBRARY_BOOKS = [
+    {
+        id: "python-field-manual",
+        title: "Python Field Manual",
+        unlockChapter: 0,
+        subtitle: "Shell, scripts, streams, and practical Python habits.",
+        pages: [
+            {
+                title: "Boot The Workbench",
+                body: "Before code can run, the machine needs to know where tools live. Chapter 0 is not about memorizing shell commands; it is about proving you can inspect a broken environment and restore just enough order to keep working.",
+                bullets: ["Use pwd and ls to orient yourself.", "Use echo or printenv to inspect variables.", "Append tool folders to PATH instead of replacing it."],
+                code: "pwd\nls\nprintenv PATH\nexport PATH=$PATH:/usr/local/bin\necho \"Booting environment...\"",
+                expected: "A visible workspace listing, a PATH containing /usr/local/bin, and a boot confirmation line.",
+                applyChapter: 0,
+                terms: ["PATH", "stdout"]
+            },
+            {
+                title: "Streams Become Artifacts",
+                body: "A useful script leaves evidence. Redirecting stdout lets a tiny command become a file, a test artifact, or a debugging trace.",
+                bullets: ["Use > to write a fresh file.", "Use >> to append without erasing.", "Keep logs small and intentional."],
+                code: "python3 script.py > output.txt\npython3 script.py >> output.txt\ncat output.txt",
+                expected: "The command output is captured in output.txt and can be inspected afterward.",
+                applyChapter: 0,
+                terms: ["stdout"]
+            }
+        ]
+    },
+    {
+        id: "cpp-interop-grimoire",
+        title: "C++ Interop Grimoire",
+        unlockChapter: 5,
+        subtitle: "Profile first, bridge only the hot path.",
+        pages: [
+            {
+                title: "Find The Hot Path",
+                body: "Native code is powerful, but the professional move is to measure before rewriting. Chapter 5 asks for the smallest useful optimization: make the hot numeric operation clean and deterministic.",
+                bullets: ["Profile before porting.", "Keep Python orchestration readable.", "Move tight numeric loops to contiguous memory when needed."],
+                code: "def optimized_array_sum(arr):\n    return sum(arr)",
+                expected: "The function returns the same numeric total as a normal Python sum.",
+                applyChapter: 5,
+                terms: ["contiguous array", "pybind11"]
+            },
+            {
+                title: "Thin Binding, Heavy Compute",
+                body: "A good pybind11 bridge does not drag the whole program across the language boundary. It exposes a small native function, passes data by reference, and keeps copies under control.",
+                bullets: ["Keep wrapper code boring.", "Pass NumPy buffers or contiguous arrays.", "Release the GIL around heavy native work when safe."],
+                code: "// C++ sketch\npy::array_t<double> values;\n// request buffer, read pointer, loop in native code\n// return one clear result",
+                expected: "Python calls one simple function while the expensive loop runs in native code.",
+                applyChapter: 5,
+                terms: ["GIL", "pybind11", "contiguous array"]
+            }
+        ]
+    },
+    {
+        id: "sql-survival-guide",
+        title: "SQL Survival Guide",
+        unlockChapter: 2,
+        subtitle: "Tables, keys, and injection-resistant habits.",
+        pages: [
+            {
+                title: "Input Is Data",
+                body: "SQL injection happens when user text becomes executable query structure. The fix is boring in the best possible way: placeholders.",
+                bullets: ["Never string-concatenate credentials.", "Use ? placeholders in SQLite.", "Bind values as a tuple."],
+                code: "cursor.execute(\n    \"SELECT secret_key FROM users WHERE username = ?\",\n    (username,)\n)\nreturn cursor.fetchall()",
+                expected: "Malicious usernames are treated as values, not as SQL syntax.",
+                applyChapter: 2,
+                terms: ["parameterization"]
+            },
+            {
+                title: "Keys Tell The Story",
+                body: "A relational model is practical when every row can be identified and every relationship is explicit. Primary keys name records; foreign keys connect them.",
+                bullets: ["Use primary keys for identity.", "Use foreign keys for relationships.", "Aggregate after the relationships are correct."],
+                code: "SELECT farms.name, COUNT(cows.id)\nFROM farms\nJOIN cows ON cows.farm_id = farms.id\nGROUP BY farms.id;",
+                expected: "Each farm returns one aggregate count based on related cow records.",
+                applyChapter: 2,
+                terms: ["parameterization"]
+            }
+        ]
+    },
+    {
+        id: "transformer-atlas",
+        title: "Transformer Atlas",
+        unlockChapter: 8,
+        subtitle: "Attention math you can actually trace.",
+        pages: [
+            {
+                title: "Q, K, V Coordinates",
+                body: "Attention is a routing system. Queries ask what a token needs, keys advertise what tokens contain, and values carry the information that gets mixed.",
+                bullets: ["Compute QK^T similarity scores.", "Scale by sqrt(d_k).", "Softmax the scores before mixing values."],
+                code: "scores = q @ k.transpose(-1, -2) / sqrt(d_k)\nweights = softmax(scores)\noutput = weights @ v",
+                expected: "Attention weights sum to one across each token's visible context.",
+                applyChapter: 8,
+                terms: ["QKV", "softmax"]
+            },
+            {
+                title: "Training Needs Stabilizers",
+                body: "Deep networks need stabilizers so gradients remain useful. LayerNorm and residual connections are not decoration; they are load-bearing parts of the architecture.",
+                bullets: ["Normalize activations.", "Preserve a skip path.", "Update weights from measured error."],
+                code: "mean = x.mean(axis=-1, keepdims=True)\nvar = x.var(axis=-1, keepdims=True)\nx_norm = (x - mean) / sqrt(var + eps)",
+                expected: "Each activation row is centered and scaled before the next transformation.",
+                applyChapter: 9,
+                terms: ["softmax"]
+            }
+        ]
+    },
+    {
+        id: "holyc-temple-notes",
+        title: "HolyC Temple Notes",
+        unlockChapter: 21,
+        subtitle: "Bare-metal syntax, serial bridges, and final checksums.",
+        pages: [
+            {
+                title: "Speak In HolyC",
+                body: "The final chapter checks that the player understands they are not writing Python anymore. HolyC uses C-like types and immediate execution.",
+                bullets: ["Use U0 for void-like functions.", "Use I64 for 64-bit integers.", "Use Print rather than Python print."],
+                code: "U0 Main()\n{\n    I64 checksum = 21;\n    Print(\"checksum:%d\\n\", checksum);\n}",
+                expected: "The validator accepts HolyC-shaped source and rejects Python syntax.",
+                applyChapter: 21,
+                terms: ["HolyC"]
+            },
+            {
+                title: "Bridge To The Altar",
+                body: "The serial bridge routes typed bytes to the TempleOS VM. The game treats that connection as the last practical proof: can you reach the compiler directly?",
+                bullets: ["Boot the local VM or mock bridge.", "Connect to 127.0.0.1:4444.", "Transmit concise HolyC source."],
+                code: "telnet 127.0.0.1 4444",
+                expected: "A TempleOS-style prompt accepts HolyC input over the local bridge.",
+                applyChapter: 21,
+                terms: ["serial bridge", "HolyC"]
+            }
+        ]
+    }
+];
+
+const VALIDATOR_HINTS = {
+    0: ["Make sure PATH includes /usr/local/bin.", "Print a clear boot line so stdout is visible."],
+    1: ["Return a matrix with the same row/column shape.", "Use 255 above threshold and 0 at or below threshold."],
+    2: ["Use cursor.execute with ? placeholders.", "Do not build SQL by concatenating username text."],
+    3: ["Store an expiry timestamp with each cached value.", "Delete and return None when a key is stale."],
+    4: ["Create threading.Lock in __init__.", "Use with self.lock around balance mutation."],
+    5: ["Return the exact sum for any numeric iterable.", "Keep the optimized function deterministic."],
+    6: ["requirements.txt must include requests>=2.31.0.", "Avoid pinning vulnerable old versions."],
+    7: ["Apply merges repeatedly and in order.", "Return a token list, not one joined string."],
+    8: ["Transpose K on the last two axes.", "Subtract max before exp for stable softmax."],
+    9: ["LayerNorm normalizes along the last axis.", "The training step should return updated weights."],
+    10: ["Union dense and sparse document IDs.", "Sort blended results from highest score to lowest."],
+    11: ["Return host exactly as 127.0.0.1.", "Use port 8000 as an integer."],
+    12: ["Include shortestPath in the Cypher string.", "Return the path binding from the query."],
+    13: ["BLEU needs clipped unigram overlap.", "ROUGE-L needs a longest common subsequence table."],
+    14: ["Scale LoRA by alpha / r.", "Merge as W0 plus the low-rank update."],
+    15: ["Reject obvious instruction override phrases.", "Redact API-like keys and password fields."],
+    16: ["Use max(abs(x)) / 127 for scale.", "Clip quantized values into the int8 range."],
+    17: ["Use inspect.signature for parameters.", "Required args have no default value."],
+    18: ["Stop when status is no longer running.", "Set max_steps_exceeded when the loop never terminates."],
+    19: ["Return both Pod and Ingress YAML.", "Include memory limits and backend service routing."],
+    20: ["Return a dictionary with all pipeline outputs.", "Close SQLite connections even if queries fail."],
+    21: ["Reject Python def/print syntax.", "Accept HolyC markers such as U0, I64, or Print."]
+};
+
 // Offline Codex Articles database
 const CODEX_ARTICLES = [
     { title: "CLI Navigation & Pipes", tags: ["ch0", "cli", "path", "terminal", "bash"], content: "Use standard Unix commands to navigate and configure paths: \n- 'pwd': Print working directory\n- 'ls': List files\n- 'export PATH=$PATH:/dir': Append directories to the system PATH so programs can be run globally.\n- 'echo': Print strings to stdout." },
@@ -4891,6 +5117,154 @@ const CODEX_ARTICLES = [
     { title: "Integrated Data Pipeline Assembly", tags: ["ch20", "pipeline", "assembler", "integration"], content: "Integrated systems tie multiple stages (OCR scanning, SQL queries, Graph lookups, and LLM text generation) into a unified synchronous pipeline to process inputs cleanly." },
     { title: "TempleOS Serial console & HolyC", tags: ["ch21", "templeos", "holyc", "serial"], content: "Terry Davis's TempleOS runs on bare metal with no kernel memory protections. Serial consoles connect headless systems over loopback telnet port 4444. Verify bare-metal HolyC compilation checksums." }
 ];
+
+let activeLibraryBookId = LIBRARY_BOOKS[0].id;
+let activeLibraryPage = 0;
+
+function isManualUnlocked(book) {
+    return player.unlockedChapters.includes(book.unlockChapter) || player.currentChapter >= book.unlockChapter;
+}
+
+function markManualRead(bookId) {
+    if (!player.readManuals.includes(bookId)) {
+        player.readManuals.push(bookId);
+        uploadSaveState();
+    }
+}
+
+function getActiveLibraryBook() {
+    return LIBRARY_BOOKS.find(book => book.id === activeLibraryBookId) || LIBRARY_BOOKS[0];
+}
+
+function renderLibrary(trackRead = false) {
+    const list = document.getElementById("library-book-list");
+    const title = document.getElementById("library-book-title");
+    const subtitle = document.getElementById("library-book-subtitle");
+    const pageCount = document.getElementById("library-page-count");
+    const prevBtn = document.getElementById("library-prev-btn");
+    const nextBtn = document.getElementById("library-next-btn");
+    const content = document.getElementById("library-page-content");
+    if (!list || !title || !subtitle || !pageCount || !prevBtn || !nextBtn || !content) return;
+
+    list.innerHTML = LIBRARY_BOOKS.map(book => {
+        const unlocked = isManualUnlocked(book);
+        const read = player.readManuals.includes(book.id);
+        return `
+            <button class="library-book-btn ${book.id === activeLibraryBookId ? "active" : ""} ${unlocked ? "" : "locked"}"
+                onclick="${unlocked ? `openLibraryBook('${book.id}')` : ""}">
+                <span class="library-book-title">${escapeDiagnosticText(book.title)}</span>
+                <span class="library-book-meta">${unlocked ? `${book.pages.length} pages${read ? " | read" : ""}` : `Unlocks at Ch ${book.unlockChapter}`}</span>
+            </button>
+        `;
+    }).join("");
+
+    const book = getActiveLibraryBook();
+    if (!isManualUnlocked(book)) {
+        activeLibraryBookId = LIBRARY_BOOKS.find(isManualUnlocked)?.id || LIBRARY_BOOKS[0].id;
+        activeLibraryPage = 0;
+        return renderLibrary(trackRead);
+    }
+
+    activeLibraryPage = Math.max(0, Math.min(activeLibraryPage, book.pages.length - 1));
+    const page = book.pages[activeLibraryPage];
+    if (trackRead) {
+        markManualRead(book.id);
+    }
+
+    title.innerText = book.title;
+    subtitle.innerText = book.subtitle;
+    pageCount.innerText = `${activeLibraryPage + 1} / ${book.pages.length}`;
+    prevBtn.disabled = activeLibraryPage === 0;
+    nextBtn.disabled = activeLibraryPage === book.pages.length - 1;
+    prevBtn.onclick = () => {
+        activeLibraryPage -= 1;
+        renderLibrary(true);
+    };
+    nextBtn.onclick = () => {
+        activeLibraryPage += 1;
+        renderLibrary(true);
+    };
+
+    content.innerHTML = `
+        <div class="lesson-card">
+            <h4>${escapeDiagnosticText(page.title)}</h4>
+            <p>${escapeDiagnosticText(page.body)}</p>
+        </div>
+        <div class="lesson-card">
+            <h4>Field Notes</h4>
+            <ul>${page.bullets.map(item => `<li>${escapeDiagnosticText(item)}</li>`).join("")}</ul>
+        </div>
+        <div class="lesson-card">
+            <h4>Code Example</h4>
+            <pre class="lesson-code">${escapeDiagnosticText(page.code)}</pre>
+            <div class="lesson-actions">
+                <button class="lesson-action-btn" onclick="insertLessonExample('${book.id}', ${activeLibraryPage})">Try Example In Editor</button>
+                <button class="lesson-action-btn" onclick="applyLessonChapter(${page.applyChapter}, '${book.id}', ${activeLibraryPage})">Read This, Then Apply It</button>
+            </div>
+        </div>
+        <div class="lesson-card">
+            <h4>Expected Output</h4>
+            <p>${escapeDiagnosticText(page.expected)}</p>
+        </div>
+        <div class="lesson-card">
+            <h4>Glossary Links</h4>
+            <div class="lesson-actions">
+                ${page.terms.map(term => `<button class="term-chip" onclick="showGlossaryTerm('${escapeDiagnosticText(term)}')">${escapeDiagnosticText(term)}</button>`).join("")}
+            </div>
+        </div>
+    `;
+
+    showGlossaryTerm(page.terms[0]);
+}
+
+function openLibraryBook(bookId) {
+    activeLibraryBookId = bookId;
+    activeLibraryPage = 0;
+    renderLibrary(true);
+}
+
+function getLibraryPage(bookId, pageIndex) {
+    const book = LIBRARY_BOOKS.find(item => item.id === bookId);
+    if (!book) return null;
+    return book.pages[pageIndex] || null;
+}
+
+function insertLessonExample(bookId, pageIndex) {
+    const page = getLibraryPage(bookId, pageIndex);
+    if (!page || !codeEditor) return;
+    codeEditor.value = page.code;
+    lineNumbers.innerHTML = Array.from({ length: page.code.split("\n").length }, (_, i) => i + 1).join("<br>");
+    activateWorkspaceTab("editor");
+    codeEditor.focus();
+}
+
+function applyLessonChapter(chapterId, bookId, pageIndex) {
+    const page = getLibraryPage(bookId, pageIndex);
+    const chapterAvailable = player.unlockedChapters.includes(chapterId) || player.currentChapter >= chapterId;
+    if (!chapterAvailable) {
+        showAutosaveIndicator(`Locked Ch ${chapterId}`);
+        showDialogue("Library", `Reach Chapter ${chapterId} before applying this lesson. You can still copy the example into the editor.`);
+        return;
+    }
+    player.currentChapter = chapterId;
+    loadChapterCode(chapterId).then(() => {
+        if (page && codeEditor) {
+            codeEditor.value = page.code;
+            lineNumbers.innerHTML = Array.from({ length: page.code.split("\n").length }, (_, i) => i + 1).join("<br>");
+        }
+        renderChroniclesQuestTree();
+        activateWorkspaceTab("editor");
+    });
+}
+
+function showGlossaryTerm(term) {
+    const panel = document.getElementById("library-glossary-panel");
+    if (!panel) return;
+    panel.innerHTML = `
+        <h4>${escapeDiagnosticText(term || "Glossary")}</h4>
+        <p>${escapeDiagnosticText(GLOSSARY_TERMS[term] || "Select a term from the lesson to see its definition.")}</p>
+    `;
+}
 
 // Active Chapter select dropdown updates
 function updateEditorChapterSelect() {
@@ -5408,7 +5782,10 @@ async function runWiringDiagnostics() {
         "code-editor",
         "console-log",
         "quest-tree",
-        "diagnostics-results"
+        "diagnostics-results",
+        "library-book-list",
+        "library-page-content",
+        "library-glossary-panel"
     ];
     requiredDomIds.forEach(id => {
         if (!document.getElementById(id)) {
@@ -5433,6 +5810,17 @@ async function runWiringDiagnostics() {
     if (SHOP_ITEMS.length === 0) {
         addDiagnosticIssue(items, "warn", "Shop item catalog is empty", "Shops need at least one usable item.");
     }
+
+    LIBRARY_BOOKS.forEach(book => {
+        if (!book.pages || book.pages.length < 2) {
+            addDiagnosticIssue(items, "warn", `${book.title} needs more pages`, "Manuals should be multi-page lessons, not single notes.");
+        }
+        (book.pages || []).forEach(page => {
+            if (!page.code || !page.expected || !page.terms || page.terms.length === 0) {
+                addDiagnosticIssue(items, "warn", `${book.title} page incomplete`, `${page.title} needs code, expected output, and glossary terms.`);
+            }
+        });
+    });
 
     if (items.every(item => item.severity !== "critical" && item.severity !== "warn")) {
         addDiagnosticIssue(items, "pass", "Core client wiring looks healthy", "Maps, chapters, HUD elements, shops, and interactions passed the local checks.");
@@ -5466,7 +5854,8 @@ async function runWiringDiagnostics() {
         { label: "NPC Tiles", value: npcTileCount },
         { label: "Chests", value: chestCount },
         { label: "Shop NPCs", value: shopActions.length },
-        { label: "Contracts", value: Object.keys(CHAPTER_CONTRACTS).length }
+        { label: "Contracts", value: Object.keys(CHAPTER_CONTRACTS).length },
+        { label: "Manuals", value: LIBRARY_BOOKS.length }
     ];
 
     renderDiagnosticsReport(items, stats);
@@ -5549,11 +5938,26 @@ function searchCodex(query) {
                art.content.toLowerCase().includes(queryLower) ||
                art.tags.some(tag => tag.toLowerCase().includes(queryLower));
     });
+
+    const glossaryMatches = Object.entries(GLOSSARY_TERMS).filter(([term, definition]) => {
+        if (!query) return true;
+        return term.toLowerCase().includes(queryLower) || definition.toLowerCase().includes(queryLower);
+    });
     
-    if (filtered.length === 0) {
+    if (filtered.length === 0 && glossaryMatches.length === 0) {
         results.innerHTML = `<div style="font-family:var(--ui-font); font-size:13px; text-align:center; margin-top:20px;">No articles match your search query.</div>`;
         return;
     }
+
+    glossaryMatches.forEach(([term, definition]) => {
+        const item = document.createElement("div");
+        item.className = "codex-result-item";
+        item.innerHTML = `
+            <div class="codex-result-title">Glossary: ${escapeDiagnosticText(term)}</div>
+            <div class="codex-result-content">${escapeDiagnosticText(definition)}</div>
+        `;
+        results.appendChild(item);
+    });
     
     filtered.forEach(art => {
         const item = document.createElement("div");
@@ -5703,7 +6107,8 @@ window.addEventListener("keydown", (e) => {
             "5": "terminal",
             "6": "browser",
             "7": "templeos",
-            "8": "diagnostics"
+            "8": "diagnostics",
+            "9": "library"
         };
         if (tabMap[e.key]) {
             e.preventDefault();
@@ -5770,6 +6175,7 @@ window.addEventListener("load", () => {
     loadChapterCode(0);
     searchCodex("");
     renderChroniclesQuestTree();
+    renderLibrary();
     runWiringDiagnostics();
     setInterval(() => {
         if (screenMode !== "dark" && !dialogueActive && !isCombat) drawMap();
