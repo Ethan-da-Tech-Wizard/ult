@@ -29,6 +29,7 @@ const FINAL_CHAPTER = 21;
 const VERIDICUS_DEFEATED_FLAG = "veridicus_defeated";
 const OPENING_HINTS_FLAG = "opening_hints_seen";
 const ITEM_PREFIX = "item:";
+const CONTRACT_PREFIX = "contract:";
 
 const SHOP_ITEMS = [
     { id: "patch_potion", name: "Patch Potion", price: 30, desc: "Restore 45 HP to the full party." },
@@ -4429,6 +4430,8 @@ function activateWorkspaceTab(tabId) {
         initShellWebSocket();
     } else if (tabId === "templeos") {
         initTempleOSWebSocket();
+    } else if (tabId === "chronicles") {
+        renderChroniclesQuestTree();
     } else if (tabId === "diagnostics") {
         runWiringDiagnostics();
     }
@@ -4492,8 +4495,12 @@ runBtn.addEventListener("click", async () => {
                 if (!player.unlockedChapters.includes(player.currentChapter)) {
                     player.unlockedChapters.push(player.currentChapter);
                 }
+                const contractReward = completeChapterContract(player.currentChapter);
+                if (contractReward) {
+                    log.innerHTML += `\n>>> ${contractReward.text.replace(/\n/g, "\n>>> ")}\n`;
+                }
                 
-                showDialogue("System Prompt", `Chapter ${player.currentChapter} compiled successfully! The Relic gate is now open. Step into the warp portal (purple tile) to proceed.`);
+                showDialogue("System Prompt", `Chapter ${player.currentChapter} compiled successfully!${contractReward ? ` ${contractReward.text}` : ""} The Relic gate is now open. Step into the warp portal (purple tile) to proceed.`);
                 
                 if (player.currentChapter === 0) {
                     // Transition color states
@@ -4507,6 +4514,7 @@ runBtn.addEventListener("click", async () => {
                     }, 1500);
                 }
                 uploadSaveState();
+                renderChroniclesQuestTree();
                 drawMap();
             } else {
                 log.innerHTML += `\n>>> Verification FAIL! Check trace logs.\n`;
@@ -4518,10 +4526,16 @@ runBtn.addEventListener("click", async () => {
         if (!player.unlockedChapters.includes(player.currentChapter)) {
             player.unlockedChapters.push(player.currentChapter);
         }
+        const contractReward = completeChapterContract(player.currentChapter);
+        if (contractReward) {
+            log.innerHTML += `>>> ${contractReward.text.replace(/\n/g, "\n>>> ")}\r\n`;
+        }
         screenMode = 'color';
         document.getElementById("prologue-overlay").classList.add("hidden");
-        showDialogue("Offline Simulator", `Chapter ${player.currentChapter} compiled. The portal is open!`);
+        showDialogue("Offline Simulator", `Chapter ${player.currentChapter} compiled.${contractReward ? ` ${contractReward.text}` : ""} The portal is open!`);
         showOpeningHints();
+        uploadSaveState();
+        renderChroniclesQuestTree();
         drawMap();
         updateUIHeaders();
     }
@@ -4560,6 +4574,170 @@ const CHAPTERS = [
     { id: 20, title: "Chapter 20: The Grand Assembly", desc: "Integrate full database, OCR, and model processing pipeline.", parent: 19 },
     { id: 21, title: "Chapter 21: Altar of TempleOS", desc: "Boot bare-metal serial VM and run HolyC compilation checksums.", parent: 20 }
 ];
+
+const CHAPTER_CONTRACTS = {
+    0: {
+        title: "Restore the local toolchain",
+        practical: "Practice the shell moves needed to inspect a broken workstation and make compiler tools discoverable again.",
+        deliverables: ["List the workspace", "export PATH with /usr/local/bin", "print a boot confirmation"],
+        reward: { gold: 40, tokens: 15, exp: 45 }
+    },
+    1: {
+        title: "Recover a damaged scan",
+        practical: "Build the first two steps of an OCR cleanup pipeline: grayscale conversion and thresholding.",
+        deliverables: ["Convert RGB pixels to luminance", "binarize rows by threshold", "return matrix-shaped output"],
+        reward: { gold: 55, tokens: 20, exp: 60 }
+    },
+    2: {
+        title: "Patch the credential query",
+        practical: "Replace string-built SQL with parameterized access, the everyday fix for injection bugs.",
+        deliverables: ["identify the exploit payload", "query with placeholders", "return only authorized rows"],
+        reward: { gold: 65, tokens: 20, exp: 70 }
+    },
+    3: {
+        title: "Stabilize the cache",
+        practical: "Model a small key-value cache with parseable JSON and time-based eviction.",
+        deliverables: ["parse polymorphic item JSON", "store values with expiry", "evict stale reads"],
+        reward: { gold: 70, tokens: 25, exp: 80 }
+    },
+    4: {
+        title: "Guard shared state",
+        practical: "Use a lock around shared memory updates so threaded work cannot corrupt balances.",
+        deliverables: ["create a mutex", "wrap withdrawal in the lock", "report final balance safely"],
+        reward: { gold: 75, tokens: 25, exp: 90 }
+    },
+    5: {
+        title: "Profile the hot path",
+        practical: "Turn a slow loop into a clean optimized function before reaching for heavier native bridges.",
+        deliverables: ["accept contiguous numeric input", "sum without side effects", "return deterministic output"],
+        reward: { gold: 85, tokens: 30, exp: 105 }
+    },
+    6: {
+        title: "Ship a safer container",
+        practical: "Pin dependency versions high enough to avoid known vulnerable releases.",
+        deliverables: ["declare requirements", "upgrade requests", "keep the file deployable"],
+        reward: { gold: 90, tokens: 30, exp: 112 }
+    },
+    7: {
+        title: "Build a tiny tokenizer",
+        practical: "Implement the repeated-pair merge idea behind production subword tokenizers.",
+        deliverables: ["split text into tokens", "apply merge rules in order", "return final token sequence"],
+        reward: { gold: 95, tokens: 30, exp: 118 }
+    },
+    8: {
+        title: "Compute attention weights",
+        practical: "Wire the core math inside every transformer block: QK scoring, scaling, softmax, and value mixing.",
+        deliverables: ["transpose keys", "scale scores by sqrt(d_k)", "return output and weights"],
+        reward: { gold: 105, tokens: 35, exp: 125 }
+    },
+    9: {
+        title: "Train one clean step",
+        practical: "Practice normalization and a single gradient update without hiding the math behind a framework.",
+        deliverables: ["normalize activations", "compute prediction error", "update weights with learning rate"],
+        reward: { gold: 115, tokens: 35, exp: 135 }
+    },
+    10: {
+        title: "Blend search signals",
+        practical: "Combine keyword and embedding retrieval into one ranked answer list.",
+        deliverables: ["merge sparse and dense IDs", "apply alpha blend", "sort by final score"],
+        reward: { gold: 120, tokens: 40, exp: 140 }
+    },
+    11: {
+        title: "Bind the API safely",
+        practical: "Configure an internal service to listen only on loopback while keeping port behavior explicit.",
+        deliverables: ["return host 127.0.0.1", "return port 8000", "keep config structured"],
+        reward: { gold: 125, tokens: 40, exp: 145 }
+    },
+    12: {
+        title: "Trace the shortest path",
+        practical: "Generate a Cypher query that finds graph relationships between named nodes.",
+        deliverables: ["match start and end nodes", "use shortestPath", "return the path binding"],
+        reward: { gold: 135, tokens: 45, exp: 150 }
+    },
+    13: {
+        title: "Score generated text",
+        practical: "Implement simple BLEU and ROUGE-L checks to compare generated text against a reference.",
+        deliverables: ["calculate unigram overlap", "apply brevity penalty", "compute LCS-based score"],
+        reward: { gold: 140, tokens: 45, exp: 155 }
+    },
+    14: {
+        title: "Apply a LoRA adapter",
+        practical: "Compute and merge low-rank weight updates used in practical model fine-tuning.",
+        deliverables: ["calculate base projection", "add scaled low-rank delta", "merge adapter weights"],
+        reward: { gold: 150, tokens: 50, exp: 165 }
+    },
+    15: {
+        title: "Filter unsafe IO",
+        practical: "Add basic prompt checks, output redaction, and structured response validation.",
+        deliverables: ["reject unsafe phrases", "redact secrets", "validate required JSON keys"],
+        reward: { gold: 155, tokens: 50, exp: 170 }
+    },
+    16: {
+        title: "Quantize for deployment",
+        practical: "Map float tensors into INT8 values and back using a symmetric scale.",
+        deliverables: ["find max absolute value", "clip to int8 range", "dequantize with scale"],
+        reward: { gold: 165, tokens: 55, exp: 180 }
+    },
+    17: {
+        title: "Export tool schemas",
+        practical: "Turn Python function signatures into JSON contracts an agent can call safely.",
+        deliverables: ["inspect parameters", "mark required arguments", "execute mapped tool calls"],
+        reward: { gold: 170, tokens: 55, exp: 185 }
+    },
+    18: {
+        title: "Bound the agent loop",
+        practical: "Keep a ReAct-style loop useful by limiting steps and detecting repeated lineage.",
+        deliverables: ["run until terminal state", "stop at max_steps", "avoid circular ancestry"],
+        reward: { gold: 180, tokens: 60, exp: 195 }
+    },
+    19: {
+        title: "Declare cluster resources",
+        practical: "Write deployable Kubernetes YAML with resource limits and ingress routing.",
+        deliverables: ["define pod resources", "expose container port", "route ingress to service"],
+        reward: { gold: 190, tokens: 60, exp: 205 }
+    },
+    20: {
+        title: "Assemble the pipeline",
+        practical: "Join OCR, SQL, graph context, and generation into one structured pipeline result.",
+        deliverables: ["return OCR text", "query SQLite safely", "include graph and LLM response"],
+        reward: { gold: 210, tokens: 65, exp: 220 }
+    },
+    21: {
+        title: "Verify the bare-metal bridge",
+        practical: "Check HolyC-shaped code and provide the serial command for a local TempleOS bridge.",
+        deliverables: ["reject Python syntax", "accept HolyC primitives", "return telnet bridge command"],
+        reward: { gold: 250, tokens: 80, exp: 260 }
+    }
+};
+
+function getChapterContract(chapterId) {
+    return CHAPTER_CONTRACTS[chapterId] || null;
+}
+
+function getContractFlag(chapterId) {
+    return `${CONTRACT_PREFIX}${chapterId}`;
+}
+
+function isContractComplete(chapterId) {
+    return player.inventory.includes(getContractFlag(chapterId));
+}
+
+function completeChapterContract(chapterId) {
+    const contract = getChapterContract(chapterId);
+    if (!contract || isContractComplete(chapterId)) return null;
+
+    const reward = contract.reward || {};
+    player.gold += reward.gold || 0;
+    player.tokens += reward.tokens || 0;
+    const levelUps = awardPartyExp(reward.exp || 0);
+    player.inventory.push(getContractFlag(chapterId));
+
+    return {
+        contract,
+        levelUps,
+        text: `Field Contract Complete: ${contract.title}\n+${reward.gold || 0} Gold | +${reward.tokens || 0} Tokens | +${reward.exp || 0} EXP${levelUps.length ? `\n${levelUps.join("\n")}` : ""}`
+    };
+}
 
 // Offline Codex Articles database
 const CODEX_ARTICLES = [
@@ -4818,7 +4996,9 @@ function renderChroniclesQuestTree() {
     
     CHAPTERS.forEach(ch => {
         const isUnlocked = player.unlockedChapters.includes(ch.id);
-        const isCompleted = player.unlockedChapters.includes(ch.id + 1) || (ch.id === 21 && player.unlockedChapters.includes(21));
+        const contract = getChapterContract(ch.id);
+        const contractComplete = isContractComplete(ch.id);
+        const isCompleted = contractComplete || player.unlockedChapters.includes(ch.id + 1) || (ch.id === 21 && player.unlockedChapters.includes(21));
         const isActive = player.currentChapter === ch.id;
         
         const node = document.createElement("div");
@@ -4842,6 +5022,18 @@ function renderChroniclesQuestTree() {
             <div class="quest-node-details">
                 <span class="quest-node-title">${ch.title}</span>
                 <span class="quest-node-desc">${ch.desc}</span>
+                ${contract ? `
+                    <div class="quest-contract">
+                        <div class="quest-contract-header">
+                            <span>${contractComplete ? "Contract Complete" : "Field Contract"}</span>
+                            <span>+${contract.reward.gold}G +${contract.reward.tokens}T +${contract.reward.exp}EXP</span>
+                        </div>
+                        <div class="quest-contract-practical">${contract.practical}</div>
+                        <ul>
+                            ${contract.deliverables.map(deliverable => `<li>${deliverable}</li>`).join("")}
+                        </ul>
+                    </div>
+                ` : ""}
             </div>
             <span class="quest-status-pill ui-panel">${statusText}</span>
         `;
@@ -5066,6 +5258,13 @@ async function runWiringDiagnostics() {
             addDiagnosticIssue(items, "warn", `Chapter ${id} has no Codex article`, `Alt+4 help should include at least one ch${id} tagged article.`);
         }
 
+        const contract = getChapterContract(id);
+        if (!contract) {
+            addDiagnosticIssue(items, "warn", `Chapter ${id} has no field contract`, "Chronicles should explain the practical deliverables and reward.");
+        } else if (!contract.practical || !contract.deliverables || contract.deliverables.length < 2 || !contract.reward) {
+            addDiagnosticIssue(items, "warn", `Chapter ${id} field contract incomplete`, "Contracts need practical context, deliverables, and rewards.");
+        }
+
         const mapId = getMapForChapter(id);
         if (!MAP_ENEMIES[mapId] || MAP_ENEMIES[mapId].length === 0) {
             addDiagnosticIssue(items, "info", `Map ${mapId} has no encounter templates`, `Safe towns can intentionally skip combat, but wild maps should define enemies.`);
@@ -5139,7 +5338,8 @@ async function runWiringDiagnostics() {
         { label: "Portals", value: portalCount },
         { label: "NPC Tiles", value: npcTileCount },
         { label: "Chests", value: chestCount },
-        { label: "Shop NPCs", value: shopActions.length }
+        { label: "Shop NPCs", value: shopActions.length },
+        { label: "Contracts", value: Object.keys(CHAPTER_CONTRACTS).length }
     ];
 
     renderDiagnosticsReport(items, stats);
@@ -5442,6 +5642,7 @@ window.addEventListener("load", () => {
     fetchSaveState();
     loadChapterCode(0);
     searchCodex("");
+    renderChroniclesQuestTree();
     runWiringDiagnostics();
     setInterval(() => {
         if (screenMode !== "dark" && !dialogueActive && !isCombat) drawMap();
