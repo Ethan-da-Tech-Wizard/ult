@@ -13,15 +13,18 @@ let player = {
     tokens: 100,
     activeLead: 'Low-Level Optimizer',
     party: [
-        { name: 'Optimizer', race: 'Silicon Automaton', class: 'Low-Level Optimizer', hp: 120, max_hp: 120, atk: 18, def: 10, spd: 14, luc: 8, tokens: 100 },
-        { name: 'Architect', race: 'Bare-Metal Carbon', class: 'Data Architect', hp: 100, max_hp: 100, atk: 12, def: 14, spd: 10, luc: 10, tokens: 100 },
-        { name: 'Orchestrator', race: 'Compiler Elf', class: 'Agent Orchestrator', hp: 90, max_hp: 90, atk: 10, def: 8, spd: 12, luc: 12, tokens: 100 },
-        { name: 'PromptEng', race: 'Neuron Cyborg', class: 'Prompt Engineer', hp: 80, max_hp: 80, atk: 16, def: 6, spd: 8, luc: 14, tokens: 100 }
+        { name: 'Optimizer', race: 'Silicon Automaton', class: 'Low-Level Optimizer', level: 1, exp: 0, next_exp: 100, hp: 120, max_hp: 120, atk: 18, def: 10, spd: 14, luc: 8, tokens: 100 },
+        { name: 'Architect', race: 'Bare-Metal Carbon', class: 'Data Architect', level: 1, exp: 0, next_exp: 100, hp: 100, max_hp: 100, atk: 12, def: 14, spd: 10, luc: 10, tokens: 100 },
+        { name: 'Orchestrator', race: 'Compiler Elf', class: 'Agent Orchestrator', level: 1, exp: 0, next_exp: 100, hp: 90, max_hp: 90, atk: 10, def: 8, spd: 12, luc: 12, tokens: 100 },
+        { name: 'PromptEng', race: 'Neuron Cyborg', class: 'Prompt Engineer', level: 1, exp: 0, next_exp: 100, hp: 80, max_hp: 80, atk: 16, def: 6, spd: 8, luc: 14, tokens: 100 }
     ],
     inventory: [],
     unlockedChapters: [0],
     currentChapter: 0
 };
+
+const DEFAULT_PARTY_STATS = player.party.map(char => ({ ...char }));
+const BONFIRE_REST_COST = 25;
 
 // Retro 8-bit pixel art character sprites
 const SPRITE_PLAYER = [
@@ -673,7 +676,7 @@ const NPCS = {
             sprite: "🔥",
             dialogue: "A bonfire crackles with deep, dark energy. A coiled sword — helical, twisted like a deadlock — rests in the embers. A carved stone marker reads: 'BONFIRE LIT. SESSIONS PERSISTED. YOU DIED... but your save file remains.' The sword pulses faintly, as if awaiting a worthy compiler.",
             options: [
-                { text: "Rest at bonfire", reply: "You sit. The warmth normalizes your memory frames. Stack unwound. Heap defragmented. The compiler state is checkpointed to disk. You feel... slightly less hollowed out. You are embered." },
+                { text: "Rest at bonfire", action: restPartyAtBonfire },
                 { text: "Examine coiled sword", reply: "The Coiled Threadlock Sword. Its blade twists in a helix pattern — the same pattern as a mutex lock. An inscription reads: 'I was the First Compiler's weapon. I was left here by one who walks between linked fires. Wield me only with --release flags.' You sense great power, and also several memory warnings." },
                 { text: "Read the stone marker", reply: "'Here burned the First Flame of Open Source. A wanderer with a dark soul lit it when the Closed Weights Sovereignty first shuttered the compiler gates. He said: If you can see this message, the fire is still linked. Keep compiling. — Anon, commit #1'" },
                 { text: "Try to pull the sword", reply: "The sword hums. Text materializes in midair: 'Insufficient permissions. Root access required. Have you tried sudo?' You are, perhaps, not yet worthy. Or perhaps you just need to chmod +x your destiny." }
@@ -2638,7 +2641,7 @@ function playBgm(theme) {
         const osc1 = audioCtx.createOscillator();
         const osc2 = audioCtx.createOscillator();
         const gainNode = audioCtx.createGain();
-        
+
         gainNode.gain.setValueAtTime(0.08, audioCtx.currentTime);
         
         if (theme === 'spooky') {
@@ -2709,16 +2712,89 @@ function stopBgm() {
 }
 
 // REST Client calls
+function normalizePartyStats(savedParty = []) {
+    return DEFAULT_PARTY_STATS.map((defaults, index) => {
+        const saved = savedParty[index] || {};
+        const maxHp = Number.isFinite(saved.max_hp) ? saved.max_hp : defaults.max_hp;
+        const level = Number.isFinite(saved.level) ? saved.level : defaults.level;
+        const exp = Number.isFinite(saved.exp) ? saved.exp : defaults.exp;
+        const nextExp = Number.isFinite(saved.next_exp) ? saved.next_exp : Math.round(100 * Math.pow(1.35, level - 1));
+
+        return {
+            ...defaults,
+            ...saved,
+            level,
+            exp,
+            next_exp: nextExp,
+            max_hp: maxHp,
+            hp: Math.min(Number.isFinite(saved.hp) ? saved.hp : maxHp, maxHp)
+        };
+    });
+}
+
+function getNextExpForLevel(level) {
+    return Math.round(100 * Math.pow(1.35, level - 1));
+}
+
+function awardPartyExp(expAmount) {
+    const levelUps = [];
+
+    player.party.forEach(char => {
+        char.exp = (char.exp || 0) + expAmount;
+        char.level = char.level || 1;
+        char.next_exp = char.next_exp || getNextExpForLevel(char.level);
+
+        while (char.exp >= char.next_exp) {
+            char.exp -= char.next_exp;
+            char.level += 1;
+            char.next_exp = getNextExpForLevel(char.level);
+            char.max_hp += 10;
+            char.hp = char.max_hp;
+            char.atk += 2;
+            char.def += 1;
+            if (char.level % 2 === 0) char.spd += 1;
+            levelUps.push(`${char.name} reached Lv ${char.level}`);
+        }
+    });
+
+    return levelUps;
+}
+
+function restPartyAtBonfire() {
+    if (player.gold < BONFIRE_REST_COST) {
+        showDialogue("Bonfire of the First Flame", `The bonfire waits, but the innkeeper's lockbox is stern. Resting costs ${BONFIRE_REST_COST} Gold.`);
+        return;
+    }
+
+    player.gold -= BONFIRE_REST_COST;
+    player.party.forEach(char => {
+        char.hp = char.max_hp;
+    });
+    updateUIHeaders();
+    uploadSaveState();
+    showDialogue("Bonfire of the First Flame", `You rest beside the coiled sword. HP restored for the whole party. ${BONFIRE_REST_COST} Gold paid to keep the fire linked.`);
+}
+
 async function fetchSaveState() {
     try {
         const res = await fetch("http://127.0.0.1:8000/api/save");
         if (res.ok) {
             const data = await res.json();
-            if (data.gold) {
+            if (typeof data.gold === "number") {
                 player.gold = data.gold;
                 player.tokens = data.compute_tokens;
                 player.activeLead = data.active_lead;
                 player.unlockedChapters = data.unlocked_chapters.split(',').map(Number);
+                try {
+                    player.inventory = JSON.parse(data.inventory_json || "[]");
+                } catch (e) {
+                    player.inventory = [];
+                }
+                try {
+                    player.party = normalizePartyStats(JSON.parse(data.stats_json || "[]"));
+                } catch (e) {
+                    player.party = normalizePartyStats();
+                }
                 updateUIHeaders();
                 updateEditorChapterSelect();
                 renderChroniclesQuestTree();
@@ -2758,7 +2834,8 @@ function getMapForChapter(chapterId) {
 }
 
 function updateUIHeaders() {
-    document.getElementById("currency-text").innerText = `Gold: ${player.gold} | Tokens: ${player.tokens}`;
+    const highestLevel = Math.max(...player.party.map(char => char.level || 1));
+    document.getElementById("currency-text").innerText = `Gold: ${player.gold} | Tokens: ${player.tokens} | Lv ${highestLevel}`;
     
     const locationNames = {
         0: "Outpost Zero",
@@ -3231,6 +3308,10 @@ function showDialogue(speaker, text, options = null, isBackOption = false) {
                 btn.innerText = opt.text;
                 btn.onclick = (e) => {
                     e.stopPropagation();
+                    if (typeof opt.action === "function") {
+                        opt.action();
+                        return;
+                    }
                     if (isBackOption) {
                         showDialogue(speaker, opt.reply, opt.backOptions);
                     } else {
@@ -3280,7 +3361,9 @@ function triggerCombat() {
         maxHp: template.maxHp,
         atk: template.atk,
         exp: template.exp,
-        race: template.race
+        race: template.race,
+        ability: template.ability,
+        defeatText: template.defeatText
     };
     
     document.getElementById("combat-overlay").classList.remove("hidden");
@@ -3323,8 +3406,8 @@ function initCombatScreen() {
         const charBar = `<span style="color:${charColor}">${'█'.repeat(charFilled)}${'░'.repeat(12 - charFilled)}</span>`;
         return `
         <div class="combat-char-row">
-            <span><strong>${char.name}</strong> <span style="font-size:0.75em; color:#888;">(${char.race}) ${char.class}</span></span>
-            <span style="font-size:0.8em;">HP: ${char.hp}/${char.max_hp} ${charBar}</span>
+            <span><strong>${char.name}</strong> <span style="font-size:0.75em; color:#888;">Lv ${char.level || 1} (${char.race}) ${char.class}</span></span>
+            <span style="font-size:0.8em;">HP: ${char.hp}/${char.max_hp} ${charBar} EXP: ${char.exp || 0}/${char.next_exp || getNextExpForLevel(char.level || 1)}</span>
         </div>`;
     }).join('');
     
@@ -3508,13 +3591,17 @@ function enemyTurn() {
 
 function winCombat() {
     const log = document.getElementById("combat-log-text");
+    const levelUps = awardPartyExp(currentEnemy.exp);
     
     // Show defeatText if available, else generic message
     const victoryMsg = currentEnemy.defeatText
         ? currentEnemy.defeatText
         : `${currentEnemy.name} is defeated! +${currentEnemy.exp} EXP.`;
+    const levelUpMsg = levelUps.length > 0
+        ? `\n\nLEVEL UP!\n${levelUps.join("\n")}`
+        : "";
     
-    log.innerText = `🏆 VICTORY!\n\n${victoryMsg}`;
+    log.innerText = `🏆 VICTORY!\n\n${victoryMsg}${levelUpMsg}`;
     log.style.fontSize = '0.85em';
     
     player.gold += currentEnemy.exp;
