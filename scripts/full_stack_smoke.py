@@ -90,6 +90,7 @@ def main():
                     "readManuals": ["python-field-manual", "sql-survival-guide"],
                     "readManualPages": ["python-field-manual:0", "sql-survival-guide:0"],
                     "screenMode": "color",
+                    "lastSavedAt": "2026-06-09T00:00:00.000Z",
                 }),
             }
             request_json("/api/save", method="POST", payload=save_payload)
@@ -101,6 +102,7 @@ def main():
             assert "sql-survival-guide" in saved_state.get("readManuals", [])
             assert "python-field-manual:0" in saved_state.get("readManualPages", [])
             assert saved_state.get("screenMode") == "color"
+            assert saved_state.get("lastSavedAt") == "2026-06-09T00:00:00.000Z"
             print("[PASS] save/load persistence")
 
             failures = []
