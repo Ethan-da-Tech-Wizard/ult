@@ -2,8 +2,10 @@
 
 // Game Configuration & State
 const TILE_SIZE = 32;
-const MAP_COLS = 16;
-const MAP_ROWS = 14;
+const VIEW_COLS = 16;
+const VIEW_ROWS = 14;
+const MAP_COLS = 32;
+const MAP_ROWS = 28;
 
 let player = {
     x: 8,
@@ -582,6 +584,85 @@ const MAP_GRIDS = {
         [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]
     ]
 };
+
+function terrainNoise(mapId, x, y) {
+    const raw = Math.sin((x + 1) * 12.9898 + (y + 1) * 78.233 + mapId * 37.719) * 43758.5453;
+    return raw - Math.floor(raw);
+}
+
+function getBiomeFieldTile(mapId, x, y) {
+    const noise = terrainNoise(mapId, x, y);
+    const ridge = (x + y + mapId) % 11 === 0;
+
+    if ([1, 3, 5, 9, 15, 16, 19, 21].includes(mapId) && (noise > 0.84 || ridge)) return 1;
+    if ([4, 8, 10, 11, 14, 17].includes(mapId) && noise > 0.76) return 5;
+    if ([18].includes(mapId) && noise > 0.82) return 1;
+    if ([2, 7, 12, 13, 20].includes(mapId) && noise > 0.9) return 1;
+    return 0;
+}
+
+function carveRoad(grid, points) {
+    points.forEach(([x, y]) => {
+        if (x > 0 && x < MAP_COLS - 1 && y > 0 && y < MAP_ROWS - 1) {
+            if (grid[y][x] !== 6) grid[y][x] = 0;
+        }
+    });
+}
+
+function expandMapGrid(mapId, baseGrid) {
+    const grid = Array.from({ length: MAP_ROWS }, (_, y) =>
+        Array.from({ length: MAP_COLS }, (_, x) => {
+            if (x === 0 || y === 0 || x === MAP_COLS - 1 || y === MAP_ROWS - 1) return 1;
+            return getBiomeFieldTile(mapId, x, y);
+        })
+    );
+
+    baseGrid.forEach((row, y) => {
+        row.forEach((tile, x) => {
+            grid[y][x] = tile;
+        });
+    });
+
+    const roads = [];
+    for (let x = 14; x <= 29; x++) roads.push([x, 11]);
+    for (let y = 6; y <= 24; y++) roads.push([24, y]);
+    for (let x = 7; x <= 28; x++) roads.push([x, 20]);
+    for (let y = 11; y <= 20; y++) roads.push([7, y]);
+    carveRoad(grid, roads);
+
+    const landmarks = [
+        [22, 6, 4],
+        [27, 9, 3],
+        [18, 20, 3],
+        [27, 20, 4]
+    ];
+    landmarks.forEach(([x, y, tile]) => {
+        grid[y][x] = tile;
+        carveRoad(grid, [[x - 1, y], [x + 1, y], [x, y - 1], [x, y + 1]]);
+    });
+
+    if ([4, 8, 10, 11, 14, 17].includes(mapId)) {
+        for (let y = 15; y <= 18; y++) {
+            for (let x = 11; x <= 15; x++) {
+                if (!(x === 12 && y === 16)) grid[y][x] = 5;
+            }
+        }
+        carveRoad(grid, [[12, 16], [13, 16], [14, 16]]);
+    }
+
+    if ([1, 5, 9, 15, 16, 19, 21].includes(mapId)) {
+        [[20, 14], [21, 14], [22, 14], [20, 15], [22, 15], [20, 16], [21, 16], [22, 16]].forEach(([x, y]) => {
+            grid[y][x] = 1;
+        });
+        carveRoad(grid, [[21, 15]]);
+    }
+
+    return grid;
+}
+
+Object.keys(MAP_GRIDS).forEach(mapId => {
+    MAP_GRIDS[mapId] = expandMapGrid(Number(mapId), MAP_GRIDS[mapId]);
+});
 
 // NPCs database structured by chapter ID and coordinate keys
 const NPCS = {
@@ -3468,6 +3549,48 @@ function updateUIHeaders() {
     updateObjectiveTracker();
 }
 
+function getCameraOrigin() {
+    const maxX = Math.max(0, MAP_COLS - VIEW_COLS);
+    const maxY = Math.max(0, MAP_ROWS - VIEW_ROWS);
+    return {
+        x: Math.max(0, Math.min(maxX, player.x - Math.floor(VIEW_COLS / 2))),
+        y: Math.max(0, Math.min(maxY, player.y - Math.floor(VIEW_ROWS / 2)))
+    };
+}
+
+function getTileColor(tile, mapId) {
+    const palettes = {
+        0: { floor: "#10b981", wall: "#4b5563", water: "#2563eb" },
+        1: { floor: "#d97706", wall: "#78350f", water: "#64748b" },
+        2: { floor: "#16a34a", wall: "#365314", water: "#38bdf8" },
+        3: { floor: "#c08457", wall: "#7c2d12", water: "#0ea5e9" },
+        4: { floor: "#4d7c0f", wall: "#3f3f46", water: "#166534" },
+        5: { floor: "#78716c", wall: "#57534e", water: "#0f766e" },
+        6: { floor: "#475569", wall: "#1f2937", water: "#0284c7" },
+        7: { floor: "#15803d", wall: "#14532d", water: "#0e7490" },
+        8: { floor: "#64748b", wall: "#334155", water: "#7dd3fc" },
+        9: { floor: "#7f1d1d", wall: "#450a0a", water: "#f97316" },
+        10: { floor: "#0f766e", wall: "#164e63", water: "#0284c7" },
+        11: { floor: "#0d9488", wall: "#334155", water: "#0369a1" },
+        12: { floor: "#22c55e", wall: "#166534", water: "#0891b2" },
+        13: { floor: "#bae6fd", wall: "#64748b", water: "#38bdf8" },
+        14: { floor: "#4ade80", wall: "#475569", water: "#2563eb" },
+        15: { floor: "#52525b", wall: "#27272a", water: "#1e3a8a" },
+        16: { floor: "#94a3b8", wall: "#475569", water: "#0ea5e9" },
+        17: { floor: "#93c5fd", wall: "#64748b", water: "#38bdf8" },
+        18: { floor: "#3f3f46", wall: "#18181b", water: "#312e81" },
+        19: { floor: "#6b7280", wall: "#374151", water: "#1d4ed8" },
+        20: { floor: "#14b8a6", wall: "#1f2937", water: "#2563eb" },
+        21: { floor: "#64748b", wall: "#111827", water: "#7c3aed" }
+    };
+    const palette = palettes[mapId] || palettes[0];
+    if (tile === 1) return palette.wall;
+    if (tile === 5) return palette.water;
+    if (tile === 6) return "#a855f7";
+    if (tile === 4) return "#eab308";
+    return palette.floor;
+}
+
 // JRPG Overworld Canvas Renderer
 function drawMap() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -3483,22 +3606,21 @@ function drawMap() {
         return;
     }
     
-    const activeGrid = MAP_GRIDS[getMapForChapter(player.currentChapter)] || MAP_GRIDS[0];
+    const mapId = getMapForChapter(player.currentChapter);
+    const activeGrid = MAP_GRIDS[mapId] || MAP_GRIDS[0];
+    const camera = getCameraOrigin();
     
-    for (let r = 0; r < MAP_ROWS; r++) {
-        for (let c = 0; c < MAP_COLS; c++) {
-            const tile = activeGrid[r][c];
+    for (let r = 0; r < VIEW_ROWS; r++) {
+        for (let c = 0; c < VIEW_COLS; c++) {
+            const worldX = camera.x + c;
+            const worldY = camera.y + r;
+            const tile = activeGrid[worldY][worldX];
             
             // Render Tiles based on Color Palette settings
             if (screenMode === 'monochrome') {
                 ctx.fillStyle = (tile === 1) ? "#555555" : "#aaaaaa";
             } else {
-                // Color mode
-                if (tile === 1) ctx.fillStyle = "#4b5563"; // Brick Wall
-                else if (tile === 5) ctx.fillStyle = "#2d5a27"; // Water/Swamp
-                else if (tile === 6) ctx.fillStyle = "#a855f7"; // Warp Portal
-                else if (tile === 4) ctx.fillStyle = "#eab308"; // Relic Altar
-                else ctx.fillStyle = "#10b981"; // Grass floor
+                ctx.fillStyle = getTileColor(tile, mapId);
             }
             
             ctx.fillRect(c * TILE_SIZE, r * TILE_SIZE, TILE_SIZE, TILE_SIZE);
@@ -3522,23 +3644,25 @@ function drawMap() {
     }
     
     // Draw NPCs
-    drawNPCs();
+    drawNPCs(camera);
     
     // Draw Player sprite
+    const playerScreenX = player.x - camera.x;
+    const playerScreenY = player.y - camera.y;
     if (screenMode === 'monochrome') {
         ctx.fillStyle = "#ffffff";
         ctx.font = "20px monospace";
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
-        ctx.fillText("P", player.x * TILE_SIZE + TILE_SIZE / 2, player.y * TILE_SIZE + TILE_SIZE / 2);
+        ctx.fillText("P", playerScreenX * TILE_SIZE + TILE_SIZE / 2, playerScreenY * TILE_SIZE + TILE_SIZE / 2);
     } else {
-        drawPixelSprite(SPRITE_PLAYER, player.x, player.y);
+        drawPixelSprite(SPRITE_PLAYER, playerScreenX, playerScreenY);
     }
     drawMinimap();
     updateInteractPrompt();
 }
 
-function drawNPCs() {
+function drawNPCs(camera = getCameraOrigin()) {
     const activeGrid = MAP_GRIDS[getMapForChapter(player.currentChapter)] || MAP_GRIDS[0];
     const chapterNPCs = NPCS[getMapForChapter(player.currentChapter)] || {};
     const currentMap = getMapForChapter(player.currentChapter);
@@ -3549,13 +3673,16 @@ function drawNPCs() {
                 const key = `${c},${r}`;
                 const npc = chapterNPCs[key] || { name: "Pilgrim", sprite: "🧙", dialogue: "The source code will guide us." };
                 const drawPos = getPatrolPosition(currentMap, key);
+                const screenX = drawPos.x - camera.x;
+                const screenY = drawPos.y - camera.y;
+                if (screenX < 0 || screenX >= VIEW_COLS || screenY < 0 || screenY >= VIEW_ROWS) continue;
                 
                 if (screenMode === 'monochrome') {
                     ctx.fillStyle = "#ffffff";
                     ctx.font = "20px monospace";
                     ctx.textAlign = "center";
                     ctx.textBaseline = "middle";
-                    ctx.fillText("N", drawPos.x * TILE_SIZE + TILE_SIZE / 2, drawPos.y * TILE_SIZE + TILE_SIZE / 2);
+                    ctx.fillText("N", screenX * TILE_SIZE + TILE_SIZE / 2, screenY * TILE_SIZE + TILE_SIZE / 2);
                 } else {
                     const spriteMap = {
                         "🐙": SPRITE_GITPUS,
@@ -3623,7 +3750,7 @@ function drawNPCs() {
                         "📖": SPRITE_SHRINE
                     };
                     const spriteArray = spriteMap[npc.sprite] || SPRITE_PLAYER;
-                    drawPixelSprite(spriteArray, drawPos.x, drawPos.y);
+                    drawPixelSprite(spriteArray, screenX, screenY);
                 }
             }
         }
