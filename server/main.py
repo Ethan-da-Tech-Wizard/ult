@@ -87,7 +87,7 @@ def init_db():
                 'Low-Level Optimizer', 
                 '[]', 
                 '{"Optimizer": {"hp": 120, "max_hp": 120, "atk": 18, "def": 10, "spd": 14, "luc": 8}, "Architect": {"hp": 100, "max_hp": 100, "atk": 12, "def": 14, "spd": 10, "luc": 10}, "Orchestrator": {"hp": 90, "max_hp": 90, "atk": 10, "def": 8, "spd": 12, "luc": 12}, "PromptEng": {"hp": 80, "max_hp": 80, "atk": 16, "def": 6, "spd": 8, "luc": 14}}',
-                '{"currentChapter": 0, "x": 8, "y": 7, "openedChests": [], "readManuals": []}'
+                '{"currentChapter": 0, "x": 8, "y": 7, "openedChests": [], "readManuals": [], "readManualPages": [], "screenMode": "dark"}'
             )
         """)
     conn.commit()

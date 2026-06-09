@@ -623,6 +623,47 @@ body {
     line-height: 1.6;
 }
 
+.compile-coach {
+    background: rgba(30, 41, 59, 0.86);
+    border: 1px solid #38bdf8;
+    border-radius: 6px;
+    color: #e0f2fe;
+    font-family: var(--ui-font);
+    font-size: 12px;
+    line-height: 1.5;
+    margin-top: 12px;
+    padding: 12px;
+    white-space: normal;
+}
+
+.compile-coach-title {
+    color: #7dd3fc;
+    font-size: 13px;
+    font-weight: 700;
+    margin-bottom: 6px;
+}
+
+.compile-coach-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 10px;
+}
+
+.compile-help-btn {
+    background: #0f172a;
+    border: 1px solid #7dd3fc;
+    border-radius: 4px;
+    color: #e0f2fe;
+    cursor: pointer;
+    font-family: var(--ui-font);
+    font-size: 12px;
+    padding: 5px 8px;
+}
+
+.compile-help-btn:hover {
+    background: #075985;
+}
+
 /* Terminal Console styling */
 .terminal-shell, .templeos-shell {
     flex: 1;
