@@ -27,6 +27,7 @@ const DEFAULT_PARTY_STATS = player.party.map(char => ({ ...char }));
 const BONFIRE_REST_COST = 25;
 const FINAL_CHAPTER = 21;
 const VERIDICUS_DEFEATED_FLAG = "veridicus_defeated";
+const OPENING_HINTS_FLAG = "opening_hints_seen";
 
 // Retro 8-bit pixel art character sprites
 const SPRITE_PLAYER = [
@@ -2957,6 +2958,56 @@ function inspectFinalAltar() {
     showDialogue("Grand Altar", "The serial bridge is clear. Open Alt+7 TempleOS, transmit the HolyC checksum program, and finish the restoration.");
 }
 
+const CHAPTER_HINTS = {
+    0: [
+        { speaker: "Compiler Smith", text: "Start in Alt+5 Terminal if the screen is dark. The first restore path is about shell basics: inspect, export PATH, and prove stdout works." },
+        { speaker: "Gitpus", text: "When the chapter passes, step onto the purple portal tile. Portals are the chapter gates." }
+    ],
+    1: [
+        { speaker: "Scribe Cassia", text: "Think in matrices. Convert pixels to binary values first, then segment rows cleanly before OCR." }
+    ],
+    2: [
+        { speaker: "Farmer Join", text: "If user input touches SQL, use placeholders. String-built queries are how the Viper gets in." }
+    ],
+    3: [
+        { speaker: "Redis Spirit", text: "Caches need expiry. Store a value and an expiry timestamp, then evict stale entries on read." }
+    ],
+    21: [
+        { speaker: "High Priest", text: "The final altar expects the earlier locks complete. Speak to Veridicus, then use Alt+7 TempleOS for the serial bridge." }
+    ]
+};
+
+function showOpeningHints() {
+    if (hasInventoryFlag(OPENING_HINTS_FLAG)) return;
+
+    addInventoryFlag(OPENING_HINTS_FLAG);
+    uploadSaveState();
+    showDialogue("Outpost Zero Field Manual", "Color is restored. Move with WASD or Arrow keys. Press Enter beside NPCs, chests, altars, and the bonfire. Use Alt+1 for code, Alt+2 for compile logs, Alt+3 for quest progress, Alt+4 for Codex help, and Alt+5 for the terminal. Compile Chapter 0, then step onto the purple portal.");
+    renderSpecialistHints(0, true);
+}
+
+function renderSpecialistHints(chapterId = player.currentChapter, forceOpen = false) {
+    const panel = document.getElementById("specialist-panel");
+    const hintsContainer = document.getElementById("specialist-hints");
+    if (!panel || !hintsContainer) return;
+
+    const hints = CHAPTER_HINTS[chapterId] || [
+        { speaker: "Codex Relay", text: "Read the active chapter docs in Alt+6, then shape your solution until Alt+2 reports Verification PASS." },
+        { speaker: "Quest Log", text: "Alt+3 shows what is unlocked, completed, and still sealed." }
+    ];
+
+    hintsContainer.innerHTML = hints.map(hint => `
+        <div class="hint-bubble">
+            <div class="hint-bubble-speaker">${hint.speaker}</div>
+            <p>${hint.text}</p>
+        </div>
+    `).join("") + `<button class="hint-dismiss-btn" onclick="document.getElementById('specialist-panel').classList.add('hidden')">Hide Hints</button>`;
+
+    if (forceOpen || !panel.classList.contains("hidden")) {
+        panel.classList.remove("hidden");
+    }
+}
+
 async function fetchSaveState() {
     try {
         const res = await fetch("http://127.0.0.1:8000/api/save");
@@ -3949,6 +4000,7 @@ runBtn.addEventListener("click", async () => {
                         screenMode = 'color';
                         drawMap();
                         updateUIHeaders();
+                        showOpeningHints();
                     }, 1500);
                 }
                 uploadSaveState();
@@ -3966,6 +4018,7 @@ runBtn.addEventListener("click", async () => {
         screenMode = 'color';
         document.getElementById("prologue-overlay").classList.add("hidden");
         showDialogue("Offline Simulator", `Chapter ${player.currentChapter} compiled. The portal is open!`);
+        showOpeningHints();
         drawMap();
         updateUIHeaders();
     }
@@ -4080,6 +4133,7 @@ async function loadChapterCode(chapterId) {
             });
             
             updateBrowserTab(chapterId);
+            renderSpecialistHints(chapterId);
             updateUIHeaders();
         }
     } catch (e) {
@@ -4106,6 +4160,7 @@ async function loadChapterCode(chapterId) {
             }
         });
         updateBrowserTab(chapterId);
+        renderSpecialistHints(chapterId);
         updateUIHeaders();
     }
 }
