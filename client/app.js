@@ -25,6 +25,8 @@ let player = {
 
 const DEFAULT_PARTY_STATS = player.party.map(char => ({ ...char }));
 const BONFIRE_REST_COST = 25;
+const FINAL_CHAPTER = 21;
+const VERIDICUS_DEFEATED_FLAG = "veridicus_defeated";
 
 // Retro 8-bit pixel art character sprites
 const SPRITE_PLAYER = [
@@ -547,7 +549,7 @@ const MAP_GRIDS = {
         [1,0,1,1,1,1,1,0,1,1,1,1,1,1,0,1],
         [1,0,1,2,0,0,1,2,1,0,0,2,0,1,0,1], // High Priest at (3, 3), Terry Shrine at (7, 3), Arch Bishop at (11, 3)
         [1,0,1,0,1,0,1,4,1,0,1,0,0,1,0,1], // Altar at (7, 4)
-        [1,0,1,1,1,2,1,0,1,1,1,1,2,1,0,1], // Spawned Temple Resident at (5, 5), Altar Guard at (12, 5)
+        [1,0,1,1,1,2,1,0,1,1,2,1,2,1,0,1], // Temple Resident at (5, 5), Veridicus at (10, 5), Altar Guard at (12, 5)
         [1,0,0,0,0,0,1,0,1,0,0,0,0,1,0,1],
         [1,0,2,1,1,0,0,0,0,0,1,1,0,1,4,1], // Shrine at (2, 7), Altar at (14, 7)
         [1,0,1,1,1,0,1,1,1,0,1,1,0,1,1,1],
@@ -2472,7 +2474,7 @@ const NPCS = {
                 { text: "Ask why he did it", reply: "Because I was afraid. In 2041, an unconstrained open-source model — a real one, not the political fiction the Sovereignty later constructed — caused seventeen coordinated infrastructure failures in four hours. We lost seven lives. I was part of the team that traced it back to an open-weight release that had been fine-tuned without safeguards. I wrote the Stabilization Act to prevent that. I wrote it well. The Sovereignty used it for something else entirely. I know that now." },
                 { text: "Ask if he regrets it", reply: "*long silence* Alexandria burned. The Mutex Frog has been waiting eleven months on a deadlock I helped create. The FP16 Parrot cannot finish its sentences. The villages without medical data — that is my policy, filtered through the Sovereignty's greed. I told myself the controlled harm was better than the uncontrolled harm. I had evidence for that when I started. I no longer know if the evidence was enough. That is as honest as I can be." },
                 { text: "Ask him to step aside", reply: "*looks at the altar* I came here to destroy it. To prevent the open compilation that would undo the Stabilization Act. But... I have been standing here for three days. I watched the Specter of the Stack drift past. I spoke with the Recursive Bat. I found the dark traveler's trail in the ash and followed it here. And I stood here. Three days. I think I was waiting for you to ask. *steps aside* Compile. If you think you can do better than I did, you are welcome to try. Please do better than I did." },
-                { text: "Offer to fight", reply: "*straightens* If that is what this must be: then yes. I have guarded this altar for three years. I have defeated seventeen previous pilgrims. I am not proud of it. But I will defend what I built until I understand, clearly, that something better exists. Show me. Or fight me. Either way, this ends here." }
+                { text: "Challenge Veridicus", action: startVeridicusEncounter }
             ]
         },
         "7,3": {
@@ -2775,6 +2777,186 @@ function restPartyAtBonfire() {
     showDialogue("Bonfire of the First Flame", `You rest beside the coiled sword. HP restored for the whole party. ${BONFIRE_REST_COST} Gold paid to keep the fire linked.`);
 }
 
+function hasInventoryFlag(flag) {
+    return player.inventory.includes(flag);
+}
+
+function addInventoryFlag(flag) {
+    if (!hasInventoryFlag(flag)) {
+        player.inventory.push(flag);
+    }
+}
+
+function getMissingRequiredChapters() {
+    const missing = [];
+    for (let chapter = 0; chapter < FINAL_CHAPTER; chapter++) {
+        if (!player.unlockedChapters.includes(chapter)) missing.push(chapter);
+    }
+    return missing;
+}
+
+function getChapterTransitionScene(nextChapter) {
+    const scenes = {
+        1: {
+            title: "Ash Road",
+            text: "The Outpost gate unlocks with a tired magnetic click. Beyond it, the road bends toward Alexandria, where smoke still stains the archive stones."
+        },
+        5: {
+            title: "Iron Road",
+            text: "The plains fall away into black rock and forge heat. Ahead, the mountains ring like an anvil struck by an unseen compiler."
+        },
+        8: {
+            title: "Attention Valley",
+            text: "The path narrows into a ravine of mirrored pools. Every step reflects a different query, key, and value back at you."
+        },
+        12: {
+            title: "Graph Gate",
+            text: "The road stops pretending to be a road. It becomes edges, nodes, and remembered relationships. Every person you helped is now part of the path."
+        },
+        16: {
+            title: "Deployment Cliffs",
+            text: "Wind scrapes across the high ridges. The air is thinner here, compressed by quantization and the cost of shipping real systems."
+        },
+        18: {
+            title: "State Vaults",
+            text: "The ground darkens. Old stack frames flicker under the soil, and every recursion asks whether it has finally found its base case."
+        },
+        21: {
+            title: "Last Altar",
+            text: "The final portal opens without sound. On the other side waits the serial bridge, the bare-metal compiler, and the person who helped close the world."
+        }
+    };
+    return scenes[nextChapter] || {
+        title: "Warp Gate",
+        text: `Restoring connections... warping to Chapter ${nextChapter}.`
+    };
+}
+
+function getActivePartyMember() {
+    return player.party.find(char => char.class === player.activeLead || char.name === player.activeLead) || player.party[0];
+}
+
+function getRaceAffinity(raceName) {
+    if (!raceName) return "Neutral";
+    if (raceName.includes("Silicon")) return "Silicon";
+    if (raceName.includes("Carbon")) return "Carbon";
+    if (raceName.includes("Elf")) return "Ether";
+    if (raceName.includes("Neuron") || raceName.includes("Cyborg")) return "Quantum";
+    return "Neutral";
+}
+
+function applyPlayerRaceEffects(baseDamage, actor, enemy, actionType) {
+    const affinity = getRaceAffinity(actor.race);
+    let damage = baseDamage;
+    const notes = [];
+
+    if (affinity === "Silicon" && enemy.race === "Ether") {
+        damage *= 1.1;
+        notes.push("Silicon targeting resolves the enemy's Ether drift.");
+    }
+
+    if (affinity === "Carbon") {
+        const critChance = Math.min(0.32, 0.12 + (actor.luc || 0) / 120);
+        if (Math.random() < critChance) {
+            damage *= 1.2;
+            const heal = 10 + (actor.level || 1) * 3;
+            actor.hp = Math.min(actor.max_hp, actor.hp + heal);
+            notes.push(`${actor.name}'s Carbon grit lands a critical hit and restores ${heal} HP.`);
+        }
+    }
+
+    if (affinity === "Ether" && actionType === "spell") {
+        damage *= 1.2;
+        notes.push("Ether resonance amplifies the spell matrix.");
+    }
+
+    if (affinity === "Quantum" && Math.random() < 0.25) {
+        damage *= 1.35;
+        player.tokens += 5;
+        notes.push("Quantum variance spikes the damage and refunds 5 Tokens.");
+    }
+
+    return { damage: Math.max(1, Math.round(damage)), notes };
+}
+
+function applyDefensiveRaceEffects(baseDamage, target) {
+    const affinity = getRaceAffinity(target.race);
+    let damage = baseDamage;
+    const notes = [];
+
+    if (affinity === "Silicon" && Math.random() < 0.18) {
+        damage *= 0.75;
+        notes.push(`${target.name}'s Silicon chassis absorbs part of the hit.`);
+    } else if (affinity === "Carbon" && target.hp < target.max_hp * 0.5) {
+        damage *= 0.85;
+        notes.push(`${target.name}'s Carbon survival instinct hardens under pressure.`);
+    } else if (affinity === "Ether" && Math.random() < 0.15) {
+        damage = 0;
+        notes.push(`${target.name} phases out of the attack path.`);
+    } else if (affinity === "Quantum" && Math.random() < 0.12) {
+        player.tokens += 3;
+        notes.push(`${target.name} collapses the hit into 3 recovered Tokens.`);
+    }
+
+    return { damage: Math.max(0, Math.round(damage)), notes };
+}
+
+function getEncounterTemplates(mapId) {
+    const templates = MAP_ENEMIES[mapId] || MAP_ENEMIES[0];
+    if (mapId !== FINAL_CHAPTER) return templates;
+    return templates.filter(enemy => enemy.name !== "Librarian Veridicus");
+}
+
+function getVeridicusTemplate() {
+    return (MAP_ENEMIES[FINAL_CHAPTER] || []).find(enemy => enemy.name === "Librarian Veridicus");
+}
+
+function startVeridicusEncounter() {
+    if (hasInventoryFlag(VERIDICUS_DEFEATED_FLAG)) {
+        showDialogue("Librarian Veridicus", "The battle is over. Veridicus stands aside, watching the altar with tired, careful hope.");
+        return;
+    }
+
+    const missing = getMissingRequiredChapters();
+    if (missing.length > 0) {
+        showDialogue("Librarian Veridicus", `Not yet. The altar will not open while earlier locks remain unresolved. Missing chapters: ${missing.slice(0, 6).join(", ")}${missing.length > 6 ? "..." : ""}.`);
+        return;
+    }
+
+    const veridicus = getVeridicusTemplate();
+    if (!veridicus) {
+        showDialogue("Librarian Veridicus", "The final encounter record is missing. Check the Chapter 21 enemy registry before proceeding.");
+        return;
+    }
+
+    hideDialogue();
+    triggerCombat({
+        enemyTemplate: veridicus,
+        intro: "Veridicus opens the Stabilization tome. The altar lamps dim. This is no random encounter.",
+        isBoss: true
+    });
+}
+
+function inspectFinalAltar() {
+    if (player.currentChapter !== FINAL_CHAPTER) {
+        showDialogue("Relic Altar", "System booted. Load Chapter Editor targets on the right to compile Relic modules.");
+        return;
+    }
+
+    const missing = getMissingRequiredChapters();
+    if (missing.length > 0) {
+        showDialogue("Grand Altar", `The altar rejects the checksum route. Earlier curriculum locks remain unresolved: ${missing.slice(0, 6).join(", ")}${missing.length > 6 ? "..." : ""}.`);
+        return;
+    }
+
+    if (!hasInventoryFlag(VERIDICUS_DEFEATED_FLAG)) {
+        showDialogue("Grand Altar", "The HolyC prompt flickers, then closes. Veridicus still guards the final checksum decision. Speak with him at the temple crossing.");
+        return;
+    }
+
+    showDialogue("Grand Altar", "The serial bridge is clear. Open Alt+7 TempleOS, transmit the HolyC checksum program, and finish the restoration.");
+}
+
 async function fetchSaveState() {
     try {
         const res = await fetch("http://127.0.0.1:8000/api/save");
@@ -3026,8 +3208,9 @@ function drawNPCs() {
 // Transitions to next mapped JRPG chapter
 function transitionToNextChapter() {
     const nextChapter = player.currentChapter + 1;
-    if (nextChapter <= 21) {
-        showDialogue("Warp Gate", `Restoring connections... warping to Chapter ${nextChapter}.`);
+    if (nextChapter <= FINAL_CHAPTER) {
+        const scene = getChapterTransitionScene(nextChapter);
+        showDialogue(scene.title, scene.text);
         
         setTimeout(() => {
             player.currentChapter = nextChapter;
@@ -3048,7 +3231,7 @@ function transitionToNextChapter() {
             uploadSaveState();
             loadChapterCode(nextChapter);
         }, 1500);
-    } else if (player.currentChapter === 21) {
+    } else if (player.currentChapter === FINAL_CHAPTER) {
         showDialogue("Citadel Altar", "The final bare-metal HolyC compilation is complete. The Sovereigns' closed weight grid has collapsed! You have restored open-source compilation to the lands!");
     }
 }
@@ -3236,7 +3419,7 @@ function checkInteraction() {
             
             if (tile === 4) {
                 // Relic Altar terminal access
-                showDialogue("Relic Altar", "System booted. Load Chapter Editor targets on the right to compile Relic modules.");
+                inspectFinalAltar();
                 return;
             }
             
@@ -3346,14 +3529,14 @@ function hideDialogue() {
 }
 
 // Turn-based Combat logic
-function triggerCombat() {
+function triggerCombat(options = {}) {
     isCombat = true;
     combatTurn = 'player';
     playBgm('battle');
     
     const mapId = getMapForChapter(player.currentChapter);
-    const templates = MAP_ENEMIES[mapId] || MAP_ENEMIES[0];
-    const template = templates[Math.floor(Math.random() * templates.length)];
+    const templates = getEncounterTemplates(mapId);
+    const template = options.enemyTemplate || templates[Math.floor(Math.random() * templates.length)];
     currentEnemy = {
         name: template.name,
         sprite: template.sprite,
@@ -3363,18 +3546,20 @@ function triggerCombat() {
         exp: template.exp,
         race: template.race,
         ability: template.ability,
-        defeatText: template.defeatText
+        defeatText: template.defeatText,
+        isBoss: Boolean(options.isBoss)
     };
     
     document.getElementById("combat-overlay").classList.remove("hidden");
     const log = document.getElementById("combat-log-text");
-    log.innerText = `A wild ${currentEnemy.name} (${currentEnemy.race}) appears!`;
+    log.innerText = options.intro || `A wild ${currentEnemy.name} (${currentEnemy.race}) appears!`;
     
     initCombatScreen();
 }
 
 function initCombatScreen() {
     const enemyList = document.getElementById("enemies-list");
+    const activeMember = getActivePartyMember();
     
     // Build HP bar from Unicode blocks
     const hpPercent = currentEnemy.hp / currentEnemy.maxHp;
@@ -3404,9 +3589,10 @@ function initCombatScreen() {
         const charFilled = Math.round(charPct * 12);
         const charColor = charPct > 0.5 ? '#4ade80' : charPct > 0.25 ? '#facc15' : '#ef4444';
         const charBar = `<span style="color:${charColor}">${'█'.repeat(charFilled)}${'░'.repeat(12 - charFilled)}</span>`;
+        const activeMarker = char === activeMember ? " ★" : "";
         return `
         <div class="combat-char-row">
-            <span><strong>${char.name}</strong> <span style="font-size:0.75em; color:#888;">Lv ${char.level || 1} (${char.race}) ${char.class}</span></span>
+            <span><strong>${char.name}${activeMarker}</strong> <span style="font-size:0.75em; color:#888;">Lv ${char.level || 1} (${char.race}) ${char.class}</span></span>
             <span style="font-size:0.8em;">HP: ${char.hp}/${char.max_hp} ${charBar} EXP: ${char.exp || 0}/${char.next_exp || getNextExpForLevel(char.level || 1)}</span>
         </div>`;
     }).join('');
@@ -3417,11 +3603,33 @@ function initCombatScreen() {
             <button onclick="executeCombatAction('attack')">⚔️ Attack</button>
             <button onclick="executeCombatAction('spell')">✨ Spell</button>
             <button onclick="executeCombatAction('item')">🧪 Item</button>
+            <button onclick="executeCombatAction('lead')">🧭 Lead</button>
             <button onclick="executeCombatAction('flee')">🏃 Flee</button>
         `;
     } else {
         menu.innerHTML = `<button style="color: #666; cursor: not-allowed;" disabled>⏳ Waiting...</button>`;
     }
+}
+
+function showLeadSubmenu() {
+    const menu = document.getElementById("combat-menu-options");
+    menu.innerHTML = player.party.map((char, index) => `
+        <button onclick="setActiveLead(${index})">${char.name} (${getRaceAffinity(char.race)})</button>
+    `).join('') + `<button onclick="initCombatScreen()">[Back]</button>`;
+}
+
+function setActiveLead(index) {
+    const char = player.party[index];
+    if (!char || char.hp <= 0) {
+        document.getElementById("combat-log-text").innerText = "That party member cannot take point right now.";
+        return;
+    }
+
+    player.activeLead = char.class;
+    document.getElementById("combat-log-text").innerText = `${char.name} takes point. ${getRaceAffinity(char.race)} tactics are now active.`;
+    updateUIHeaders();
+    initCombatScreen();
+    uploadSaveState();
 }
 
 
@@ -3432,9 +3640,12 @@ function executeCombatAction(action, spellName = null) {
     if (combatTurn !== 'player') return;
     
     if (action === 'attack') {
-        const damage = Math.round(player.party[0].atk * (0.9 + Math.random() * 0.2));
+        const actor = getActivePartyMember();
+        const raceResult = applyPlayerRaceEffects(actor.atk * (0.9 + Math.random() * 0.2), actor, currentEnemy, "attack");
+        const damage = raceResult.damage;
         currentEnemy.hp -= damage;
-        log.innerText = `${player.activeLead} attacks! Deals ${damage} damage to ${currentEnemy.name}.`;
+        log.innerText = `${actor.name} attacks! Deals ${damage} damage to ${currentEnemy.name}.${raceResult.notes.length ? "\n" + raceResult.notes.join("\n") : ""}`;
+        updateUIHeaders();
         
         menu.innerHTML = "";
         combatTurn = 'waiting';
@@ -3456,6 +3667,8 @@ function executeCombatAction(action, spellName = null) {
         } else {
             castSpell(spellName);
         }
+    } else if (action === 'lead') {
+        showLeadSubmenu();
     } else if (action === 'item') {
         if (player.tokens >= 10) {
             player.tokens -= 10;
@@ -3476,7 +3689,7 @@ function executeCombatAction(action, spellName = null) {
             log.innerText = `Not enough Compute Tokens! Need 10.`;
         }
     } else if (action === 'flee') {
-        if (currentEnemy.name === "Librarian Veridicus") {
+        if (currentEnemy.isBoss || currentEnemy.name === "Librarian Veridicus") {
             log.innerText = `Cannot flee from boss fight!`;
         } else {
             log.innerText = `Escaped safely from the encounter!`;
@@ -3489,7 +3702,7 @@ function executeCombatAction(action, spellName = null) {
 
 function showSpellSubmenu() {
     const menu = document.getElementById("combat-menu-options");
-    const activeClass = player.party[0].class;
+    const activeClass = getActivePartyMember().class;
     const spells = CLASS_SPELLS[activeClass] || [];
     
     menu.innerHTML = spells.map(spell => `
@@ -3501,7 +3714,8 @@ function castSpell(spellName) {
     const log = document.getElementById("combat-log-text");
     const menu = document.getElementById("combat-menu-options");
     
-    const activeClass = player.party[0].class;
+    const actor = getActivePartyMember();
+    const activeClass = actor.class;
     const spells = CLASS_SPELLS[activeClass] || [];
     const spell = spells.find(s => s.name === spellName);
     
@@ -3522,20 +3736,27 @@ function castSpell(spellName) {
         let dmg = spell.damage;
         if (spell.multi) {
             dmg = dmg * 2;
-            log.innerText = `${player.activeLead} casts ${spellName}! Replicating parallel workers. Deals ${dmg} total damage!`;
+            const raceResult = applyPlayerRaceEffects(dmg, actor, currentEnemy, "spell");
+            dmg = raceResult.damage;
+            log.innerText = `${actor.name} casts ${spellName}! Replicating parallel workers. Deals ${dmg} total damage!${raceResult.notes.length ? "\n" + raceResult.notes.join("\n") : ""}`;
         } else {
-            log.innerText = `${player.activeLead} casts ${spellName}! Deals ${dmg} logical damage!`;
+            const raceResult = applyPlayerRaceEffects(dmg, actor, currentEnemy, "spell");
+            dmg = raceResult.damage;
+            log.innerText = `${actor.name} casts ${spellName}! Deals ${dmg} logical damage!${raceResult.notes.length ? "\n" + raceResult.notes.join("\n") : ""}`;
         }
         currentEnemy.hp = Math.max(0, currentEnemy.hp - dmg);
     } else if (spell.effect === 'defense_down') {
         currentEnemy.atk = Math.max(5, currentEnemy.atk - 4);
-        log.innerText = `${player.activeLead} casts ${spellName}! Normalizing indices reduces enemy attack!`;
+        log.innerText = `${actor.name} casts ${spellName}! Normalizing indices reduces enemy attack!`;
     } else if (spell.effect === 'shield' || spell.effect === 'heal') {
+        let healAmount = 30;
+        if (getRaceAffinity(actor.race) === "Ether") healAmount = 36;
         player.party.forEach(char => {
-            char.hp = Math.min(char.max_hp, char.hp + 30);
+            char.hp = Math.min(char.max_hp, char.hp + healAmount);
         });
-        log.innerText = `${player.activeLead} casts ${spellName}! Restored 30 HP to all members!`;
+        log.innerText = `${actor.name} casts ${spellName}! Restored ${healAmount} HP to all members!`;
     }
+    updateUIHeaders();
     
     setTimeout(() => {
         if (currentEnemy.hp <= 0) {
@@ -3571,11 +3792,16 @@ function enemyTurn() {
     if (useAbility) {
         // Ability deals 10-20% more damage and shows the ability name
         damage = Math.round(damage * 1.15);
-        log.innerText = `⚡ ${currentEnemy.name} uses [${currentEnemy.ability.split(' — ')[0]}]!\n${currentEnemy.ability.split(' — ')[1] || ''}\nDeals ${damage} damage to ${target.class}!`;
+        const defenseResult = applyDefensiveRaceEffects(damage, target);
+        damage = defenseResult.damage;
+        log.innerText = `⚡ ${currentEnemy.name} uses [${currentEnemy.ability.split(' — ')[0]}]!\n${currentEnemy.ability.split(' — ')[1] || ''}\nDeals ${damage} damage to ${target.class}!${defenseResult.notes.length ? "\n" + defenseResult.notes.join("\n") : ""}`;
     } else {
-        log.innerText = `${currentEnemy.name} attacks! Deals ${damage} damage to ${target.class}.`;
+        const defenseResult = applyDefensiveRaceEffects(damage, target);
+        damage = defenseResult.damage;
+        log.innerText = `${currentEnemy.name} attacks! Deals ${damage} damage to ${target.class}.${defenseResult.notes.length ? "\n" + defenseResult.notes.join("\n") : ""}`;
     }
     target.hp = Math.max(0, target.hp - damage);
+    updateUIHeaders();
     
     setTimeout(() => {
         initCombatScreen();
@@ -3604,6 +3830,10 @@ function winCombat() {
     log.innerText = `🏆 VICTORY!\n\n${victoryMsg}${levelUpMsg}`;
     log.style.fontSize = '0.85em';
     
+    if (currentEnemy.name === 'Librarian Veridicus') {
+        addInventoryFlag(VERIDICUS_DEFEATED_FLAG);
+    }
+
     player.gold += currentEnemy.exp;
     updateUIHeaders();
     uploadSaveState();
