@@ -447,6 +447,23 @@ body {
     margin-bottom: 4px;
 }
 
+.hint-dismiss-btn {
+    width: 100%;
+    margin-top: 4px;
+    padding: 6px;
+    background: transparent;
+    border: 1px solid var(--border-color);
+    color: var(--text-color);
+    font-family: var(--ui-font);
+    font-size: 11px;
+    cursor: pointer;
+}
+
+.hint-dismiss-btn:hover {
+    background-color: var(--accent-color);
+    color: #fff;
+}
+
 /* Console logs styling */
 .console-actions {
     background-color: rgba(0, 0, 0, 0.1);
@@ -813,4 +830,3 @@ body {
     color: var(--bg-primary);
     border-color: var(--accent-color);
 }
-
