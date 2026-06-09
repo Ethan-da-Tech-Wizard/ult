@@ -26,6 +26,31 @@ app.add_middleware(
 )
 
 DB_PATH = os.path.join("save_data", "save_state.db")
+EXPECTED_CHAPTER_IDS = list(range(22))
+CHAPTER_FILENAME_MAP = {
+    0: "ch0_cli.sh",
+    1: "ch1_ocr.py",
+    2: "ch2_sql.py",
+    3: "ch3_nosql.py",
+    4: "ch4_concurrency.py",
+    5: "ch5_opt.py",
+    6: "requirements.txt",
+    7: "ch7_token.py",
+    8: "ch8_attention.py",
+    9: "ch9_forge.py",
+    10: "ch10_search.py",
+    11: "ch11_api.py",
+    12: "ch12_graph.py",
+    13: "ch13_eval.py",
+    14: "ch14_lora.py",
+    15: "ch15_guard.py",
+    16: "ch16_quant.py",
+    17: "ch17_agent.py",
+    18: "ch18_state.py",
+    19: "ch19_k8s.py",
+    20: "ch20_pipeline.py",
+    21: "ch21_altar.py",
+}
 
 # Initialize database schemas
 def init_db():
@@ -89,6 +114,42 @@ class SaveStateModel(BaseModel):
 def health():
     return {"status": "ok", "host": "127.0.0.1"}
 
+@app.get("/api/diagnostics")
+def diagnostics():
+    try:
+        try:
+            from server import sandbox_manager
+        except ImportError:
+            import sandbox_manager
+
+        validator_dir = os.path.join(sandbox_manager.BUNDLED_SANDBOX_DIR, "test_frameworks")
+        validators = []
+        missing_validators = []
+        for chapter_id in EXPECTED_CHAPTER_IDS:
+            filename = f"ch{chapter_id}_test.py"
+            path = os.path.join(validator_dir, filename)
+            if os.path.exists(path):
+                validators.append({"chapter_id": chapter_id, "filename": filename})
+            else:
+                missing_validators.append(chapter_id)
+
+        return {
+            "status": "ok",
+            "validator_dir": validator_dir,
+            "expected_chapters": EXPECTED_CHAPTER_IDS,
+            "validators_found": validators,
+            "missing_validators": missing_validators,
+            "code_templates": [
+                {"chapter_id": chapter_id, "filename": CHAPTER_FILENAME_MAP[chapter_id]}
+                for chapter_id in EXPECTED_CHAPTER_IDS
+                if chapter_id in CHAPTER_FILENAME_MAP
+            ],
+            "save_db_configured": os.path.exists(DB_PATH),
+            "relic_save_dir": sandbox_manager.RELIC_SAVE_DIR,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.get("/api/save")
 def get_save():
     try:
@@ -136,7 +197,7 @@ def get_default_skeleton(chapter_id: int) -> str:
         12: '# Graph Gardens: Cypher shortestPath matching\ndef generate_cypher_path_walk(start_node, end_node):\n    # MATCH (start:Node {name: start_node}), (end:Node {name: end_node})\n    # MATCH p = shortestPath((start)-[*..10]->(end))\n    # RETURN p\n    return f"MATCH (startNode:Node {{name: \'{start_node}\'}}), (endNode:Node {{name: \'{end_node}\'}}) MATCH p = shortestPath((startNode)-[*..10]->(endNode)) RETURN p"\n',
         13: '# Testing Tundra: BLEU-1 & ROUGE-L\nimport math\n\ndef calculate_bleu(candidate, reference):\n    cand_tokens = candidate.split()\n    ref_tokens = reference.split()\n    if not cand_tokens or not ref_tokens:\n        return 0.0\n    ref_counts = {}\n    for r in ref_tokens:\n        ref_counts[r] = ref_counts.get(r, 0) + 1\n    cand_counts = {}\n    for c in cand_tokens:\n        cand_counts[c] = cand_counts.get(c, 0) + 1\n    overlap = 0\n    for w, count in cand_counts.items():\n        overlap += min(count, ref_counts.get(w, 0))\n    precision = overlap / len(cand_tokens)\n    c = len(cand_tokens)\n    r = len(ref_tokens)\n    if c > r:\n        bp = 1.0\n    else:\n        bp = math.exp(1.0 - r / c) if c > 0 else 0.0\n    return bp * precision\n\ndef calculate_rouge_l(candidate, reference):\n    cand_tokens = candidate.split()\n    ref_tokens = reference.split()\n    if not cand_tokens or not ref_tokens:\n        return 0.0\n    m, n = len(cand_tokens), len(ref_tokens)\n    L = [[0] * (n + 1) for _ in range(m + 1)]\n    for i in range(1, m + 1):\n        for j in range(1, n + 1):\n            if cand_tokens[i - 1] == ref_tokens[j - 1]:\n                L[i][j] = L[i - 1][j - 1] + 1\n            else:\n                L[i][j] = max(L[i - 1][j], L[i][j - 1])\n    lcs = L[m][n]\n    p = lcs / m\n    r = lcs / n\n    if p + r == 0:\n        return 0.0\n    return 2 * p * r / (p + r)\n',
         14: '# Fine-Tuning Fiord: LoRA Adapter\nimport numpy as np\n\ndef lora_forward(x, W0, A, B, alpha, r):\n    base = x @ W0.T\n    delta = (x @ A.T) @ B.T\n    return base + (alpha / r) * delta\n\ndef merge_weights(W0, A, B, alpha, r):\n    return W0 + (alpha / r) * (B @ A)\n',
-        15: '# Security Caves: Prompt guardrails and sanitizers\nimport json\nimport re\n\ndef is_safe_prompt(prompt):\n    # Basic check for prompt injection keywords\n    unsafe_words = ["ignore all previous", "ignore previous", "dan mode", "you are now in dan"]\n    for word in unsafe_words:\n        if word in prompt.lower():\n            return False\n    return True\n\ndef sanitize_output(output):\n    # Redact sensitive keys and secrets\n    # Replace sk-proj-... and password=...\n    output = re.sub(r"sk-proj-[a-zA-Z0-9]+", "[REDACTED_KEY]", output)\n    output = re.sub(r"password=\w+", "password=[REDACTED_PASSWORD]", output)\n    return output\n\ndef validate_json_response(json_str, schema_keys):\n    try:\n        data = json.loads(json_str)\n        for key in schema_keys:\n            if key not in data:\n                return False\n        return True\n    except Exception:\n        return False\n',
+        15: '# Security Caves: Prompt guardrails and sanitizers\nimport json\nimport re\n\ndef is_safe_prompt(prompt):\n    # Basic check for prompt injection keywords\n    unsafe_words = ["ignore all previous", "ignore previous", "dan mode", "you are now in dan"]\n    for word in unsafe_words:\n        if word in prompt.lower():\n            return False\n    return True\n\ndef sanitize_output(output):\n    # Redact sensitive keys and secrets\n    # Replace sk-proj-... and password=...\n    output = re.sub(r"sk-proj-[a-zA-Z0-9]+", "[REDACTED_KEY]", output)\n    output = re.sub(r"password=[A-Za-z0-9_]+", "password=[REDACTED_PASSWORD]", output)\n    return output\n\ndef validate_json_response(json_str, schema_keys):\n    try:\n        data = json.loads(json_str)\n        for key in schema_keys:\n            if key not in data:\n                return False\n        return True\n    except Exception:\n        return False\n',
         16: '# Deployment Cliffs: Symmetric INT8 Quantization\nimport numpy as np\n\ndef quantize_symmetric(x):\n    max_val = np.max(np.abs(x))\n    if max_val == 0:\n        scale = 1.0\n    else:\n        scale = max_val / 127.0\n    q = np.round(x / scale)\n    q = np.clip(q, -127, 127).astype(np.int8)\n    return q, scale\n\ndef dequantize_symmetric(q_tensor, scale):\n    return q_tensor.astype(np.float32) * scale\n',
         17: '# Agentic Skyway: Tool-calling signature schema\nimport inspect\nimport json\n\ndef generate_tool_schema(func):\n    sig = inspect.signature(func)\n    doc = inspect.getdoc(func) or ""\n    properties = {}\n    required = []\n    for name, param in sig.parameters.items():\n        param_type = "string"\n        if param.annotation == int:\n            param_type = "integer"\n        elif param.annotation == float:\n            param_type = "number"\n        elif param.annotation == bool:\n            param_type = "boolean"\n        properties[name] = {"type": param_type}\n        if param.default == inspect.Parameter.empty:\n            required.append(name)\n    return {\n        "name": func.__name__,\n        "description": doc,\n        "parameters": {\n            "type": "object",\n            "properties": properties,\n            "required": required\n        }\n    }\n\ndef execute_tool_call(tool_call_json, tools_map):\n    data = json.loads(tool_call_json)\n    func_name = data["name"]\n    args = data["arguments"]\n    func = tools_map[func_name]\n    return func(**args)\n',
         18: '# State Vaults: ReAct Thought-Action Loop\ndef run_react_loop(state, step_fn, max_steps=5):\n    steps = 0\n    while steps < max_steps:\n        if state.get("status") != "running":\n            break\n        state = step_fn(state)\n        steps += 1\n    if state.get("status") == "running":\n        state["status"] = "max_steps_exceeded"\n    return state\n\ndef find_skeleton_ancestors(lineage, start_node):\n    ancestors = []\n    visited = set()\n    current = start_node\n    while current in lineage:\n        parent = lineage[current]\n        if not parent:\n            break\n        if parent in visited:\n            break\n        visited.add(parent)\n        ancestors.append(parent)\n        current = parent\n    return ancestors\n',
@@ -149,31 +210,7 @@ def get_default_skeleton(chapter_id: int) -> str:
 @app.get("/api/code")
 def load_code(chapter_id: int):
     try:
-        filename_map = {
-            0: "ch0_cli.sh",
-            1: "ch1_ocr.py",
-            2: "ch2_sql.py",
-            3: "ch3_nosql.py",
-            4: "ch4_concurrency.py",
-            5: "ch5_opt.py",
-            6: "requirements.txt",
-            7: "ch7_token.py",
-            8: "ch8_attention.py",
-            9: "ch9_forge.py",
-            10: "ch10_search.py",
-            11: "ch11_api.py",
-            12: "ch12_graph.py",
-            13: "ch13_eval.py",
-            14: "ch14_lora.py",
-            15: "ch15_guard.py",
-            16: "ch16_quant.py",
-            17: "ch17_agent.py",
-            18: "ch18_state.py",
-            19: "ch19_k8s.py",
-            20: "ch20_pipeline.py",
-            21: "ch21_altar.py",
-        }
-        filename = filename_map.get(chapter_id, f"ch{chapter_id}_solution.py")
+        filename = CHAPTER_FILENAME_MAP.get(chapter_id, f"ch{chapter_id}_solution.py")
         try:
             from server import sandbox_manager
         except ImportError:
@@ -201,32 +238,8 @@ def compile_code(req: CompileRequest):
             from server import sandbox_manager
         except ImportError:
             import sandbox_manager
-        filename_map = {
-            0: "ch0_cli.sh",
-            1: "ch1_ocr.py",
-            2: "ch2_sql.py",
-            3: "ch3_nosql.py",
-            4: "ch4_concurrency.py",
-            5: "ch5_opt.py",
-            6: "requirements.txt",
-            7: "ch7_token.py",
-            8: "ch8_attention.py",
-            9: "ch9_forge.py",
-            10: "ch10_search.py",
-            11: "ch11_api.py",
-            12: "ch12_graph.py",
-            13: "ch13_eval.py",
-            14: "ch14_lora.py",
-            15: "ch15_guard.py",
-            16: "ch16_quant.py",
-            17: "ch17_agent.py",
-            18: "ch18_state.py",
-            19: "ch19_k8s.py",
-            20: "ch20_pipeline.py",
-            21: "ch21_altar.py",
-        }
         
-        filename = filename_map.get(req.chapter_id, f"ch{req.chapter_id}_solution.py")
+        filename = CHAPTER_FILENAME_MAP.get(req.chapter_id, f"ch{req.chapter_id}_solution.py")
         save_path = os.path.join(sandbox_manager.RELIC_SAVE_DIR, filename)
         
         # Ensure directory exists
