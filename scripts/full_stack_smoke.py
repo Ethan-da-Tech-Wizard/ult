@@ -88,6 +88,8 @@ def main():
                     "y": 8,
                     "openedChests": ["2:10,4"],
                     "readManuals": ["python-field-manual", "sql-survival-guide"],
+                    "readManualPages": ["python-field-manual:0", "sql-survival-guide:0"],
+                    "screenMode": "color",
                 }),
             }
             request_json("/api/save", method="POST", payload=save_payload)
@@ -97,6 +99,8 @@ def main():
             assert saved_state.get("currentChapter") == 2
             assert "2:10,4" in saved_state.get("openedChests", [])
             assert "sql-survival-guide" in saved_state.get("readManuals", [])
+            assert "python-field-manual:0" in saved_state.get("readManualPages", [])
+            assert saved_state.get("screenMode") == "color"
             print("[PASS] save/load persistence")
 
             failures = []

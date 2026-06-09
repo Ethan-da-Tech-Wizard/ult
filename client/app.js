@@ -24,7 +24,8 @@ let player = {
     unlockedChapters: [0],
     currentChapter: 0,
     openedChests: [],
-    readManuals: []
+    readManuals: [],
+    readManualPages: []
 };
 
 const DEFAULT_PARTY_STATS = player.party.map(char => ({ ...char }));
@@ -32,6 +33,9 @@ const BONFIRE_REST_COST = 25;
 const FINAL_CHAPTER = 21;
 const VERIDICUS_DEFEATED_FLAG = "veridicus_defeated";
 const OPENING_HINTS_FLAG = "opening_hints_seen";
+const TUTORIAL_LIBRARY_UNLOCKED_FLAG = "tutorial_library_unlocked";
+const TUTORIAL_SMITH_TALKED_FLAG = "tutorial_compiler_smith_talked";
+const TUTORIAL_FIRST_PORTAL_FLAG = "tutorial_first_portal_reward_seen";
 const ITEM_PREFIX = "item:";
 const CONTRACT_PREFIX = "contract:";
 
@@ -3106,11 +3110,25 @@ function showAutosaveIndicator(text = "Saved") {
     autosaveTimer = setTimeout(() => indicator.classList.add("hidden"), 1800);
 }
 
+function isChapterGateOpen(chapterId) {
+    return isContractComplete(chapterId) || player.unlockedChapters.includes(chapterId + 1);
+}
+
+function getChapter0TutorialObjective() {
+    if (screenMode === "dark") return "Objective: use Alt+5 Terminal, then compile Chapter 0 to restore color.";
+    if (!isManualPageRead("python-field-manual", 0)) return "Objective: read Python Field Manual page 1 in Alt+9 Library.";
+    if (!hasInventoryFlag(TUTORIAL_SMITH_TALKED_FLAG)) return "Objective: talk to Compiler Smith near the north forge.";
+    if (!isContractComplete(0)) return "Objective: run Chapter 0 from Alt+1 Editor with Compile & Run.";
+    if (!hasInventoryFlag(TUTORIAL_FIRST_PORTAL_FLAG)) return "Objective: the portal is open. Step onto the purple tile.";
+    return "Objective: enter the purple portal to reach Alexandria Library.";
+}
+
 function getCurrentObjective() {
+    if (player.currentChapter === 0) return getChapter0TutorialObjective();
     if (screenMode === "dark") return "Objective: use Alt+5 Terminal to restore the environment.";
-    if (player.currentChapter === 0 && !player.unlockedChapters.includes(0)) return "Objective: compile Chapter 0 to restore Outpost Zero.";
     if (!player.unlockedChapters.includes(player.currentChapter)) return `Objective: solve and compile Chapter ${player.currentChapter}.`;
-    if (player.currentChapter < FINAL_CHAPTER) return "Objective: step onto the purple portal to continue.";
+    if (!isContractComplete(player.currentChapter)) return `Objective: run Chapter ${player.currentChapter} and pass the validator.`;
+    if (player.currentChapter < FINAL_CHAPTER) return "Objective: step onto the open purple portal to continue.";
     if (getMissingRequiredChapters().length > 0) return "Objective: complete every earlier chapter lock.";
     if (!hasInventoryFlag(VERIDICUS_DEFEATED_FLAG)) return "Objective: challenge Veridicus at the temple crossing.";
     return "Objective: use Alt+7 TempleOS and finish the HolyC checksum.";
@@ -3166,7 +3184,10 @@ function getAdjacentInteraction() {
         const tile = activeGrid[pos.y][pos.x];
         if (tile === 3) return { type: "chest", label: "Open chest", pos };
         if (tile === 4) return { type: "altar", label: "Use altar", pos };
-        if (tile === 6) return { type: "portal", label: "Enter portal", pos };
+        if (tile === 6) {
+            const label = isChapterGateOpen(player.currentChapter) ? "Enter open portal" : "Portal sealed";
+            return { type: "portal", label, pos };
+        }
     }
     return null;
 }
@@ -3249,6 +3270,23 @@ function markChestOpened(mapId, x, y) {
     if (!player.openedChests.includes(key)) {
         player.openedChests.push(key);
     }
+}
+
+function getManualPageKey(bookId, pageIndex) {
+    return `${bookId}:${pageIndex}`;
+}
+
+function isManualPageRead(bookId, pageIndex) {
+    return player.readManualPages.includes(getManualPageKey(bookId, pageIndex));
+}
+
+function markManualPageRead(bookId, pageIndex) {
+    const key = getManualPageKey(bookId, pageIndex);
+    if (!player.readManualPages.includes(key)) {
+        player.readManualPages.push(key);
+        return true;
+    }
+    return false;
 }
 
 function getMissingRequiredChapters() {
@@ -3444,9 +3482,12 @@ function showOpeningHints() {
     if (hasInventoryFlag(OPENING_HINTS_FLAG)) return;
 
     addInventoryFlag(OPENING_HINTS_FLAG);
+    addInventoryFlag(TUTORIAL_LIBRARY_UNLOCKED_FLAG);
     uploadSaveState();
-    showDialogue("Outpost Zero Field Manual", "Color is restored. Move with WASD or Arrow keys. Press Enter beside NPCs, chests, altars, and the bonfire. Press I for inventory. Use Alt+1 for code, Alt+2 for compile logs, Alt+3 for quest progress, Alt+4 for Codex help, Alt+5 for the terminal, and Alt+9 for the Library. Compile Chapter 0, then step onto the purple portal.");
+    showAutosaveIndicator("Library Unlocked");
+    showDialogue("Outpost Zero Field Manual", "Color is restored, and the purple gate is lit. The Python Field Manual is now open in Alt+9 Library. Read page 1, then speak with Compiler Smith near the forge. He will point you back to Alt+1 Editor whenever you need the workbench.");
     renderSpecialistHints(0, true);
+    updateObjectiveTracker();
 }
 
 function renderSpecialistHints(chapterId = player.currentChapter, forceOpen = false) {
@@ -3498,9 +3539,23 @@ async function fetchSaveState() {
                     player.y = Number.isFinite(savedState.y) ? savedState.y : player.y;
                     player.openedChests = Array.isArray(savedState.openedChests) ? savedState.openedChests : [];
                     player.readManuals = Array.isArray(savedState.readManuals) ? savedState.readManuals : [];
+                    player.readManualPages = Array.isArray(savedState.readManualPages) ? savedState.readManualPages : [];
+                    if (["dark", "monochrome", "color"].includes(savedState.screenMode)) {
+                        screenMode = savedState.screenMode;
+                    } else if (isContractComplete(0) || player.currentChapter > 0) {
+                        screenMode = "color";
+                    }
                 } catch (e) {
                     player.openedChests = [];
                     player.readManuals = [];
+                    player.readManualPages = [];
+                    if (isContractComplete(0) || player.currentChapter > 0) {
+                        screenMode = "color";
+                    }
+                }
+                if (screenMode !== "dark") {
+                    const prologueOverlay = document.getElementById("prologue-overlay");
+                    if (prologueOverlay) prologueOverlay.classList.add("hidden");
                 }
                 updateUIHeaders();
                 updateEditorChapterSelect();
@@ -3528,7 +3583,9 @@ async function uploadSaveState() {
             x: player.x,
             y: player.y,
             openedChests: player.openedChests,
-            readManuals: player.readManuals
+            readManuals: player.readManuals,
+            readManualPages: player.readManualPages,
+            screenMode
         })
     };
     try {
@@ -3798,11 +3855,23 @@ function drawNPCs(camera = getCameraOrigin()) {
 function transitionToNextChapter() {
     const nextChapter = player.currentChapter + 1;
     if (nextChapter <= FINAL_CHAPTER) {
+        if (!isChapterGateOpen(player.currentChapter)) {
+            showDialogue("Sealed Relic Gate", "The portal hums, but the lock is still closed. Pass the active chapter validator first, then the gate will open.");
+            return;
+        }
         const scene = getChapterTransitionScene(nextChapter);
         showDialogue(scene.title, scene.text);
         
         setTimeout(() => {
+            const leavingChapter = player.currentChapter;
             player.currentChapter = nextChapter;
+            if (!player.unlockedChapters.includes(nextChapter)) {
+                player.unlockedChapters.push(nextChapter);
+            }
+            if (leavingChapter === 0 && !hasInventoryFlag(TUTORIAL_FIRST_PORTAL_FLAG)) {
+                addInventoryFlag(TUTORIAL_FIRST_PORTAL_FLAG);
+                showAutosaveIndicator("Route Unlocked");
+            }
             player.x = 1;
             player.y = 7;
             hideDialogue();
@@ -3818,6 +3887,7 @@ function transitionToNextChapter() {
             drawMap();
             updateUIHeaders();
             uploadSaveState();
+            renderChroniclesQuestTree();
             loadChapterCode(nextChapter);
         }, 1500);
     } else if (player.currentChapter === FINAL_CHAPTER) {
@@ -3836,6 +3906,10 @@ function movePlayer(dx, dy) {
     if (newX >= 0 && newX < MAP_COLS && newY >= 0 && newY < MAP_ROWS) {
         const targetTile = activeGrid[newY][newX];
         const npcHit = getNPCAtPosition(newX, newY);
+        if (targetTile === 6 && !isChapterGateOpen(player.currentChapter)) {
+            showDialogue("Sealed Relic Gate", "The purple gate is waiting for a passing validator report. Compile the current chapter successfully, then come back here.");
+            return;
+        }
         if (targetTile !== 1 && targetTile !== 5 && !npcHit) {
             player.x = newX;
             player.y = newY;
@@ -4084,6 +4158,41 @@ const CLASS_SPELLS = {
 let currentEnemy = null;
 let combatTurn = 'player'; // 'player' or 'enemy'
 
+function getContextualNpcDialogue(npc, mapId) {
+    if (mapId === 0 && npc.name === "Compiler Smith" && screenMode === "color") {
+        if (!hasInventoryFlag(TUTORIAL_SMITH_TALKED_FLAG)) {
+            addInventoryFlag(TUTORIAL_SMITH_TALKED_FLAG);
+            showAutosaveIndicator("Objective Updated");
+            uploadSaveState();
+        }
+        updateObjectiveTracker();
+        return {
+            ...npc,
+            dialogue: isContractComplete(0)
+                ? "Aha, the Chapter 0 script passed. Hear that? The portal lock is no longer silent. Step onto the purple tile and let the next lesson find you."
+                : "Good, the color is back. Now use Alt+1 Editor. Chapter 0 is already loaded there: inspect the shell script, keep the PATH export, and press Compile & Run. The right side of the screen is your workbench.",
+            options: [
+                {
+                    text: "Show me the editor",
+                    action: () => {
+                        hideDialogue();
+                        activateWorkspaceTab("editor");
+                        codeEditor.focus();
+                    }
+                },
+                {
+                    text: "What should I read first?",
+                    action: () => {
+                        openLibraryBookAtPage("python-field-manual", 0);
+                    }
+                },
+                ...(npc.options || [])
+            ]
+        };
+    }
+    return npc;
+}
+
 // Trigger Interactions (chests, terminals, NPCs)
 function checkInteraction() {
     if (focusMode === 'code' || screenMode === 'dark' || isInventoryOpen()) return;
@@ -4106,7 +4215,8 @@ function checkInteraction() {
             const npcHit = getNPCAtPosition(pos.x, pos.y);
             if (npcHit) {
                 // NPC Dialog
-                const npc = npcHit.npc || { name: "Pilgrim", dialogue: "The source code will guide us." };
+                const mapId = getMapForChapter(player.currentChapter);
+                const npc = getContextualNpcDialogue(npcHit.npc || { name: "Pilgrim", dialogue: "The source code will guide us." }, mapId);
                 showDialogue(npc.name, npc.dialogue, npc.options);
                 return;
             }
@@ -4114,6 +4224,11 @@ function checkInteraction() {
             if (tile === 4) {
                 // Relic Altar terminal access
                 inspectFinalAltar();
+                return;
+            }
+
+            if (tile === 6) {
+                transitionToNextChapter();
                 return;
             }
             
@@ -4654,6 +4769,7 @@ runBtn.addEventListener("click", async () => {
     const log = document.getElementById("console-log");
     
     log.innerHTML = `[Compiling solution for Chapter ${player.currentChapter}...]\n`;
+    activateWorkspaceTab("console");
     
     // Call backend
     try {
@@ -4680,6 +4796,7 @@ runBtn.addEventListener("click", async () => {
                     log.innerHTML += `\n>>> ${contractReward.text.replace(/\n/g, "\n>>> ")}\n`;
                 }
                 
+                showAutosaveIndicator("Gate Opened");
                 showDialogue("System Prompt", `Chapter ${player.currentChapter} compiled successfully!${contractReward ? ` ${contractReward.text}` : ""} The Relic gate is now open. Step into the warp portal (purple tile) to proceed.`);
                 
                 if (player.currentChapter === 0) {
@@ -4691,6 +4808,7 @@ runBtn.addEventListener("click", async () => {
                         drawMap();
                         updateUIHeaders();
                         showOpeningHints();
+                        renderLibrary();
                     }, 1500);
                 }
                 uploadSaveState();
@@ -4698,7 +4816,7 @@ runBtn.addEventListener("click", async () => {
                 drawMap();
             } else {
                 log.innerHTML += `\n>>> Verification FAIL! Check trace logs.\n`;
-                log.innerHTML += `\n>>> Why this may have failed:\n${formatValidatorHints(player.currentChapter)}\n`;
+                log.innerHTML += renderValidatorFailureCoach(player.currentChapter, data.output);
                 renderSpecialistHints(player.currentChapter, true);
             }
         }
@@ -4714,6 +4832,7 @@ runBtn.addEventListener("click", async () => {
         }
         screenMode = 'color';
         document.getElementById("prologue-overlay").classList.add("hidden");
+        showAutosaveIndicator("Gate Opened");
         showDialogue("Offline Simulator", `Chapter ${player.currentChapter} compiled.${contractReward ? ` ${contractReward.text}` : ""} The portal is open!`);
         showOpeningHints();
         uploadSaveState();
@@ -5092,6 +5211,87 @@ const VALIDATOR_HINTS = {
     21: ["Reject Python def/print syntax.", "Accept HolyC markers such as U0, I64, or Print."]
 };
 
+const VALIDATOR_EXPECTATIONS = {
+    0: {
+        expected: "A shell script that exports or updates PATH and prints visible output.",
+        library: { bookId: "python-field-manual", pageIndex: 0, label: "Python Field Manual p.1" }
+    },
+    1: { expected: "monochrome_filter and threshold_filter return matrices with the expected dimensions and values." },
+    2: {
+        expected: "run_injection_exploit returns a working payload, and get_character_secured uses SQL parameters.",
+        library: { bookId: "sql-survival-guide", pageIndex: 0, label: "SQL Survival Guide p.1" }
+    },
+    5: {
+        expected: "optimized_array_sum returns the exact numeric total for the input array.",
+        library: { bookId: "cpp-interop-grimoire", pageIndex: 0, label: "C++ Interop Grimoire p.1" }
+    },
+    8: {
+        expected: "scaled_dot_product_attention returns both the attention output and normalized weights.",
+        library: { bookId: "transformer-atlas", pageIndex: 0, label: "Transformer Atlas p.1" }
+    },
+    9: {
+        expected: "LayerNorm normalizes along the last axis, and training_step returns updated weights.",
+        library: { bookId: "transformer-atlas", pageIndex: 1, label: "Transformer Atlas p.2" }
+    },
+    21: {
+        expected: "HolyC validation rejects Python syntax and accepts TempleOS-style U0, I64, or Print markers.",
+        library: { bookId: "holyc-temple-notes", pageIndex: 0, label: "HolyC Temple Notes p.1" }
+    }
+};
+
+let validatorHintCursor = {};
+
+function getNextValidatorHint(chapterId) {
+    const hints = VALIDATOR_HINTS[chapterId] || ["Read the field contract in Alt+3.", "Open Alt+9 Library for examples tied to this chapter."];
+    const index = validatorHintCursor[chapterId] || 0;
+    validatorHintCursor[chapterId] = (index + 1) % hints.length;
+    return { text: hints[index], index: index + 1, total: hints.length };
+}
+
+function summarizeValidatorFailure(chapterId, output) {
+    const expectation = VALIDATOR_EXPECTATIONS[chapterId] || {
+        expected: "The submitted code should satisfy the active chapter validator contract."
+    };
+    const text = output || "";
+    const errorLine = text.split("\n").find(line => line.trim().startsWith("Error:"));
+    const defineMatch = text.match(/must define ([^.]+?) functions?/i);
+    const quotedNames = defineMatch ? Array.from(defineMatch[1].matchAll(/'([^']+)'/g)).map(match => match[1]) : [];
+    const gotExpectedMatch = text.match(/Got:?\s*([\s\S]*?)(?:,|\n)\s*expected:?\s*([\s\S]*?)(?:\n|$)/i)
+        || text.match(/Got\s+([\s\S]*?),\s*expected\s+([\s\S]*?)(?:\n|$)/i);
+
+    let problem = errorLine ? errorLine.replace(/^Error:\s*/i, "") : "The validator found a mismatch in this chapter solution.";
+    if (quotedNames.length > 0) {
+        problem = `Missing required function(s): ${quotedNames.join(", ")}.`;
+    }
+
+    return {
+        problem,
+        expected: expectation.expected,
+        got: gotExpectedMatch ? gotExpectedMatch[1].trim() : "",
+        expectedFromOutput: gotExpectedMatch ? gotExpectedMatch[2].trim() : "",
+        library: expectation.library
+    };
+}
+
+function renderValidatorFailureCoach(chapterId, output) {
+    const summary = summarizeValidatorFailure(chapterId, output);
+    const hint = getNextValidatorHint(chapterId);
+    const expectedText = summary.expectedFromOutput || summary.expected;
+    const libraryButton = summary.library
+        ? `<button class="compile-help-btn" onclick="openLibraryBookAtPage('${summary.library.bookId}', ${summary.library.pageIndex})">Open ${escapeDiagnosticText(summary.library.label)}</button>`
+        : `<button class="compile-help-btn" onclick="activateWorkspaceTab('chronicles')">Open Field Contract</button>`;
+
+    return `
+<div class="compile-coach">
+<div class="compile-coach-title">Learning Coach</div>
+<div><strong>Problem:</strong> ${escapeDiagnosticText(summary.problem)}</div>
+${summary.got ? `<div><strong>Got:</strong> ${escapeDiagnosticText(summary.got)}</div>` : ""}
+<div><strong>Expected:</strong> ${escapeDiagnosticText(expectedText)}</div>
+<div><strong>Next hint (${hint.index}/${hint.total}):</strong> ${escapeDiagnosticText(hint.text)}</div>
+<div class="compile-coach-actions">${libraryButton}</div>
+</div>`;
+}
+
 // Offline Codex Articles database
 const CODEX_ARTICLES = [
     { title: "CLI Navigation & Pipes", tags: ["ch0", "cli", "path", "terminal", "bash"], content: "Use standard Unix commands to navigate and configure paths: \n- 'pwd': Print working directory\n- 'ls': List files\n- 'export PATH=$PATH:/dir': Append directories to the system PATH so programs can be run globally.\n- 'echo': Print strings to stdout." },
@@ -5128,8 +5328,9 @@ function isManualUnlocked(book) {
 function markManualRead(bookId) {
     if (!player.readManuals.includes(bookId)) {
         player.readManuals.push(bookId);
-        uploadSaveState();
+        return true;
     }
+    return false;
 }
 
 function getActiveLibraryBook() {
@@ -5148,12 +5349,13 @@ function renderLibrary(trackRead = false) {
 
     list.innerHTML = LIBRARY_BOOKS.map(book => {
         const unlocked = isManualUnlocked(book);
-        const read = player.readManuals.includes(book.id);
+        const pagesRead = book.pages.filter((_, index) => isManualPageRead(book.id, index)).length;
+        const read = pagesRead === book.pages.length;
         return `
             <button class="library-book-btn ${book.id === activeLibraryBookId ? "active" : ""} ${unlocked ? "" : "locked"}"
                 onclick="${unlocked ? `openLibraryBook('${book.id}')` : ""}">
                 <span class="library-book-title">${escapeDiagnosticText(book.title)}</span>
-                <span class="library-book-meta">${unlocked ? `${book.pages.length} pages${read ? " | read" : ""}` : `Unlocks at Ch ${book.unlockChapter}`}</span>
+                <span class="library-book-meta">${unlocked ? `${pagesRead}/${book.pages.length} pages${read ? " | read" : ""}` : `Unlocks at Ch ${book.unlockChapter}`}</span>
             </button>
         `;
     }).join("");
@@ -5168,7 +5370,12 @@ function renderLibrary(trackRead = false) {
     activeLibraryPage = Math.max(0, Math.min(activeLibraryPage, book.pages.length - 1));
     const page = book.pages[activeLibraryPage];
     if (trackRead) {
-        markManualRead(book.id);
+        const pageWasNew = markManualPageRead(book.id, activeLibraryPage);
+        const bookWasNew = markManualRead(book.id);
+        updateObjectiveTracker();
+        if (pageWasNew || bookWasNew) {
+            uploadSaveState();
+        }
     }
 
     title.innerText = book.title;
@@ -5220,6 +5427,13 @@ function renderLibrary(trackRead = false) {
 function openLibraryBook(bookId) {
     activeLibraryBookId = bookId;
     activeLibraryPage = 0;
+    renderLibrary(true);
+}
+
+function openLibraryBookAtPage(bookId, pageIndex = 0) {
+    activeLibraryBookId = bookId;
+    activeLibraryPage = pageIndex;
+    activateWorkspaceTab("library");
     renderLibrary(true);
 }
 
