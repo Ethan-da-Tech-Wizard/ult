@@ -25,7 +25,8 @@ let player = {
     currentChapter: 0,
     openedChests: [],
     readManuals: [],
-    readManualPages: []
+    readManualPages: [],
+    lastSavedAt: null
 };
 
 const DEFAULT_PARTY_STATS = player.party.map(char => ({ ...char }));
@@ -3110,6 +3111,23 @@ function showAutosaveIndicator(text = "Saved") {
     autosaveTimer = setTimeout(() => indicator.classList.add("hidden"), 1800);
 }
 
+function formatSaveTime(isoValue) {
+    if (!isoValue) return "never";
+    const date = new Date(isoValue);
+    if (Number.isNaN(date.getTime())) return "unknown";
+    return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+function renderSaveStatus() {
+    const text = document.getElementById("save-status-text");
+    if (!text) return;
+    text.innerText = `Save: Ch ${player.currentChapter} | ${player.gold}G ${player.tokens}T | ${formatSaveTime(player.lastSavedAt)}`;
+}
+
+function manualSave() {
+    uploadSaveState("Manual Save");
+}
+
 function isChapterGateOpen(chapterId) {
     return isContractComplete(chapterId) || player.unlockedChapters.includes(chapterId + 1);
 }
@@ -3272,6 +3290,21 @@ function markChestOpened(mapId, x, y) {
     }
 }
 
+function getChestReward(mapId) {
+    const rewards = {
+        0: { gold: 20, tokens: 10, note: "Onboarding Supplies" },
+        1: { gold: 25, tokens: 14, note: "OCR Scroll Fragments" },
+        2: { gold: 30, tokens: 12, note: "Indexed Farm Ledger" },
+        3: { gold: 22, tokens: 18, note: "TTL Cache Shards" },
+        4: { gold: 24, tokens: 20, note: "Mutex Lockpick" },
+        12: { gold: 36, tokens: 22, note: "Cypher Path Map" },
+        16: { gold: 40, tokens: 24, note: "INT8 Scale Notes" },
+        18: { gold: 44, tokens: 20, note: "Recovered Stack Frame" },
+        21: { gold: 60, tokens: 32, note: "HolyC Serial Runes" }
+    };
+    return rewards[mapId] || { gold: 20, tokens: 10, note: "Relic Supplies" };
+}
+
 function getManualPageKey(bookId, pageIndex) {
     return `${bookId}:${pageIndex}`;
 }
@@ -3332,6 +3365,34 @@ function getChapterTransitionScene(nextChapter) {
         title: "Warp Gate",
         text: `Restoring connections... warping to Chapter ${nextChapter}.`
     };
+}
+
+function getLocationNameForChapter(chapterId) {
+    const locationNames = {
+        0: "Outpost Zero",
+        1: "Alexandria Library",
+        2: "Relational Meadows",
+        3: "Document Dunes",
+        4: "Parallel Swamp",
+        5: "Iron Peaks",
+        6: "Docker Relic",
+        7: "Whispering Woods",
+        8: "Valley of Attention",
+        9: "Forge of Zeus",
+        10: "Reranking Reefs",
+        11: "API Archipelago",
+        12: "Graph Gardens",
+        13: "Testing Tundra",
+        14: "Fine-Tuning Fiord",
+        15: "Security Caves",
+        16: "Deployment Cliffs",
+        17: "Agentic Skyway",
+        18: "State Vaults",
+        19: "Kubernetes Citadel",
+        20: "The Grand Assembly",
+        21: "Altar of TempleOS"
+    };
+    return locationNames[getMapForChapter(chapterId)] || "The Sacred Tech";
 }
 
 function getActivePartyMember() {
@@ -3407,6 +3468,29 @@ function getEncounterTemplates(mapId) {
     const templates = MAP_ENEMIES[mapId] || MAP_ENEMIES[0];
     if (mapId !== FINAL_CHAPTER) return templates;
     return templates.filter(enemy => enemy.name !== "Librarian Veridicus");
+}
+
+function getUnlockedCombatAbilities() {
+    return CHAPTER_COMBAT_ABILITIES.filter(ability => isContractComplete(ability.chapter));
+}
+
+function applyEnemyStatus(statusName, turns = 1) {
+    if (!currentEnemy.statuses) currentEnemy.statuses = [];
+    const existing = currentEnemy.statuses.find(status => status.name === statusName);
+    if (existing) {
+        existing.turns = Math.max(existing.turns, turns);
+    } else {
+        currentEnemy.statuses.push({ name: statusName, turns });
+    }
+}
+
+function consumeEnemyStatus(statusName) {
+    if (!currentEnemy.statuses) return false;
+    const existing = currentEnemy.statuses.find(status => status.name === statusName && status.turns > 0);
+    if (!existing) return false;
+    existing.turns -= 1;
+    currentEnemy.statuses = currentEnemy.statuses.filter(status => status.turns > 0);
+    return true;
 }
 
 function getVeridicusTemplate() {
@@ -3540,6 +3624,7 @@ async function fetchSaveState() {
                     player.openedChests = Array.isArray(savedState.openedChests) ? savedState.openedChests : [];
                     player.readManuals = Array.isArray(savedState.readManuals) ? savedState.readManuals : [];
                     player.readManualPages = Array.isArray(savedState.readManualPages) ? savedState.readManualPages : [];
+                    player.lastSavedAt = typeof savedState.lastSavedAt === "string" ? savedState.lastSavedAt : player.lastSavedAt;
                     if (["dark", "monochrome", "color"].includes(savedState.screenMode)) {
                         screenMode = savedState.screenMode;
                     } else if (isContractComplete(0) || player.currentChapter > 0) {
@@ -3562,6 +3647,8 @@ async function fetchSaveState() {
                 renderChroniclesQuestTree();
                 renderLibrary();
                 drawMap();
+                renderSaveStatus();
+                showAutosaveIndicator("Save Loaded");
             }
         }
     } catch (e) {
@@ -3569,8 +3656,9 @@ async function fetchSaveState() {
     }
 }
 
-async function uploadSaveState() {
+async function uploadSaveState(label = "Saved") {
     showAutosaveIndicator("Saving...");
+    const savedAt = new Date().toISOString();
     const payload = {
         gold: player.gold,
         compute_tokens: player.tokens,
@@ -3585,18 +3673,24 @@ async function uploadSaveState() {
             openedChests: player.openedChests,
             readManuals: player.readManuals,
             readManualPages: player.readManualPages,
-            screenMode
+            screenMode,
+            lastSavedAt: savedAt
         })
     };
     try {
-        await fetch("http://127.0.0.1:8000/api/save", {
+        const res = await fetch("http://127.0.0.1:8000/api/save", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(payload)
         });
-        showAutosaveIndicator("Saved");
+        if (res.ok) {
+            player.lastSavedAt = savedAt;
+            showAutosaveIndicator(label);
+            renderSaveStatus();
+        }
     } catch (e) {
         showAutosaveIndicator("Offline");
+        renderSaveStatus();
     }
 }
 
@@ -3614,33 +3708,9 @@ function updateUIHeaders() {
     const highestLevel = Math.max(...player.party.map(char => char.level || 1));
     document.getElementById("currency-text").innerText = `Gold: ${player.gold} | Tokens: ${player.tokens} | Lv ${highestLevel}`;
     
-    const locationNames = {
-        0: "Outpost Zero",
-        1: "Alexandria Library",
-        2: "Relational Meadows",
-        3: "Document Dunes",
-        4: "Parallel Swamp",
-        5: "Iron Peaks",
-        6: "Docker Relic",
-        7: "Whispering Woods",
-        8: "Valley of Attention",
-        9: "Forge of Zeus",
-        10: "Reranking Reefs",
-        11: "API Archipelago",
-        12: "Graph Gardens",
-        13: "Testing Tundra",
-        14: "Fine-Tuning Fiord",
-        15: "Security Caves",
-        16: "Deployment Cliffs",
-        17: "Agentic Skyway",
-        18: "State Vaults",
-        19: "Kubernetes Citadel",
-        20: "The Grand Assembly",
-        21: "Altar of TempleOS"
-    };
-    const currentMap = getMapForChapter(player.currentChapter);
-    document.getElementById("location-text").innerText = `${locationNames[currentMap] || "The Sacred Tech"} (Ch ${player.currentChapter})`;
+    document.getElementById("location-text").innerText = `${getLocationNameForChapter(player.currentChapter)} (Ch ${player.currentChapter})`;
     updateObjectiveTracker();
+    renderSaveStatus();
 }
 
 function getCameraOrigin() {
@@ -3886,7 +3956,7 @@ function transitionToNextChapter() {
             
             drawMap();
             updateUIHeaders();
-            uploadSaveState();
+            uploadSaveState(`Entered ${getLocationNameForChapter(nextChapter)}`);
             renderChroniclesQuestTree();
             loadChapterCode(nextChapter);
         }, 1500);
@@ -4155,6 +4225,30 @@ const CLASS_SPELLS = {
     ]
 };
 
+const MAP_WEAKNESSES = {
+    0: "PATH",
+    1: "OCR",
+    2: "SQL",
+    3: "TTL",
+    4: "Deadlock",
+    5: "Interop",
+    8: "Attention",
+    15: "Guardrail",
+    16: "Quantization",
+    18: "ReAct",
+    19: "Kubernetes",
+    21: "HolyC"
+};
+
+const CHAPTER_COMBAT_ABILITIES = [
+    { chapter: 0, name: "Path Strike", cost: 8, topic: "PATH", damage: 32, status: "Syntax Error", turns: 1, desc: "Hits PATH-weak enemies harder and disrupts their next special." },
+    { chapter: 2, name: "Parameterized Guard", cost: 12, topic: "SQL", damage: 28, status: "Rate Limited", turns: 2, desc: "Weakens injection-type enemies by limiting their output." },
+    { chapter: 4, name: "Deadlock Break", cost: 14, topic: "Deadlock", damage: 34, status: "Deadlock", turns: 1, desc: "Stuns concurrency enemies for one turn." },
+    { chapter: 8, name: "Attention Focus", cost: 18, topic: "Attention", damage: 46, status: "Rate Limited", turns: 1, desc: "Focuses damage against transformer-topic enemies." },
+    { chapter: 15, name: "Sanitize", cost: 16, topic: "Guardrail", damage: 38, status: "Syntax Error", turns: 1, desc: "Disrupts jailbreak and schema enemies." },
+    { chapter: 21, name: "HolyC Checksum", cost: 24, topic: "HolyC", damage: 60, status: "Deadlock", turns: 1, desc: "Bare-metal strike for the final altar." }
+];
+
 let currentEnemy = null;
 let combatTurn = 'player'; // 'player' or 'enemy'
 
@@ -4281,12 +4375,13 @@ function checkInteraction() {
                     title: "Relic Cache",
                     text: "A weathered container. Inside: scattered compile tokens, a reminder that all knowledge accumulates, and a sticky note that says simply: \'Keep going. You\'re doing well. The altar is ahead.\'",
                 };
+                const reward = getChestReward(mapId);
                 markChestOpened(mapId, pos.x, pos.y);
-                player.gold += 20;
-                player.tokens += 10;
+                player.gold += reward.gold;
+                player.tokens += reward.tokens;
                 updateUIHeaders();
                 uploadSaveState();
-                showDialogue(chestData.title, `${chestData.text}\n\nRecovered: +20 Gold and +10 Compute Tokens.`);
+                showDialogue(chestData.title, `${chestData.text}\n\nRecovered: ${reward.note}, +${reward.gold} Gold, and +${reward.tokens} Compute Tokens.`);
                 return;
             }
         }
@@ -4364,8 +4459,10 @@ function triggerCombat(options = {}) {
         atk: template.atk,
         exp: template.exp,
         race: template.race,
+        weakness: options.weakness || template.weakness || MAP_WEAKNESSES[mapId] || "Neutral",
         ability: template.ability,
         defeatText: template.defeatText,
+        statuses: [],
         isBoss: Boolean(options.isBoss)
     };
     
@@ -4390,6 +4487,9 @@ function initCombatScreen() {
     const abilityLine = currentEnemy.ability
         ? `<div style="font-size:0.72em; color: #a78bfa; font-style: italic; margin-top: 2px;">⚡ Ability: ${currentEnemy.ability.split(' — ')[0]}</div>`
         : '';
+    const statusLine = currentEnemy.statuses && currentEnemy.statuses.length
+        ? `<div class="combat-status-line">Status: ${currentEnemy.statuses.map(status => `${status.name}(${status.turns})`).join(", ")}</div>`
+        : '';
     
     enemyList.innerHTML = `
         <div class="combat-char-row" style="flex-direction: column; align-items: flex-start; gap: 2px;">
@@ -4398,7 +4498,9 @@ function initCombatScreen() {
                 <span><strong>${currentEnemy.name}</strong> <span style="font-size:0.8em; color:#888;">(${currentEnemy.race})</span></span>
             </div>
             <div style="font-size:0.8em;">HP: ${currentEnemy.hp}/${currentEnemy.maxHp} ${hpBar}</div>
+            <div class="combat-weakness-line">Weakness: ${currentEnemy.weakness}</div>
             ${abilityLine}
+            ${statusLine}
         </div>
     `;
     
@@ -4421,6 +4523,7 @@ function initCombatScreen() {
         menu.innerHTML = `
             <button onclick="executeCombatAction('attack')">⚔️ Attack</button>
             <button onclick="executeCombatAction('spell')">✨ Spell</button>
+            <button onclick="executeCombatAction('skill')">Skill</button>
             <button onclick="executeCombatAction('item')">🧪 Item</button>
             <button onclick="executeCombatAction('lead')">🧭 Lead</button>
             <button onclick="executeCombatAction('flee')">🏃 Flee</button>
@@ -4486,6 +4589,12 @@ function executeCombatAction(action, spellName = null) {
         } else {
             castSpell(spellName);
         }
+    } else if (action === 'skill') {
+        if (spellName === null) {
+            showChapterAbilitySubmenu();
+        } else {
+            useChapterAbility(spellName);
+        }
     } else if (action === 'lead') {
         showLeadSubmenu();
     } else if (action === 'item') {
@@ -4527,6 +4636,59 @@ function showSpellSubmenu() {
     menu.innerHTML = spells.map(spell => `
         <button onclick="executeCombatAction('spell', '${spell.name}')">${spell.name} (${spell.cost} Tokens)</button>
     `).join('') + `<button onclick="initCombatScreen()">[Back]</button>`;
+}
+
+function showChapterAbilitySubmenu() {
+    const menu = document.getElementById("combat-menu-options");
+    const abilities = getUnlockedCombatAbilities();
+    if (abilities.length === 0) {
+        menu.innerHTML = `<button disabled>No chapter skills unlocked</button><button onclick="initCombatScreen()">[Back]</button>`;
+        return;
+    }
+
+    menu.innerHTML = abilities.map(ability => `
+        <button title="${escapeDiagnosticText(ability.desc)}" onclick="executeCombatAction('skill', '${ability.name}')">${ability.name} (${ability.cost} Tokens)</button>
+    `).join('') + `<button onclick="initCombatScreen()">[Back]</button>`;
+}
+
+function useChapterAbility(abilityName) {
+    const log = document.getElementById("combat-log-text");
+    const menu = document.getElementById("combat-menu-options");
+    const ability = getUnlockedCombatAbilities().find(item => item.name === abilityName);
+    const actor = getActivePartyMember();
+    if (!ability) return;
+
+    if (player.tokens < ability.cost) {
+        log.innerText = `Not enough Compute Tokens to use ${ability.name}!`;
+        return;
+    }
+
+    player.tokens -= ability.cost;
+    let damage = ability.damage + Math.round((actor.level || 1) * 2);
+    const notes = [];
+    if (currentEnemy.weakness === ability.topic) {
+        damage = Math.round(damage * 1.55);
+        notes.push(`Weakness hit: ${currentEnemy.name} is vulnerable to ${ability.topic}.`);
+    }
+    applyEnemyStatus(ability.status, ability.turns);
+    currentEnemy.hp = Math.max(0, currentEnemy.hp - damage);
+    log.innerText = `${actor.name} uses ${ability.name}. Deals ${damage} curriculum damage and inflicts ${ability.status}.${notes.length ? "\n" + notes.join("\n") : ""}`;
+    updateUIHeaders();
+    initCombatScreen();
+
+    menu.innerHTML = "";
+    combatTurn = 'waiting';
+    setTimeout(() => {
+        if (currentEnemy.hp <= 0) {
+            currentEnemy.hp = 0;
+            initCombatScreen();
+            winCombat();
+        } else {
+            initCombatScreen();
+            combatTurn = 'enemy';
+            setTimeout(enemyTurn, 1000);
+        }
+    }, 1200);
 }
 
 function castSpell(spellName) {
@@ -4594,6 +4756,13 @@ function enemyTurn() {
     const log = document.getElementById("combat-log-text");
     
     if (currentEnemy.hp <= 0) return;
+
+    if (consumeEnemyStatus("Deadlock")) {
+        log.innerText = `${currentEnemy.name} is deadlocked and loses the turn.`;
+        combatTurn = 'player';
+        initCombatScreen();
+        return;
+    }
     
     const aliveMembers = player.party.filter(char => char.hp > 0);
     if (aliveMembers.length === 0) {
@@ -4604,9 +4773,13 @@ function enemyTurn() {
     const target = aliveMembers[Math.floor(Math.random() * aliveMembers.length)];
     
     // 30% chance to use special ability, otherwise normal attack
-    const useAbility = currentEnemy.ability && Math.random() < 0.30;
+    const syntaxBlocked = consumeEnemyStatus("Syntax Error");
+    const useAbility = !syntaxBlocked && currentEnemy.ability && Math.random() < 0.30;
     
     let damage = Math.round(currentEnemy.atk * (0.8 + Math.random() * 0.4));
+    if (consumeEnemyStatus("Rate Limited")) {
+        damage = Math.round(damage * 0.7);
+    }
     
     if (useAbility) {
         // Ability deals 10-20% more damage and shows the ability name
@@ -4617,7 +4790,7 @@ function enemyTurn() {
     } else {
         const defenseResult = applyDefensiveRaceEffects(damage, target);
         damage = defenseResult.damage;
-        log.innerText = `${currentEnemy.name} attacks! Deals ${damage} damage to ${target.class}.${defenseResult.notes.length ? "\n" + defenseResult.notes.join("\n") : ""}`;
+        log.innerText = `${currentEnemy.name} attacks! Deals ${damage} damage to ${target.class}.${syntaxBlocked ? "\nSyntax Error blocked its special routine." : ""}${defenseResult.notes.length ? "\n" + defenseResult.notes.join("\n") : ""}`;
     }
     target.hp = Math.max(0, target.hp - damage);
     updateUIHeaders();
@@ -5337,6 +5510,21 @@ function getActiveLibraryBook() {
     return LIBRARY_BOOKS.find(book => book.id === activeLibraryBookId) || LIBRARY_BOOKS[0];
 }
 
+function getLibraryLessonForChapter(chapterId) {
+    for (let book of LIBRARY_BOOKS) {
+        const pageIndex = book.pages.findIndex(page => page.applyChapter === chapterId);
+        if (pageIndex >= 0) {
+            return {
+                bookId: book.id,
+                pageIndex,
+                bookTitle: book.title,
+                pageTitle: book.pages[pageIndex].title
+            };
+        }
+    }
+    return null;
+}
+
 function renderLibrary(trackRead = false) {
     const list = document.getElementById("library-book-list");
     const title = document.getElementById("library-book-title");
@@ -5380,7 +5568,8 @@ function renderLibrary(trackRead = false) {
 
     title.innerText = book.title;
     subtitle.innerText = book.subtitle;
-    pageCount.innerText = `${activeLibraryPage + 1} / ${book.pages.length}`;
+    const pageRead = isManualPageRead(book.id, activeLibraryPage);
+    pageCount.innerText = `${pageRead ? "Read" : "Unread"} | ${activeLibraryPage + 1} / ${book.pages.length}`;
     prevBtn.disabled = activeLibraryPage === 0;
     nextBtn.disabled = activeLibraryPage === book.pages.length - 1;
     prevBtn.onclick = () => {
@@ -5707,11 +5896,27 @@ function updateBrowserTab(chapterId) {
 function renderChroniclesQuestTree() {
     const tree = document.getElementById("quest-tree");
     if (!tree) return;
-    tree.innerHTML = "";
+    const currentLesson = getLibraryLessonForChapter(player.currentChapter);
+    tree.innerHTML = `
+        <div class="quest-focus-card">
+            <div>
+                <strong>Current Objective</strong>
+                <span>${escapeDiagnosticText(getCurrentObjective())}</span>
+                ${currentLesson ? `<small>Suggested reading: ${escapeDiagnosticText(currentLesson.bookTitle)} - ${escapeDiagnosticText(currentLesson.pageTitle)}</small>` : ""}
+            </div>
+            <div class="quest-action-row">
+                ${currentLesson ? `<button onclick="openLibraryBookAtPage('${currentLesson.bookId}', ${currentLesson.pageIndex})">Open Lesson</button>` : ""}
+                <button onclick="activateWorkspaceTab('editor')">Open Editor</button>
+            </div>
+        </div>
+    `;
     
     CHAPTERS.forEach(ch => {
         const isUnlocked = player.unlockedChapters.includes(ch.id);
         const contract = getChapterContract(ch.id);
+        const lesson = getLibraryLessonForChapter(ch.id);
+        const lessonUnlocked = lesson && isManualUnlocked(LIBRARY_BOOKS.find(book => book.id === lesson.bookId));
+        const lessonRead = lesson && isManualPageRead(lesson.bookId, lesson.pageIndex);
         const contractComplete = isContractComplete(ch.id);
         const isCompleted = contractComplete || player.unlockedChapters.includes(ch.id + 1) || (ch.id === 21 && player.unlockedChapters.includes(21));
         const isActive = player.currentChapter === ch.id;
@@ -5747,6 +5952,10 @@ function renderChroniclesQuestTree() {
                         <ul>
                             ${contract.deliverables.map(deliverable => `<li>${deliverable}</li>`).join("")}
                         </ul>
+                        <div class="quest-action-row">
+                            ${lesson ? `<button ${lessonUnlocked ? "" : "disabled"} onclick="event.stopPropagation(); openLibraryBookAtPage('${lesson.bookId}', ${lesson.pageIndex})">${lessonRead ? "Review Lesson" : "Read Lesson"}</button>` : ""}
+                            ${isUnlocked ? `<button onclick="event.stopPropagation(); player.currentChapter = ${ch.id}; loadChapterCode(${ch.id}); activateWorkspaceTab('editor')">Open Chapter</button>` : ""}
+                        </div>
                     </div>
                 ` : ""}
             </div>
@@ -5991,6 +6200,9 @@ async function runWiringDiagnostics() {
         "minimap-canvas",
         "interact-prompt",
         "autosave-indicator",
+        "save-status-panel",
+        "save-status-text",
+        "manual-save-btn",
         "inventory-overlay",
         "run-btn",
         "code-editor",
@@ -6381,6 +6593,11 @@ document.getElementById("palette-selector").addEventListener("change", (e) => {
     }
 });
 
+const manualSaveBtn = document.getElementById("manual-save-btn");
+if (manualSaveBtn) {
+    manualSaveBtn.addEventListener("click", () => manualSave());
+}
+
 // Startup Bootstrap
 window.addEventListener("load", () => {
     drawMap();
@@ -6390,6 +6607,7 @@ window.addEventListener("load", () => {
     searchCodex("");
     renderChroniclesQuestTree();
     renderLibrary();
+    renderSaveStatus();
     runWiringDiagnostics();
     setInterval(() => {
         if (screenMode !== "dark" && !dialogueActive && !isCombat) drawMap();
