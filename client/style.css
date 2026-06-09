@@ -186,6 +186,38 @@ body {
     font-size: 8px;
 }
 
+#save-status-panel {
+    position: absolute;
+    left: 10px;
+    bottom: 10px;
+    z-index: 16;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    max-width: 330px;
+    font-size: 8px;
+}
+
+#save-status-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+#manual-save-btn {
+    background: var(--accent-color);
+    border: 1px solid var(--text-color);
+    color: #fff;
+    cursor: pointer;
+    font-family: var(--retro-font);
+    font-size: 8px;
+    padding: 3px 7px;
+}
+
+#manual-save-btn:hover {
+    box-shadow: 0 0 8px var(--accent-glow);
+}
+
 #inventory-overlay {
     position: absolute;
     top: 92px;
@@ -331,6 +363,17 @@ body {
     align-items: center;
     padding: 10px;
     font-size: 9px;
+}
+
+.combat-weakness-line,
+.combat-status-line {
+    color: #fbbf24;
+    font-size: 0.72em;
+    margin-top: 2px;
+}
+
+.combat-status-line {
+    color: #67e8f9;
 }
 
 /* Character combat entry blocks */
@@ -1250,6 +1293,63 @@ body {
 .quest-node {
     cursor: pointer;
     transition: transform 0.1s ease, border-color 0.2s;
+}
+
+.quest-focus-card {
+    background: rgba(15, 23, 42, 0.78);
+    border: 2px solid #38bdf8;
+    border-radius: 4px;
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 12px;
+    margin-bottom: 14px;
+    padding: 12px;
+}
+
+.quest-focus-card div:first-child {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.quest-focus-card strong {
+    color: #7dd3fc;
+    font-size: 13px;
+}
+
+.quest-focus-card span,
+.quest-focus-card small {
+    color: rgba(255,255,255,0.82);
+    font-size: 11px;
+    line-height: 1.45;
+}
+
+.quest-action-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.quest-action-row button {
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    color: var(--text-color);
+    cursor: pointer;
+    font-family: var(--ui-font);
+    font-size: 11px;
+    padding: 5px 8px;
+}
+
+.quest-action-row button:disabled {
+    cursor: not-allowed;
+    opacity: 0.45;
+}
+
+.quest-action-row button:not(:disabled):hover {
+    background: var(--accent-color);
+    color: #fff;
 }
 
 .quest-node:hover {
