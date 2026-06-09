@@ -2617,6 +2617,108 @@ const NPCS = {
     }
 };
 
+const NPC_WIRING_FILLERS = {
+    5: {
+        "2,7": { name: "Iron Wayside Shrine", sprite: "🏛️", dialogue: "The shrine is warm from forge heat. Etched into the stone: Profile before you optimize, then optimize the part that actually burns.", options: [
+            { text: "Read the ember text", reply: "C++ bridges matter most when Python spends too long in tight loops. Measure first. Compile second." }
+        ] }
+    },
+    6: {
+        "2,7": { name: "Container Shrine", sprite: "🏛️", dialogue: "A blue lamp glows inside the shrine. Its inscription reminds pilgrims that ports, mounts, and dependency audits are part of the same deployment story.", options: [
+            { text: "Inspect the lamp", reply: "If a container works only on one machine, the image is not the artifact yet. Pin the dependency, expose the right port, and audit the packages." }
+        ] }
+    },
+    7: {
+        "2,7": { name: "Tokenizer Shrine", sprite: "🏛️", dialogue: "The shrine murmurs in fragments: sub, word, merge, mask. Every token is smaller than the sentence but larger than the silence.", options: [
+            { text: "Study the fragments", reply: "BPE starts with small symbols and repeatedly merges frequent pairs. Padding masks keep empty tokens from becoming meaning." }
+        ] }
+    },
+    8: {
+        "2,7": { name: "Attention Shrine", sprite: "🏛️", dialogue: "Three mirrored stones face each other: query, key, and value. The shrine waits for you to scale the scores before softmax.", options: [
+            { text: "Align the mirrors", reply: "QK^T finds similarity. Dividing by sqrt(d_k) keeps the scores stable. Softmax turns them into attention weights." }
+        ] },
+        "12,9": { name: "Scale Shepherd", sprite: "🐑", dialogue: "I tend the scaling factor at the edge of the valley. Unscaled dot products grow too loud, and then softmax only hears the biggest shout.", options: [
+            { text: "Ask about scaling", reply: "Use sqrt(d_k). It keeps attention logits from exploding as vector dimensions grow." }
+        ] }
+    },
+    9: {
+        "2,7": { name: "Gradient Shrine", sprite: "🏛️", dialogue: "The shrine hums with backpropagated thunder. Residual paths coil around it so the signal can survive the climb.", options: [
+            { text: "Trace the signal", reply: "LayerNorm stabilizes activations. Residual connections preserve information across deep stacks." }
+        ] }
+    },
+    10: {
+        "2,7": { name: "Retrieval Shrine", sprite: "🏛️", dialogue: "A small index rests beside the shrine. Half of it listens for exact words; half listens for meaning nearby.", options: [
+            { text: "Read the index", reply: "Hybrid ranking blends sparse BM25 scores with dense vector similarity so lexical and semantic signals can cooperate." }
+        ] },
+        "12,9": { name: "Dense Dolphin", sprite: "🐠", dialogue: "I swim through embedding space where distance means almost, maybe, probably. Sparse search catches the exact terms I miss.", options: [
+            { text: "Ask about cosine", reply: "Cosine similarity compares vector direction, which makes it useful when magnitude is less important than semantic angle." }
+        ] }
+    },
+    11: {
+        "2,7": { name: "Loopback Shrine", sprite: "🏛️", dialogue: "The shrine is bound to 127.0.0.1. No outside wind reaches it unless the developer opens the gate on purpose.", options: [
+            { text: "Check the binding", reply: "Local tools should bind to loopback by default. Exposing 0.0.0.0 is a deliberate deployment choice, not a habit." }
+        ] },
+        "12,9": { name: "Env Hermit Crab", sprite: "🦀", dialogue: "I carry a tiny `.env` shell and never commit it. Credentials like quiet places, not public repositories.", options: [
+            { text: "Ask about secrets", reply: "Load secrets from environment files locally, scrub them from logs, and keep sample files separate from real credentials." }
+        ] }
+    },
+    13: {
+        "2,7": { name: "Metric Shrine", sprite: "🏛️", dialogue: "The shrine weighs generated words against reference words. Precision and recall sit on either side, arguing politely.", options: [
+            { text: "Read the measure", reply: "BLEU leans toward n-gram precision. ROUGE-L follows the longest shared subsequence for recall." }
+        ] },
+        "12,9": { name: "Recall Reindeer", sprite: "🦌", dialogue: "I keep track of what the candidate remembered from the reference. Missing important words is a different failure than adding extra ones.", options: [
+            { text: "Ask about ROUGE-L", reply: "ROUGE-L uses the longest common subsequence to reward preserved order without requiring every word to be adjacent." }
+        ] }
+    },
+    14: {
+        "2,7": { name: "Adapter Shrine", sprite: "🏛️", dialogue: "Low-rank matrices are carved into the stone like narrow bridges. They carry learning without moving the whole mountain.", options: [
+            { text: "Study the adapters", reply: "LoRA freezes the base weights and trains small A and B matrices, then merges the delta when deployment needs one set of weights." }
+        ] },
+        "12,9": { name: "Delta Deer", sprite: "🦌", dialogue: "I graze on small parameter changes. The base model stays still; the learned delta does the walking.", options: [
+            { text: "Ask about merging", reply: "The merged weight is W0 plus the scaled low-rank update. Keep the scale alpha/r consistent." }
+        ] }
+    },
+    15: {
+        "2,7": { name: "Guardrail Shrine", sprite: "🏛️", dialogue: "The shrine rejects careless prompts and redacts secrets before they leave the cave. It is less dramatic than a firewall and more useful than a wish.", options: [
+            { text: "Read the schema", reply: "Use input checks, output sanitizers, and JSON schema validation together. One guardrail is a hint; layers are a system." }
+        ] },
+        "12,9": { name: "Output Auditor", sprite: "🛡️", dialogue: "I review what comes out, not only what goes in. A safe prompt can still produce messy output if nobody validates the shape.", options: [
+            { text: "Ask about output checks", reply: "Validate required keys, reject secrets, and make malformed responses fail closed instead of drifting into the UI." }
+        ] }
+    },
+    17: {
+        "2,7": { name: "Schema Shrine", sprite: "🏛️", dialogue: "The shrine turns functions into contracts. Names, arguments, and required fields glow in structured JSON.", options: [
+            { text: "Inspect the contract", reply: "Tool calling works best when every callable has a clear schema and every execution result returns predictable data." }
+        ] },
+        "12,9": { name: "Observation Owl", sprite: "🦉", dialogue: "I watch each tool result come back to the loop. An action without observation is just a guess wearing a badge.", options: [
+            { text: "Ask about loops", reply: "Agent loops need Thought, Action, Observation, and a max-step limit. The limit is what keeps curiosity from becoming recursion." }
+        ] }
+    },
+    19: {
+        "2,7": { name: "Cluster Shrine", sprite: "🏛️", dialogue: "The shrine declares desired state in YAML and waits for the cluster to make reality catch up.", options: [
+            { text: "Read the manifest", reply: "Pods define containers and resources. Services expose them. Ingress routes outside traffic to the right backend." }
+        ] },
+        "12,9": { name: "Replica Ranger", sprite: "🧑", dialogue: "I count replicas until desired and actual match. If one pod falls, the controller schedules another.", options: [
+            { text: "Ask about controllers", reply: "Kubernetes watches state continuously. Declarative config matters because the cluster reconciles toward it." }
+        ] }
+    },
+    20: {
+        "2,7": { name: "Assembly Shrine", sprite: "🏛️", dialogue: "The shrine listens for data moving between OCR, SQLite, graph lookup, and generated text. Integration is the final curriculum before the altar.", options: [
+            { text: "Trace the pipeline", reply: "A wired pipeline passes structured outputs forward, handles failures, and logs enough context to debug each boundary." }
+        ] },
+        "12,9": { name: "LLM Liaison", sprite: "🧑‍💻", dialogue: "I receive context from the database and graph before the model writes. Good generation begins before the prompt reaches the model.", options: [
+            { text: "Ask about context", reply: "Keep retrieved data structured, cite where it came from, and pass only the useful slice to the generation step." }
+        ] }
+    }
+};
+
+Object.entries(NPC_WIRING_FILLERS).forEach(([mapId, records]) => {
+    if (!NPCS[mapId]) NPCS[mapId] = {};
+    Object.entries(records).forEach(([key, npc]) => {
+        if (!NPCS[mapId][key]) NPCS[mapId][key] = npc;
+    });
+});
+
 // HTML Canvas Setup
 const canvas = document.getElementById("jrpg-canvas");
 const ctx = canvas.getContext("2d");
@@ -3644,6 +3746,62 @@ const MAP_ENEMIES = {
           ability: "Global Lock — prevents any party spells for 1 turn (GIL acquired)",
           defeatText: "The GIL Gargantua's Global Interpreter Lock releases! The entire party can now execute simultaneously. The swamp suddenly feels 4x less murky. +105 EXP." }
     ],
+    5: [
+        { name: "Profiler Shade", sprite: "👻", hp: 135, maxHp: 135, atk: 24, exp: 105, race: "Ether",
+          ability: "Hot Path Mark — deals 30 dmg and tags the active lead as the bottleneck",
+          defeatText: "The Profiler Shade collapses into a clean flamegraph. The hottest frame is finally visible. +105 EXP." },
+        { name: "Cache Miss Golem", sprite: "🤖", hp: 150, maxHp: 150, atk: 23, exp: 110, race: "Silicon",
+          ability: "Cold Load — delays party action and deals 28 dmg",
+          defeatText: "The Cache Miss Golem's memory layout becomes contiguous. The Iron Peaks ring with faster access. +110 EXP." }
+    ],
+    6: [
+        { name: "Dangling Container", sprite: "🐳", hp: 145, maxHp: 145, atk: 25, exp: 112, race: "Silicon",
+          ability: "Port Collision — deals 32 dmg and blocks item use for one turn",
+          defeatText: "The Dangling Container exits with code 0. Its ports are mapped, its mounts are clean, and its logs are readable. +112 EXP." },
+        { name: "CVE Lurker", sprite: "👿", hp: 130, maxHp: 130, atk: 28, exp: 118, race: "Ether",
+          ability: "Dependency Spike — deals 34 dmg through an outdated package",
+          defeatText: "The CVE Lurker is patched above the vulnerable version. The image scan passes. +118 EXP." }
+    ],
+    7: [
+        { name: "Merge Fragment", sprite: "🐛", hp: 125, maxHp: 125, atk: 24, exp: 110, race: "Carbon",
+          ability: "Bad Pair Merge — scrambles one party action into subword pieces",
+          defeatText: "The Merge Fragment joins the correct pair and becomes a stable token. +110 EXP." },
+        { name: "Padding Phantom", sprite: "👻", hp: 140, maxHp: 140, atk: 25, exp: 116, race: "Ether",
+          ability: "Mask Leak — deals 30 dmg by attending to padded positions",
+          defeatText: "The Padding Phantom is masked out of attention. The sequence length is honest again. +116 EXP." }
+    ],
+    8: [
+        { name: "Softmax Mirage", sprite: "🔮", hp: 150, maxHp: 150, atk: 27, exp: 122, race: "Quantum",
+          ability: "Peaked Distribution — concentrates damage on the weakest party member",
+          defeatText: "The Softmax Mirage normalizes into a balanced distribution. The valley reflections settle. +122 EXP." },
+        { name: "Projection Warden", sprite: "💂", hp: 155, maxHp: 155, atk: 26, exp: 124, race: "Silicon",
+          ability: "Wrong Matrix — deals 31 dmg with mismatched dimensions",
+          defeatText: "The Projection Warden's matrices align: Q, K, and V all point where they should. +124 EXP." }
+    ],
+    9: [
+        { name: "Gradient Storm", sprite: "🔮", hp: 165, maxHp: 165, atk: 29, exp: 132, race: "Quantum",
+          ability: "Exploding Step — deals 36 dmg and drains 10 tokens",
+          defeatText: "The Gradient Storm is clipped and backpropagated into calm. +132 EXP." },
+        { name: "Residual Breaker", sprite: "👹", hp: 160, maxHp: 160, atk: 30, exp: 134, race: "Silicon",
+          ability: "Skip Sever — reduces party defense for one turn",
+          defeatText: "The Residual Breaker's skip path reconnects. Deep layers can breathe again. +134 EXP." }
+    ],
+    10: [
+        { name: "BM25 Barnacle", sprite: "🐌", hp: 150, maxHp: 150, atk: 28, exp: 130, race: "Carbon",
+          ability: "Keyword Clamp — locks onto repeated terms for 33 dmg",
+          defeatText: "The BM25 Barnacle loosens its grip after a clean sparse score blend. +130 EXP." },
+        { name: "Vector Drift", sprite: "🐠", hp: 155, maxHp: 155, atk: 29, exp: 132, race: "Ether",
+          ability: "Cosine Slip — deals 34 dmg from a near neighbor",
+          defeatText: "The Vector Drift snaps back to the right embedding neighborhood. +132 EXP." }
+    ],
+    11: [
+        { name: "CORS Specter", sprite: "👻", hp: 155, maxHp: 155, atk: 30, exp: 136, race: "Ether",
+          ability: "Preflight Fail — blocks a party action and deals 30 dmg",
+          defeatText: "The CORS Specter accepts the allowed origin and disappears from the response headers. +136 EXP." },
+        { name: "Rate Limit Sentinel", sprite: "💂", hp: 170, maxHp: 170, atk: 29, exp: 140, race: "Silicon",
+          ability: "429 Burst — deals 35 dmg after too many requests",
+          defeatText: "The Rate Limit Sentinel resets its window and lets the loopback request through. +140 EXP." }
+    ],
     12: [
         { name: "Disconnected Vertex Ghost", sprite: "🐰", hp: 145, maxHp: 145, atk: 25, exp: 100, race: "Ether",
           ability: "Isolation Wail — removes one party member from combat for 1 turn (isolated vertex)",
@@ -3654,6 +3812,30 @@ const MAP_ENEMIES = {
         { name: "Adjacency Banshee", sprite: "👻", hp: 150, maxHp: 150, atk: 23, exp: 110, race: "Silicon",
           ability: "Pointer Shriek — deals 30 dmg and clears the party's mana (adjacency list purged)",
           defeatText: "The Adjacency Banshee's pointer chain breaks! Its neighbor references all go null. It dissolves into a clean edge list. The Node Neighbor waves from its house. +110 EXP." }
+    ],
+    13: [
+        { name: "BLEU Wisp", sprite: "👻", hp: 150, maxHp: 150, atk: 29, exp: 138, race: "Ether",
+          ability: "Precision Pinch — deals 32 dmg for missing n-gram overlap",
+          defeatText: "The BLEU Wisp finds its matching unigram and fades into the reference set. +138 EXP." },
+        { name: "ROUGE Rime", sprite: "🔮", hp: 160, maxHp: 160, atk: 28, exp: 140, race: "Quantum",
+          ability: "Recall Frost — slows the active lead with a lost subsequence",
+          defeatText: "The ROUGE Rime thaws after the longest common subsequence is restored. +140 EXP." }
+    ],
+    14: [
+        { name: "Rank Collapse Shade", sprite: "👻", hp: 165, maxHp: 165, atk: 31, exp: 146, race: "Ether",
+          ability: "Low-Rank Crush — deals 36 dmg through a compressed update",
+          defeatText: "The Rank Collapse Shade expands into a valid adapter matrix and settles. +146 EXP." },
+        { name: "Overfit Weaver", sprite: "🧙", hp: 170, maxHp: 170, atk: 30, exp: 148, race: "Carbon",
+          ability: "Memorized Thread — repeats last damage with 20% extra force",
+          defeatText: "The Overfit Weaver regularizes the pattern and releases the training set. +148 EXP." }
+    ],
+    15: [
+        { name: "Jailbreak Echo", sprite: "👻", hp: 170, maxHp: 170, atk: 32, exp: 152, race: "Ether",
+          ability: "Instruction Override — blocks spells for one turn",
+          defeatText: "The Jailbreak Echo is rejected by the prompt guard. The cave grows quieter. +152 EXP." },
+        { name: "Schema Breaker", sprite: "👹", hp: 180, maxHp: 180, atk: 31, exp: 154, race: "Silicon",
+          ability: "Malformed JSON — deals 38 dmg and drains 8 tokens",
+          defeatText: "The Schema Breaker validates against the required keys and disappears into a well-formed object. +154 EXP." }
     ],
     16: [
         { name: "Quantization Troll", sprite: "👿", hp: 160, maxHp: 160, atk: 28, exp: 120, race: "Silicon",
@@ -3666,6 +3848,14 @@ const MAP_ENEMIES = {
           ability: "Token Clip — removes party member's most recently used spell word (vocabulary loss)",
           defeatText: "The INT4 Imp explodes in a shower of 4-bit fragments — sixteen possible values, all of them inadequate. The FP16 Parrot finishes a full sentence for the first time in months. +130 EXP." }
     ],
+    17: [
+        { name: "Tool Call Mimic", sprite: "🤖", hp: 180, maxHp: 180, atk: 32, exp: 158, race: "Silicon",
+          ability: "Bad Arguments — deals 37 dmg with a malformed tool payload",
+          defeatText: "The Tool Call Mimic is parsed into valid arguments and routed to the correct function. +158 EXP." },
+        { name: "Loop Drift", sprite: "🔮", hp: 175, maxHp: 175, atk: 33, exp: 160, race: "Quantum",
+          ability: "Unbounded Step — repeats an action unless interrupted",
+          defeatText: "The Loop Drift hits max_steps and returns a final observation. +160 EXP." }
+    ],
     18: [
         { name: "Stack Overflow Banshee", sprite: "💀", hp: 180, maxHp: 180, atk: 32, exp: 145, race: "Ether",
           ability: "Recursive Wail — deals 20 dmg, then deals 18 dmg next turn automatically (call stack)",
@@ -3676,6 +3866,22 @@ const MAP_ENEMIES = {
         { name: "Infinite Loop Reaper", sprite: "🧛", hp: 195, maxHp: 195, atk: 30, exp: 160, race: "Silicon",
           ability: "While True — Skips its own HP check once, surviving a killing blow at 1 HP",
           defeatText: "The Infinite Loop Reaper's loop FINALLY terminates! A base case emerges from the mist. The Stack Vampire watches from a distance, taking notes. 'So THAT'S how it's done.' +160 EXP." }
+    ],
+    19: [
+        { name: "Evicted Pod", sprite: "🤖", hp: 190, maxHp: 190, atk: 34, exp: 168, race: "Silicon",
+          ability: "OOMKill — deals 40 dmg when memory limits are ignored",
+          defeatText: "The Evicted Pod restarts under sane requests and limits. The cluster returns to desired state. +168 EXP." },
+        { name: "Ingress Phantom", sprite: "👻", hp: 185, maxHp: 185, atk: 35, exp: 170, race: "Ether",
+          ability: "Route Misdirect — drains 12 tokens through the wrong backend",
+          defeatText: "The Ingress Phantom routes `/defense` to the correct service and fades from the manifest. +170 EXP." }
+    ],
+    20: [
+        { name: "Pipeline Breaker", sprite: "👹", hp: 200, maxHp: 200, atk: 36, exp: 176, race: "Silicon",
+          ability: "Format Mismatch — deals 42 dmg at an integration boundary",
+          defeatText: "The Pipeline Breaker emits structured output and the next stage accepts it. +176 EXP." },
+        { name: "Context Drift", sprite: "🔮", hp: 195, maxHp: 195, atk: 37, exp: 178, race: "Quantum",
+          ability: "Lost Provenance — confuses the party and drains 10 tokens",
+          defeatText: "The Context Drift is grounded with database rows, graph facts, and a clean response contract. +178 EXP." }
     ],
     21: [
         { name: "Librarian Veridicus", sprite: "📖", hp: 250, maxHp: 250, atk: 36, exp: 200, race: "Quantum",
@@ -4208,20 +4414,29 @@ function endCombat() {
 const tabButtons = document.querySelectorAll(".tab-btn");
 const tabPanes = document.querySelectorAll(".tab-pane");
 
+function activateWorkspaceTab(tabId) {
+    const btn = document.querySelector(`.tab-btn[data-tab="${tabId}"]`);
+    const pane = document.getElementById(`pane-${tabId}`);
+    if (!btn || !pane) return;
+
+    tabButtons.forEach(b => b.classList.remove("active"));
+    tabPanes.forEach(p => p.classList.remove("active"));
+
+    btn.classList.add("active");
+    pane.classList.add("active");
+
+    if (tabId === "terminal") {
+        initShellWebSocket();
+    } else if (tabId === "templeos") {
+        initTempleOSWebSocket();
+    } else if (tabId === "diagnostics") {
+        runWiringDiagnostics();
+    }
+}
+
 tabButtons.forEach(btn => {
     btn.addEventListener("click", () => {
-        tabButtons.forEach(b => b.classList.remove("active"));
-        tabPanes.forEach(p => p.classList.remove("active"));
-        
-        btn.classList.add("active");
-        const tabId = btn.getAttribute("data-tab");
-        document.getElementById(`pane-${tabId}`).classList.add("active");
-        
-        if (tabId === "terminal") {
-            initShellWebSocket();
-        } else if (tabId === "templeos") {
-            initTempleOSWebSocket();
-        }
+        activateWorkspaceTab(btn.getAttribute("data-tab"));
     });
 });
 
@@ -4230,10 +4445,17 @@ const codeEditor = document.getElementById("code-editor");
 const lineNumbers = document.getElementById("editor-line-numbers");
 const inventoryOverlay = document.getElementById("inventory-overlay");
 const inventoryCloseBtn = document.getElementById("inventory-close-btn");
+const runDiagnosticsBtn = document.getElementById("run-diagnostics-btn");
 
 if (inventoryCloseBtn && inventoryOverlay) {
     inventoryCloseBtn.addEventListener("click", () => {
         inventoryOverlay.classList.add("hidden");
+    });
+}
+
+if (runDiagnosticsBtn) {
+    runDiagnosticsBtn.addEventListener("click", () => {
+        runWiringDiagnostics();
     });
 }
 
@@ -4635,6 +4857,294 @@ function renderChroniclesQuestTree() {
     });
 }
 
+function escapeDiagnosticText(value) {
+    return String(value)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+}
+
+function getTileAt(grid, x, y) {
+    if (!grid || !grid[y] || typeof grid[y][x] === "undefined") return null;
+    return grid[y][x];
+}
+
+function isWalkableForDiagnostics(tile) {
+    return tile !== 1 && tile !== 2 && tile !== 5 && tile !== null;
+}
+
+function hasAdjacentWalkableTile(grid, x, y) {
+    return [
+        { x: x + 1, y },
+        { x: x - 1, y },
+        { x, y: y + 1 },
+        { x, y: y - 1 }
+    ].some(pos => {
+        if (pos.x < 0 || pos.x >= MAP_COLS || pos.y < 0 || pos.y >= MAP_ROWS) return false;
+        return isWalkableForDiagnostics(getTileAt(grid, pos.x, pos.y));
+    });
+}
+
+function findTiles(grid, tileId) {
+    const found = [];
+    if (!grid) return found;
+    for (let y = 0; y < grid.length; y++) {
+        for (let x = 0; x < (grid[y] || []).length; x++) {
+            if (grid[y][x] === tileId) found.push({ x, y });
+        }
+    }
+    return found;
+}
+
+function isReachableFromSpawn(grid, target) {
+    const spawn = { x: 1, y: 7 };
+    if (!grid || !isWalkableForDiagnostics(getTileAt(grid, spawn.x, spawn.y))) return false;
+
+    const queue = [spawn];
+    const seen = new Set([`${spawn.x},${spawn.y}`]);
+    while (queue.length > 0) {
+        const current = queue.shift();
+        if (current.x === target.x && current.y === target.y) return true;
+        [
+            { x: current.x + 1, y: current.y },
+            { x: current.x - 1, y: current.y },
+            { x: current.x, y: current.y + 1 },
+            { x: current.x, y: current.y - 1 }
+        ].forEach(next => {
+            const key = `${next.x},${next.y}`;
+            if (seen.has(key)) return;
+            if (next.x < 0 || next.x >= MAP_COLS || next.y < 0 || next.y >= MAP_ROWS) return;
+            if (!isWalkableForDiagnostics(getTileAt(grid, next.x, next.y))) return;
+            seen.add(key);
+            queue.push(next);
+        });
+    }
+    return false;
+}
+
+function addDiagnosticIssue(items, severity, title, detail) {
+    items.push({ severity, title, detail });
+}
+
+function renderDiagnosticsReport(items, stats) {
+    const summary = document.getElementById("diagnostics-summary");
+    const statsPanel = document.getElementById("diagnostics-stats");
+    const results = document.getElementById("diagnostics-results");
+    if (!summary || !statsPanel || !results) return;
+
+    const counts = items.reduce((acc, item) => {
+        acc[item.severity] = (acc[item.severity] || 0) + 1;
+        return acc;
+    }, {});
+
+    summary.innerText = `${counts.critical || 0} critical, ${counts.warn || 0} warnings, ${counts.info || 0} notes, ${counts.pass || 0} passing checks.`;
+    statsPanel.innerHTML = stats.map(stat => `
+        <div class="diagnostic-stat">
+            <strong>${escapeDiagnosticText(stat.value)}</strong>
+            <span>${escapeDiagnosticText(stat.label)}</span>
+        </div>
+    `).join("");
+
+    const order = { critical: 0, warn: 1, info: 2, pass: 3 };
+    results.innerHTML = [...items]
+        .sort((a, b) => order[a.severity] - order[b.severity])
+        .map(item => `
+            <div class="diagnostic-row ${item.severity}">
+                <div class="diagnostic-badge">${escapeDiagnosticText(item.severity)}</div>
+                <div>
+                    <div class="diagnostic-title">${escapeDiagnosticText(item.title)}</div>
+                    <div class="diagnostic-detail">${escapeDiagnosticText(item.detail)}</div>
+                </div>
+            </div>
+        `).join("");
+}
+
+async function runWiringDiagnostics() {
+    const items = [];
+    const expectedChapters = Array.from({ length: FINAL_CHAPTER + 1 }, (_, index) => index);
+    const mapIds = Object.keys(MAP_GRIDS).map(Number).sort((a, b) => a - b);
+    let portalCount = 0;
+    let npcTileCount = 0;
+    let chestCount = 0;
+
+    expectedChapters.forEach(chapterId => {
+        const mapId = getMapForChapter(chapterId);
+        const grid = MAP_GRIDS[mapId];
+        if (!grid) {
+            addDiagnosticIssue(items, "critical", `Chapter ${chapterId} map missing`, `getMapForChapter(${chapterId}) resolved to map ${mapId}, but no grid exists.`);
+            return;
+        }
+
+        if (grid.length !== MAP_ROWS || grid.some(row => row.length !== MAP_COLS)) {
+            addDiagnosticIssue(items, "critical", `Map ${mapId} has invalid dimensions`, `Expected ${MAP_ROWS} rows by ${MAP_COLS} columns.`);
+        }
+
+        const spawnTile = getTileAt(grid, 1, 7);
+        if (!isWalkableForDiagnostics(spawnTile)) {
+            addDiagnosticIssue(items, "critical", `Chapter ${chapterId} spawn blocked`, `Transition spawn (1,7) lands on tile ${spawnTile}.`);
+        }
+
+        const portals = findTiles(grid, 6);
+        portalCount += portals.length;
+        if (portals.length === 0) {
+            addDiagnosticIssue(items, "critical", `Chapter ${chapterId} has no portal`, `Progression uses purple portal tiles to advance chapters.`);
+        } else {
+            portals.forEach(portal => {
+                if (!isReachableFromSpawn(grid, portal)) {
+                    addDiagnosticIssue(items, "warn", `Map ${mapId} portal may be unreachable`, `Portal at (${portal.x},${portal.y}) is not reachable from transition spawn (1,7).`);
+                }
+            });
+        }
+
+        const chests = findTiles(grid, 3);
+        chestCount += chests.length;
+        chests.forEach(chest => {
+            if (!hasAdjacentWalkableTile(grid, chest.x, chest.y)) {
+                addDiagnosticIssue(items, "warn", `Map ${mapId} chest has no access`, `Chest at (${chest.x},${chest.y}) cannot be opened from an adjacent walkable tile.`);
+            }
+        });
+
+        const npcs = findTiles(grid, 2);
+        npcTileCount += npcs.length;
+        const npcRecords = NPCS[mapId] || {};
+        npcs.forEach(npcTile => {
+            const key = `${npcTile.x},${npcTile.y}`;
+            const record = npcRecords[key];
+            if (!record) {
+                addDiagnosticIssue(items, "warn", `Map ${mapId} NPC uses fallback dialogue`, `Tile ${key} has no NPCS record.`);
+            } else {
+                if (!record.name || !record.dialogue) {
+                    addDiagnosticIssue(items, "warn", `Map ${mapId} NPC record incomplete`, `${key} needs both name and dialogue.`);
+                }
+                if (!hasAdjacentWalkableTile(grid, npcTile.x, npcTile.y)) {
+                    addDiagnosticIssue(items, "warn", `${record.name || key} may be unreachable`, `No adjacent walkable tile near NPC at ${key}.`);
+                }
+            }
+        });
+
+        Object.keys(npcRecords).forEach(key => {
+            const [x, y] = key.split(",").map(Number);
+            if (getTileAt(grid, x, y) !== 2) {
+                addDiagnosticIssue(items, "warn", `Map ${mapId} has orphan NPC record`, `${key} exists in NPCS but is not a tile 2 NPC.`);
+            }
+        });
+    });
+
+    Object.entries(NPC_PATROLS).forEach(([mapIdText, patrols]) => {
+        const mapId = Number(mapIdText);
+        const grid = MAP_GRIDS[mapId];
+        Object.entries(patrols).forEach(([key, patrol]) => {
+            const [fromX, fromY] = key.split(",").map(Number);
+            const [toX, toY] = patrol.to || [];
+            const fromTile = getTileAt(grid, fromX, fromY);
+            const toTile = getTileAt(grid, toX, toY);
+            if (fromTile !== 2) {
+                addDiagnosticIssue(items, "warn", `Map ${mapId} patrol start mismatch`, `${key} should be an NPC tile.`);
+            }
+            if (!Number.isFinite(toX) || !Number.isFinite(toY) || toX < 0 || toX >= MAP_COLS || toY < 0 || toY >= MAP_ROWS) {
+                addDiagnosticIssue(items, "critical", `Map ${mapId} patrol target out of bounds`, `${key} patrol destination is invalid.`);
+            } else if (toTile !== 0) {
+                addDiagnosticIssue(items, "warn", `Map ${mapId} patrol target not open floor`, `${key} moves to (${toX},${toY}), tile ${toTile}.`);
+            }
+        });
+    });
+
+    const chapterIds = CHAPTERS.map(ch => ch.id);
+    const missingChapterDefs = expectedChapters.filter(id => !chapterIds.includes(id));
+    const duplicateChapterDefs = chapterIds.filter((id, index) => chapterIds.indexOf(id) !== index);
+    if (missingChapterDefs.length > 0) {
+        addDiagnosticIssue(items, "critical", "Chapter registry has gaps", `Missing chapter definitions: ${missingChapterDefs.join(", ")}.`);
+    }
+    if (duplicateChapterDefs.length > 0) {
+        addDiagnosticIssue(items, "critical", "Chapter registry has duplicate IDs", `Duplicate chapter definitions: ${duplicateChapterDefs.join(", ")}.`);
+    }
+
+    expectedChapters.forEach(id => {
+        const hasCodex = CODEX_ARTICLES.some(article => article.tags.includes(`ch${id}`));
+        if (!hasCodex) {
+            addDiagnosticIssue(items, "warn", `Chapter ${id} has no Codex article`, `Alt+4 help should include at least one ch${id} tagged article.`);
+        }
+
+        const mapId = getMapForChapter(id);
+        if (!MAP_ENEMIES[mapId] || MAP_ENEMIES[mapId].length === 0) {
+            addDiagnosticIssue(items, "info", `Map ${mapId} has no encounter templates`, `Safe towns can intentionally skip combat, but wild maps should define enemies.`);
+        }
+    });
+
+    const requiredDomIds = [
+        "objective-text",
+        "minimap-canvas",
+        "interact-prompt",
+        "autosave-indicator",
+        "inventory-overlay",
+        "run-btn",
+        "code-editor",
+        "console-log",
+        "quest-tree",
+        "diagnostics-results"
+    ];
+    requiredDomIds.forEach(id => {
+        if (!document.getElementById(id)) {
+            addDiagnosticIssue(items, "critical", `Missing DOM node #${id}`, `Core UI wiring expects this element.`);
+        }
+    });
+
+    const shopActions = [];
+    Object.values(NPCS).forEach(mapNpcs => {
+        Object.values(mapNpcs).forEach(npc => {
+            (npc.options || []).forEach(option => {
+                if (typeof option.action === "function" && option.action.toString().includes("openShop")) {
+                    shopActions.push(npc.name);
+                }
+            });
+        });
+    });
+    if (shopActions.length === 0) {
+        addDiagnosticIssue(items, "warn", "No NPC shop actions found", "Inventory exists, but no NPC opens the shop overlay.");
+    }
+
+    if (SHOP_ITEMS.length === 0) {
+        addDiagnosticIssue(items, "warn", "Shop item catalog is empty", "Shops need at least one usable item.");
+    }
+
+    if (items.every(item => item.severity !== "critical" && item.severity !== "warn")) {
+        addDiagnosticIssue(items, "pass", "Core client wiring looks healthy", "Maps, chapters, HUD elements, shops, and interactions passed the local checks.");
+    }
+
+    try {
+        const res = await fetch("http://127.0.0.1:8000/api/diagnostics");
+        if (res.ok) {
+            const server = await res.json();
+            if (server.missing_validators && server.missing_validators.length > 0) {
+                addDiagnosticIssue(items, "critical", "Server validators missing", `Missing test suites: ${server.missing_validators.join(", ")}.`);
+            } else {
+                addDiagnosticIssue(items, "pass", "Server validator files found", `${server.validators_found.length} chapter validators are present in sandbox/test_frameworks.`);
+            }
+            if (!server.save_db_configured) {
+                addDiagnosticIssue(items, "warn", "Save database not initialized yet", "The server did not find save_data/save_state.db.");
+            } else {
+                addDiagnosticIssue(items, "pass", "Save database is initialized", "The server reports save_data/save_state.db is present.");
+            }
+        } else {
+            addDiagnosticIssue(items, "warn", "Server diagnostics unavailable", `/api/diagnostics returned HTTP ${res.status}.`);
+        }
+    } catch (e) {
+        addDiagnosticIssue(items, "info", "Server diagnostics offline", "Start the FastAPI server to verify validator files and save database wiring.");
+    }
+
+    const stats = [
+        { label: "Chapters", value: CHAPTERS.length },
+        { label: "Maps", value: mapIds.length },
+        { label: "Portals", value: portalCount },
+        { label: "NPC Tiles", value: npcTileCount },
+        { label: "Chests", value: chestCount },
+        { label: "Shop NPCs", value: shopActions.length }
+    ];
+
+    renderDiagnosticsReport(items, stats);
+}
+
 // Local PTY Terminal WebSocket Integration
 let shellSocket = null;
 function initShellWebSocket() {
@@ -4857,6 +5367,24 @@ document.getElementById("editor-chapter-select").addEventListener("change", (e) 
 
 // Keyboard Listeners (exploring, hotkeys)
 window.addEventListener("keydown", (e) => {
+    if (e.altKey) {
+        const tabMap = {
+            "1": "editor",
+            "2": "console",
+            "3": "chronicles",
+            "4": "codex",
+            "5": "terminal",
+            "6": "browser",
+            "7": "templeos",
+            "8": "diagnostics"
+        };
+        if (tabMap[e.key]) {
+            e.preventDefault();
+            activateWorkspaceTab(tabMap[e.key]);
+            return;
+        }
+    }
+
     if (isInventoryOpen()) {
         if (e.key === "Escape" || e.key === "i") {
             inventoryOverlay.classList.add("hidden");
@@ -4914,6 +5442,7 @@ window.addEventListener("load", () => {
     fetchSaveState();
     loadChapterCode(0);
     searchCodex("");
+    runWiringDiagnostics();
     setInterval(() => {
         if (screenMode !== "dark" && !dialogueActive && !isCombat) drawMap();
     }, 700);

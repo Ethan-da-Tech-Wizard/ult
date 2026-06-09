@@ -94,6 +94,7 @@
                 <button class="tab-btn" data-tab="terminal">Alt+5 Terminal</button>
                 <button class="tab-btn" data-tab="browser">Alt+6 Browser</button>
                 <button class="tab-btn" data-tab="templeos">Alt+7 TempleOS</button>
+                <button class="tab-btn" data-tab="diagnostics">Alt+8 Diagnostics</button>
             </div>
 
             <div class="workspace-content">
@@ -196,6 +197,21 @@
                             <span class="prompt">HolyC></span>
                             <input type="text" id="templeos-input" autocomplete="off">
                         </div>
+                    </div>
+                </div>
+
+                <!-- Wiring Diagnostics Tab -->
+                <div class="tab-pane" id="pane-diagnostics">
+                    <div class="diagnostics-container">
+                        <div class="diagnostics-header">
+                            <div>
+                                <h3>Wiring Diagnostics</h3>
+                                <p id="diagnostics-summary">Run checks to inspect map, NPC, chapter, save, shop, and UI wiring.</p>
+                            </div>
+                            <button id="run-diagnostics-btn">Run Checks</button>
+                        </div>
+                        <div id="diagnostics-stats" class="diagnostics-stats"></div>
+                        <div id="diagnostics-results" class="diagnostics-results"></div>
                     </div>
                 </div>
             </div>
