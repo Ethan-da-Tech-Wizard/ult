@@ -43,7 +43,8 @@ const CONTRACT_PREFIX = "contract:";
 const SHOP_ITEMS = [
     { id: "patch_potion", name: "Patch Potion", price: 30, desc: "Restore 45 HP to the full party." },
     { id: "cache_tonic", name: "Cache Tonic", price: 45, desc: "Restore 35 Compute Tokens." },
-    { id: "compiler_charm", name: "Compiler Charm", price: 80, desc: "Permanently raise the active lead's ATK by 1." }
+    { id: "compiler_charm", name: "Compiler Charm", price: 80, desc: "Permanently raise the active lead's ATK by 1." },
+    { id: "debug_spray", name: "Debug Spray", price: 40, desc: "Repel random encounters for 40 steps." }
 ];
 
 const NPC_PATROLS = {
@@ -58,6 +59,8 @@ const NPC_PATROLS = {
 };
 
 let autosaveTimer = null;
+let encounterGraceSteps = 0;
+let repelSteps = 0;
 
 // Retro 8-bit pixel art character sprites
 const SPRITE_PLAYER = [
@@ -2837,13 +2840,85 @@ let focusMode = 'explore'; // explore, code
 
 // Audio Synthesizer variables
 let audioCtx = null;
-let currentBgmNode = null;
 let bgmOscillators = [];
+let currentBgmGainNode = null;
+let currentBgmBaseGain = 0;
+
+// Persisted player settings (palette, dialogue speed, focus keys, audio)
+const SETTINGS_STORAGE_KEY = "sacredTechSettings";
+const DEFAULT_BGM_VOLUME = 60;
+let gameSettings = {
+    palette: "default",
+    dialogueSpeed: "scroll",
+    focusKeys: "both",
+    bgmVolume: DEFAULT_BGM_VOLUME,
+    muted: false
+};
+
+function loadGameSettings() {
+    try {
+        const raw = localStorage.getItem(SETTINGS_STORAGE_KEY);
+        if (raw) gameSettings = { ...gameSettings, ...JSON.parse(raw) };
+    } catch (e) {
+        console.warn("Could not load saved settings:", e);
+    }
+}
+
+function saveGameSettings() {
+    try {
+        localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(gameSettings));
+    } catch (e) {
+        console.warn("Could not persist settings:", e);
+    }
+}
+
+function applyPalette(palette) {
+    document.body.className = "retro-crt";
+    if (palette !== "default") {
+        document.body.classList.add(`palette-${palette}`);
+    }
+}
+
+// Slider value of DEFAULT_BGM_VOLUME plays themes at their authored gain
+function getMasterVolumeFactor() {
+    return gameSettings.muted ? 0 : gameSettings.bgmVolume / DEFAULT_BGM_VOLUME;
+}
+
+function applyBgmVolume() {
+    if (currentBgmGainNode && audioCtx) {
+        currentBgmGainNode.gain.setValueAtTime(currentBgmBaseGain * getMasterVolumeFactor(), audioCtx.currentTime);
+    }
+}
 
 // Initialize Web Audio Synth
 function initAudio() {
     if (!audioCtx) {
         audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+}
+
+// Short synth blips for game feedback (footsteps, menus, combat, shop)
+function playSfx(type) {
+    if (!audioCtx || gameSettings.muted) return;
+    try {
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        let freq = 440, duration = 0.07, level = 0.05, wave = "square";
+        if (type === "step") { freq = 190; duration = 0.03; level = 0.018; wave = "triangle"; }
+        else if (type === "menu") { freq = 660; duration = 0.05; level = 0.04; }
+        else if (type === "hit") { freq = 130; duration = 0.12; level = 0.06; wave = "sawtooth"; }
+        else if (type === "coin") { freq = 880; duration = 0.09; level = 0.05; wave = "triangle"; }
+        else if (type === "heal") { freq = 523; duration = 0.12; level = 0.05; wave = "sine"; }
+        osc.type = wave;
+        osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+        gain.gain.setValueAtTime(level * getMasterVolumeFactor(), audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + duration);
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start();
+        osc.stop(audioCtx.currentTime + duration);
+    } catch (e) {
+        console.error("SFX error:", e);
     }
 }
 
@@ -2855,8 +2930,7 @@ function playBgm(theme) {
         const osc1 = audioCtx.createOscillator();
         const osc2 = audioCtx.createOscillator();
         const gainNode = audioCtx.createGain();
-
-        gainNode.gain.setValueAtTime(0.08, audioCtx.currentTime);
+        let baseGain = 0.08;
         
         if (theme === 'spooky') {
             // Detuned minor chords for Spooky Town / State Vaults
@@ -2864,42 +2938,42 @@ function playBgm(theme) {
             osc1.frequency.setValueAtTime(147.0, audioCtx.currentTime); // D3
             osc2.type = 'sawtooth';
             osc2.frequency.setValueAtTime(148.5, audioCtx.currentTime); // Detuned for unease
-            gainNode.gain.setValueAtTime(0.06, audioCtx.currentTime);
+            baseGain = 0.06;
         } else if (theme === 'battle') {
             // Urgent driving bass — combat tension
             osc1.type = 'sawtooth';
             osc1.frequency.setValueAtTime(110.0, audioCtx.currentTime); // A2 bass
             osc2.type = 'square';
             osc2.frequency.setValueAtTime(329.63, audioCtx.currentTime); // E4 sting
-            gainNode.gain.setValueAtTime(0.07, audioCtx.currentTime);
+            baseGain = 0.07;
         } else if (theme === 'classical') {
             // Calm library theme — mourning arpeggios
             osc1.type = 'triangle';
             osc1.frequency.setValueAtTime(261.63, audioCtx.currentTime); // C4
             osc2.type = 'triangle';
             osc2.frequency.setValueAtTime(329.63, audioCtx.currentTime); // E4
-            gainNode.gain.setValueAtTime(0.05, audioCtx.currentTime);
+            baseGain = 0.05;
         } else if (theme === 'overworld') {
             // Hopeful pentatonic major — the world worth saving
             osc1.type = 'square';
             osc1.frequency.setValueAtTime(196.0, audioCtx.currentTime); // G3
             osc2.type = 'triangle';
             osc2.frequency.setValueAtTime(392.0, audioCtx.currentTime); // G4
-            gainNode.gain.setValueAtTime(0.05, audioCtx.currentTime);
+            baseGain = 0.05;
         } else if (theme === 'temple') {
             // Sacred, reverent drone — TempleOS altar
             osc1.type = 'sine';
             osc1.frequency.setValueAtTime(174.61, audioCtx.currentTime); // F3
             osc2.type = 'triangle';
             osc2.frequency.setValueAtTime(349.23, audioCtx.currentTime); // F4
-            gainNode.gain.setValueAtTime(0.04, audioCtx.currentTime);
+            baseGain = 0.04;
         } else {
             // Default: open plains tone
             osc1.type = 'square';
             osc1.frequency.setValueAtTime(261.63, audioCtx.currentTime); // C4
             osc2.type = 'triangle';
             osc2.frequency.setValueAtTime(523.25, audioCtx.currentTime); // C5
-            gainNode.gain.setValueAtTime(0.05, audioCtx.currentTime);
+            baseGain = 0.05;
         }
         
         osc1.connect(gainNode);
@@ -2908,8 +2982,11 @@ function playBgm(theme) {
         
         osc1.start();
         osc2.start();
-        
+
         bgmOscillators = [osc1, osc2, gainNode];
+        currentBgmGainNode = gainNode;
+        currentBgmBaseGain = baseGain;
+        applyBgmVolume();
     } catch (e) {
         console.error("Audio BGM error:", e);
     }
@@ -2923,6 +3000,8 @@ function stopBgm() {
         } catch (e) {}
     });
     bgmOscillators = [];
+    currentBgmGainNode = null;
+    currentBgmBaseGain = 0;
 }
 
 // REST Client calls
@@ -3071,6 +3150,7 @@ function buyShopItem(itemId) {
 
     player.gold -= item.price;
     addInventoryItem(itemId);
+    playSfx("coin");
     updateUIHeaders();
     uploadSaveState();
     openShop("Outpost Supply");
@@ -3088,9 +3168,12 @@ function useInventoryItem(itemId) {
         player.tokens += 35;
     } else if (itemId === "compiler_charm") {
         getActivePartyMember().atk += 1;
+    } else if (itemId === "debug_spray") {
+        repelSteps = 40;
     }
 
     removeInventoryItem(itemId);
+    playSfx("heal");
     updateUIHeaders();
     uploadSaveState();
     openInventory();
@@ -3224,6 +3307,31 @@ function updateInteractPrompt() {
     prompt.classList.remove("hidden");
 }
 
+// Where should the player head next? Used to pulse a marker on the minimap.
+function getObjectiveMarker() {
+    if (screenMode === "dark") return null;
+    const mapId = getMapForChapter(player.currentChapter);
+    const grid = MAP_GRIDS[mapId] || MAP_GRIDS[0];
+
+    // Chapter 0 tutorial: point at the Compiler Smith until the pilgrim talks to him
+    if (player.currentChapter === 0 && isManualPageRead("python-field-manual", 0) && !hasInventoryFlag(TUTORIAL_SMITH_TALKED_FLAG)) {
+        const npcs = NPCS[mapId] || {};
+        for (const key of Object.keys(npcs)) {
+            if ((npcs[key].name || "").includes("Compiler Smith")) {
+                const [x, y] = key.split(",").map(Number);
+                return { x, y };
+            }
+        }
+    }
+
+    // Once the chapter gate is open, point at the portal tile
+    if (isChapterGateOpen(player.currentChapter)) {
+        const portals = findTiles(grid, 6);
+        if (portals.length > 0) return portals[0];
+    }
+    return null;
+}
+
 function drawMinimap() {
     const minimap = document.getElementById("minimap-canvas");
     if (!minimap) return;
@@ -3254,6 +3362,15 @@ function drawMinimap() {
 
     mctx.fillStyle = "#ef4444";
     mctx.fillRect(player.x * cellW, player.y * cellH, Math.ceil(cellW), Math.ceil(cellH));
+
+    // Pulsing objective marker (redrawn by the ambient drawMap interval)
+    const marker = getObjectiveMarker();
+    if (marker) {
+        const pulse = Math.floor(Date.now() / 400) % 2 === 0;
+        mctx.strokeStyle = pulse ? "#facc15" : "#fef9c3";
+        mctx.lineWidth = 2;
+        mctx.strokeRect(marker.x * cellW - 1, marker.y * cellH - 1, Math.ceil(cellW) + 2, Math.ceil(cellH) + 2);
+    }
 }
 
 function getEncounterRate(x, y) {
@@ -3596,63 +3713,126 @@ function renderSpecialistHints(chapterId = player.currentChapter, forceOpen = fa
     }
 }
 
+function applySaveData(data) {
+    if (typeof data.gold !== "number") return false;
+    player.gold = data.gold;
+    player.tokens = data.compute_tokens;
+    player.activeLead = data.active_lead;
+    player.unlockedChapters = data.unlocked_chapters.split(',').map(Number);
+    try {
+        player.inventory = JSON.parse(data.inventory_json || "[]");
+    } catch (e) {
+        player.inventory = [];
+    }
+    try {
+        player.party = normalizePartyStats(JSON.parse(data.stats_json || "[]"));
+    } catch (e) {
+        player.party = normalizePartyStats();
+    }
+    try {
+        const savedState = JSON.parse(data.state_json || "{}");
+        player.currentChapter = Number.isFinite(savedState.currentChapter) ? savedState.currentChapter : player.currentChapter;
+        player.x = Number.isFinite(savedState.x) ? savedState.x : player.x;
+        player.y = Number.isFinite(savedState.y) ? savedState.y : player.y;
+        player.openedChests = Array.isArray(savedState.openedChests) ? savedState.openedChests : [];
+        player.readManuals = Array.isArray(savedState.readManuals) ? savedState.readManuals : [];
+        player.readManualPages = Array.isArray(savedState.readManualPages) ? savedState.readManualPages : [];
+        player.lastSavedAt = typeof savedState.lastSavedAt === "string" ? savedState.lastSavedAt : player.lastSavedAt;
+        if (["dark", "monochrome", "color"].includes(savedState.screenMode)) {
+            screenMode = savedState.screenMode;
+        } else if (isContractComplete(0) || player.currentChapter > 0) {
+            screenMode = "color";
+        }
+    } catch (e) {
+        player.openedChests = [];
+        player.readManuals = [];
+        player.readManualPages = [];
+        if (isContractComplete(0) || player.currentChapter > 0) {
+            screenMode = "color";
+        }
+    }
+    if (screenMode !== "dark") {
+        const prologueOverlay = document.getElementById("prologue-overlay");
+        if (prologueOverlay) prologueOverlay.classList.add("hidden");
+    }
+    updateUIHeaders();
+    updateEditorChapterSelect();
+    renderChroniclesQuestTree();
+    renderLibrary();
+    drawMap();
+    renderSaveStatus();
+    showAutosaveIndicator("Save Loaded");
+    return true;
+}
+
 async function fetchSaveState() {
     try {
         const res = await fetch("http://127.0.0.1:8000/api/save");
         if (res.ok) {
             const data = await res.json();
-            if (typeof data.gold === "number") {
-                player.gold = data.gold;
-                player.tokens = data.compute_tokens;
-                player.activeLead = data.active_lead;
-                player.unlockedChapters = data.unlocked_chapters.split(',').map(Number);
-                try {
-                    player.inventory = JSON.parse(data.inventory_json || "[]");
-                } catch (e) {
-                    player.inventory = [];
-                }
-                try {
-                    player.party = normalizePartyStats(JSON.parse(data.stats_json || "[]"));
-                } catch (e) {
-                    player.party = normalizePartyStats();
-                }
-                try {
-                    const savedState = JSON.parse(data.state_json || "{}");
-                    player.currentChapter = Number.isFinite(savedState.currentChapter) ? savedState.currentChapter : player.currentChapter;
-                    player.x = Number.isFinite(savedState.x) ? savedState.x : player.x;
-                    player.y = Number.isFinite(savedState.y) ? savedState.y : player.y;
-                    player.openedChests = Array.isArray(savedState.openedChests) ? savedState.openedChests : [];
-                    player.readManuals = Array.isArray(savedState.readManuals) ? savedState.readManuals : [];
-                    player.readManualPages = Array.isArray(savedState.readManualPages) ? savedState.readManualPages : [];
-                    player.lastSavedAt = typeof savedState.lastSavedAt === "string" ? savedState.lastSavedAt : player.lastSavedAt;
-                    if (["dark", "monochrome", "color"].includes(savedState.screenMode)) {
-                        screenMode = savedState.screenMode;
-                    } else if (isContractComplete(0) || player.currentChapter > 0) {
-                        screenMode = "color";
-                    }
-                } catch (e) {
-                    player.openedChests = [];
-                    player.readManuals = [];
-                    player.readManualPages = [];
-                    if (isContractComplete(0) || player.currentChapter > 0) {
-                        screenMode = "color";
-                    }
-                }
-                if (screenMode !== "dark") {
-                    const prologueOverlay = document.getElementById("prologue-overlay");
-                    if (prologueOverlay) prologueOverlay.classList.add("hidden");
-                }
-                updateUIHeaders();
-                updateEditorChapterSelect();
-                renderChroniclesQuestTree();
-                renderLibrary();
-                drawMap();
-                renderSaveStatus();
-                showAutosaveIndicator("Save Loaded");
-            }
+            applySaveData(data);
         }
     } catch (e) {
         console.warn("Backend offline. Running on local mock cache.");
+    }
+}
+
+// Save history browser (Settings > Load Earlier Save)
+async function renderSaveSlotList() {
+    const list = document.getElementById("save-slot-list");
+    if (!list) return;
+    if (!list.classList.contains("hidden")) {
+        list.classList.add("hidden");
+        return;
+    }
+    list.innerText = "Loading save history...";
+    list.classList.remove("hidden");
+    try {
+        const res = await fetch("http://127.0.0.1:8000/api/saves?limit=10");
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        const saves = data.saves || [];
+        if (saves.length === 0) {
+            list.innerText = "No saves recorded yet.";
+            return;
+        }
+        list.innerHTML = "";
+        saves.forEach(save => {
+            let state = {};
+            try {
+                state = JSON.parse(save.state_json || "{}");
+            } catch (e) {
+                state = {};
+            }
+            const when = state.lastSavedAt ? formatSaveTime(state.lastSavedAt) : "Unknown time";
+            const chapter = Number.isFinite(state.currentChapter) ? state.currentChapter : "?";
+            const row = document.createElement("div");
+            row.className = "save-slot-row";
+            const label = document.createElement("span");
+            label.innerText = `#${save.id} — Ch ${chapter}, ${save.gold} Gold (${when})`;
+            const btn = document.createElement("button");
+            btn.innerText = "Load";
+            btn.addEventListener("click", () => loadSaveById(save.id));
+            row.appendChild(label);
+            row.appendChild(btn);
+            list.appendChild(row);
+        });
+    } catch (e) {
+        list.innerText = "Save history unavailable (backend offline).";
+    }
+}
+
+async function loadSaveById(saveId) {
+    try {
+        const res = await fetch(`http://127.0.0.1:8000/api/save/${saveId}`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        if (applySaveData(data)) {
+            toggleSettingsMenu(true);
+            showAutosaveIndicator(`Loaded Save #${saveId}`);
+        }
+    } catch (e) {
+        showAutosaveIndicator("Load Failed");
     }
 }
 
@@ -3983,6 +4163,7 @@ function movePlayer(dx, dy) {
         if (targetTile !== 1 && targetTile !== 5 && !npcHit) {
             player.x = newX;
             player.y = newY;
+            playSfx("step");
             drawMap();
             
             // Handle Warp portal transition
@@ -3991,8 +4172,14 @@ function movePlayer(dx, dy) {
             }
             
             // Random Battle probability in wild areas
-            if (targetTile === 0 && Math.random() < getEncounterRate(newX, newY)) {
-                triggerCombat();
+            if (targetTile === 0) {
+                if (repelSteps > 0) {
+                    repelSteps--;
+                } else if (encounterGraceSteps > 0) {
+                    encounterGraceSteps--;
+                } else if (Math.random() < getEncounterRate(newX, newY)) {
+                    triggerCombat();
+                }
             }
         }
     }
@@ -4292,8 +4479,7 @@ function checkInteraction() {
     if (focusMode === 'code' || screenMode === 'dark' || isInventoryOpen()) return;
     
     const activeGrid = MAP_GRIDS[getMapForChapter(player.currentChapter)] || MAP_GRIDS[0];
-    const chapterNPCs = NPCS[getMapForChapter(player.currentChapter)] || {};
-    
+
     // Check neighbors
     const neighbors = [
         { x: player.x + 1, y: player.y },
@@ -4388,11 +4574,52 @@ function checkInteraction() {
     }
 }
 
+// Retro char-scroll dialogue rendering (Settings > Dialogue Speed)
+let dialogueTypingTimer = null;
+let dialogueFullText = "";
+
+function renderDialogueText(text) {
+    const textEl = document.getElementById("dialogue-text");
+    if (dialogueTypingTimer) {
+        clearInterval(dialogueTypingTimer);
+        dialogueTypingTimer = null;
+    }
+    dialogueFullText = text;
+    if (gameSettings.dialogueSpeed !== "scroll" || !textEl) {
+        if (textEl) textEl.innerText = text;
+        return;
+    }
+    textEl.innerText = "";
+    let shown = 0;
+    dialogueTypingTimer = setInterval(() => {
+        shown += 2;
+        textEl.innerText = text.slice(0, shown);
+        if (shown >= text.length) {
+            clearInterval(dialogueTypingTimer);
+            dialogueTypingTimer = null;
+        }
+    }, 16);
+}
+
+function isDialogueTyping() {
+    return dialogueTypingTimer !== null;
+}
+
+function completeDialogueText() {
+    if (dialogueTypingTimer) {
+        clearInterval(dialogueTypingTimer);
+        dialogueTypingTimer = null;
+    }
+    const textEl = document.getElementById("dialogue-text");
+    if (textEl) textEl.innerText = dialogueFullText;
+}
+
 function showDialogue(speaker, text, options = null, isBackOption = false) {
+    if (!dialogueActive) playSfx("menu");
     dialogueActive = true;
     document.getElementById("dialogue-speaker").innerText = speaker;
-    document.getElementById("dialogue-text").innerText = text;
-    
+    renderDialogueText(text);
+
     const optionsContainer = document.getElementById("dialogue-options");
     if (optionsContainer) {
         optionsContainer.innerHTML = "";
@@ -4437,6 +4664,10 @@ function showDialogue(speaker, text, options = null, isBackOption = false) {
 }
 
 function hideDialogue() {
+    if (dialogueTypingTimer) {
+        clearInterval(dialogueTypingTimer);
+        dialogueTypingTimer = null;
+    }
     dialogueActive = false;
     document.getElementById("dialogue-box").classList.add("hidden");
     updateInteractPrompt();
@@ -4446,6 +4677,7 @@ function hideDialogue() {
 function triggerCombat(options = {}) {
     isCombat = true;
     combatTurn = 'player';
+    playSfx("hit");
     playBgm('battle');
     
     const mapId = getMapForChapter(player.currentChapter);
@@ -4855,9 +5087,10 @@ function loseCombat() {
     
     setTimeout(() => {
         isCombat = false;
+        encounterGraceSteps = 6;
         document.getElementById("combat-overlay").classList.add("hidden");
         playBgm('overworld');
-        
+
         // Checkpoint warp location (Shrine of Terry coordinates)
         player.x = 2;
         player.y = 7;
@@ -4867,6 +5100,7 @@ function loseCombat() {
 
 function endCombat() {
     isCombat = false;
+    encounterGraceSteps = 6;
     document.getElementById("combat-overlay").classList.add("hidden");
     playBgm('overworld');
     drawMap();
@@ -4886,6 +5120,7 @@ function activateWorkspaceTab(tabId) {
 
     btn.classList.add("active");
     pane.classList.add("active");
+    playSfx("menu");
 
     if (tabId === "terminal") {
         initShellWebSocket();
@@ -4930,13 +5165,34 @@ codeEditor.addEventListener("input", () => {
     lineNumbers.innerHTML = Array.from({ length: lines }, (_, i) => i + 1).join("<br>");
 });
 
-function formatValidatorHints(chapterId) {
-    const hints = VALIDATOR_HINTS[chapterId] || ["Read the field contract in Alt+3.", "Open Alt+9 Library for examples tied to this chapter."];
-    return hints.map((hint, index) => `Hint ${index + 1}: ${hint}`).join("\n");
-}
-
 // Compile and Run Logic
 const runBtn = document.getElementById("run-btn");
+
+// Ctrl+Enter runs the current chapter from inside the editor
+codeEditor.addEventListener("keydown", (e) => {
+    if (e.ctrlKey && e.key === "Enter") {
+        e.preventDefault();
+        runBtn.click();
+    }
+});
+
+const resetCodeBtn = document.getElementById("reset-code-btn");
+if (resetCodeBtn) {
+    resetCodeBtn.addEventListener("click", async () => {
+        if (!confirm("Replace the editor contents with this chapter's starter skeleton?")) return;
+        try {
+            const res = await fetch(`http://127.0.0.1:8000/api/code?chapter_id=${player.currentChapter}&skeleton=1`);
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            const data = await res.json();
+            codeEditor.value = data.code;
+            const lines = data.code.split("\n").length;
+            lineNumbers.innerHTML = Array.from({ length: lines }, (_, i) => i + 1).join("<br>");
+            showAutosaveIndicator("Skeleton Restored");
+        } catch (e) {
+            showAutosaveIndicator("Reset Failed");
+        }
+    });
+}
 runBtn.addEventListener("click", async () => {
     const code = codeEditor.value;
     const log = document.getElementById("console-log");
@@ -5012,14 +5268,6 @@ runBtn.addEventListener("click", async () => {
         renderChroniclesQuestTree();
         drawMap();
         updateUIHeaders();
-    }
-});
-
-// Settings handlers
-document.getElementById("palette-selector").addEventListener("change", (e) => {
-    document.body.className = "retro-crt";
-    if (e.target.value !== 'default') {
-        document.body.classList.add(`palette-${e.target.value}`);
     }
 });
 
@@ -6522,8 +6770,52 @@ document.getElementById("editor-chapter-select").addEventListener("change", (e) 
     loadChapterCode(chId);
 });
 
+function toggleSettingsMenu(forceHide = false) {
+    const menu = document.getElementById("settings-menu");
+    if (!menu) return;
+    if (forceHide) menu.classList.add("hidden");
+    else menu.classList.toggle("hidden");
+}
+
+// Held-key movement: first press steps immediately, holding repeats on a
+// fixed cadence instead of relying on OS key-repeat.
+const DIRECTION_KEYS = {
+    w: [0, -1], ArrowUp: [0, -1],
+    s: [0, 1], ArrowDown: [0, 1],
+    a: [-1, 0], ArrowLeft: [-1, 0],
+    d: [1, 0], ArrowRight: [1, 0]
+};
+const HELD_MOVE_INTERVAL_MS = 150;
+const heldDirections = [];
+let lastHeldMoveAt = 0;
+
+function heldMovementLoop(now) {
+    if (heldDirections.length > 0 && focusMode === 'explore' && !dialogueActive && !isCombat && !isInventoryOpen()) {
+        if (now - lastHeldMoveAt >= HELD_MOVE_INTERVAL_MS) {
+            const dir = DIRECTION_KEYS[heldDirections[heldDirections.length - 1]];
+            if (dir) {
+                movePlayer(dir[0], dir[1]);
+                lastHeldMoveAt = now;
+            }
+        }
+    }
+    requestAnimationFrame(heldMovementLoop);
+}
+requestAnimationFrame(heldMovementLoop);
+
+window.addEventListener("keyup", (e) => {
+    const idx = heldDirections.indexOf(e.key);
+    if (idx !== -1) heldDirections.splice(idx, 1);
+});
+
+window.addEventListener("blur", () => {
+    heldDirections.length = 0;
+});
+
 // Keyboard Listeners (exploring, hotkeys)
 window.addEventListener("keydown", (e) => {
+    if (audioCtx && audioCtx.state === "suspended") audioCtx.resume();
+
     if (e.altKey) {
         const tabMap = {
             "1": "editor",
@@ -6550,13 +6842,21 @@ window.addEventListener("keydown", (e) => {
         return;
     }
 
+    // Don't hijack typing inside terminal/search inputs
+    const targetTag = e.target && e.target.tagName;
+    const isFormTarget = targetTag === "INPUT" || targetTag === "TEXTAREA" || targetTag === "SELECT";
+
     if (dialogueActive) {
-        if (e.key === "Enter") hideDialogue();
+        if (!isFormTarget && (e.key === "Enter" || e.key === " " || e.key === "e")) {
+            e.preventDefault();
+            if (isDialogueTyping()) completeDialogueText();
+            else hideDialogue();
+        }
         return;
     }
-    
-    // Toggle Focus settings (Tab or Ctrl + E)
-    if (e.key === "Tab" || (e.ctrlKey && e.key === "e")) {
+
+    // Toggle Focus settings (Tab, plus Ctrl+E when enabled in Settings)
+    if (e.key === "Tab" || (gameSettings.focusKeys === "both" && e.ctrlKey && e.key === "e")) {
         e.preventDefault();
         focusMode = focusMode === 'explore' ? 'code' : 'explore';
         if (focusMode === 'code') {
@@ -6566,32 +6866,94 @@ window.addEventListener("keydown", (e) => {
         }
         return;
     }
-    
-    if (focusMode === 'explore') {
-        if (e.key === "w" || e.key === "ArrowUp") movePlayer(0, -1);
-        if (e.key === "s" || e.key === "ArrowDown") movePlayer(0, 1);
-        if (e.key === "a" || e.key === "ArrowLeft") movePlayer(-1, 0);
-        if (e.key === "d" || e.key === "ArrowRight") movePlayer(1, 0);
+
+    if (focusMode === 'explore' && !isFormTarget) {
+        const dir = DIRECTION_KEYS[e.key];
+        if (dir) {
+            if (!heldDirections.includes(e.key)) heldDirections.push(e.key);
+            if (!e.repeat) {
+                movePlayer(dir[0], dir[1]);
+                lastHeldMoveAt = performance.now();
+            }
+            return;
+        }
         if (e.key === "i") openInventory();
-        
-        if (e.key === "Enter") {
+
+        if (e.key === "Enter" || e.key === " " || e.key === "e") {
+            e.preventDefault();
             checkInteraction();
         }
-        
+
         // Settings Menu shortcut
         if (e.key === "Escape") {
-            document.getElementById("settings-menu").classList.toggle("hidden");
+            toggleSettingsMenu();
         }
     }
 });
 
 // Settings handlers
+function syncSettingsUI() {
+    const palette = document.getElementById("palette-selector");
+    if (palette) palette.value = gameSettings.palette;
+    const speed = document.getElementById("dialogue-speed-selector");
+    if (speed) speed.value = gameSettings.dialogueSpeed;
+    const focusSel = document.getElementById("focus-settings-selector");
+    if (focusSel) focusSel.value = gameSettings.focusKeys;
+    const volume = document.getElementById("bgm-volume-slider");
+    if (volume) volume.value = String(gameSettings.bgmVolume);
+    const mute = document.getElementById("mute-audio-toggle");
+    if (mute) mute.checked = gameSettings.muted;
+}
+
 document.getElementById("palette-selector").addEventListener("change", (e) => {
-    document.body.className = "retro-crt";
-    if (e.target.value !== 'default') {
-        document.body.classList.add(`palette-${e.target.value}`);
-    }
+    gameSettings.palette = e.target.value;
+    applyPalette(gameSettings.palette);
+    saveGameSettings();
 });
+
+const dialogueSpeedSelector = document.getElementById("dialogue-speed-selector");
+if (dialogueSpeedSelector) {
+    dialogueSpeedSelector.addEventListener("change", (e) => {
+        gameSettings.dialogueSpeed = e.target.value;
+        saveGameSettings();
+    });
+}
+
+const focusSettingsSelector = document.getElementById("focus-settings-selector");
+if (focusSettingsSelector) {
+    focusSettingsSelector.addEventListener("change", (e) => {
+        gameSettings.focusKeys = e.target.value;
+        saveGameSettings();
+    });
+}
+
+const bgmVolumeSlider = document.getElementById("bgm-volume-slider");
+if (bgmVolumeSlider) {
+    bgmVolumeSlider.addEventListener("input", (e) => {
+        gameSettings.bgmVolume = parseInt(e.target.value, 10);
+        saveGameSettings();
+        applyBgmVolume();
+    });
+}
+
+const muteAudioToggle = document.getElementById("mute-audio-toggle");
+if (muteAudioToggle) {
+    muteAudioToggle.addEventListener("change", (e) => {
+        gameSettings.muted = e.target.checked;
+        saveGameSettings();
+        applyBgmVolume();
+    });
+}
+
+const closeSettingsBtn = document.getElementById("close-settings-btn");
+if (closeSettingsBtn) {
+    closeSettingsBtn.addEventListener("click", () => toggleSettingsMenu(true));
+}
+
+const openSaveSlotsBtn = document.getElementById("open-save-slots-btn");
+if (openSaveSlotsBtn) {
+    openSaveSlotsBtn.addEventListener("click", () => renderSaveSlotList());
+}
 
 const manualSaveBtn = document.getElementById("manual-save-btn");
 if (manualSaveBtn) {
@@ -6600,6 +6962,9 @@ if (manualSaveBtn) {
 
 // Startup Bootstrap
 window.addEventListener("load", () => {
+    loadGameSettings();
+    applyPalette(gameSettings.palette);
+    syncSettingsUI();
     drawMap();
     initAudio();
     fetchSaveState();

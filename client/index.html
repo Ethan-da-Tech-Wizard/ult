@@ -112,6 +112,7 @@
                             <select id="editor-chapter-select" class="retro-select"></select>
                         </div>
                         <div class="editor-actions">
+                            <button id="reset-code-btn" title="Restore this chapter's starter code">Reset to Skeleton</button>
                             <button id="run-btn" title="Run Code (Ctrl + Enter)">Compile & Run</button>
                         </div>
                     </div>
@@ -274,10 +275,23 @@
         <label>
             Focus Controls:
             <select id="focus-settings-selector">
-                <option value="both">Both (Tab & Escape)</option>
+                <option value="both">Both (Tab & Ctrl+E)</option>
                 <option value="tab">Tab Mode only</option>
             </select>
         </label>
+        <br>
+        <label>
+            Music Volume:
+            <input type="range" id="bgm-volume-slider" min="0" max="100" value="60">
+        </label>
+        <br>
+        <label>
+            Mute Audio:
+            <input type="checkbox" id="mute-audio-toggle">
+        </label>
+        <br>
+        <button id="open-save-slots-btn">Load Earlier Save...</button>
+        <div id="save-slot-list" class="hidden"></div>
         <br>
         <button id="close-settings-btn">Close</button>
     </div>

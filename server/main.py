@@ -1,9 +1,9 @@
 import os
 import sys
 import sqlite3
-import json
 import asyncio
 import logging
+from contextlib import asynccontextmanager
 import uvicorn
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -14,7 +14,23 @@ from pydantic import BaseModel
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("ZeusServer")
 
-app = FastAPI(title="Zeus RPG Core Server")
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    logger.info("FastAPI startup. Booting QEMU launcher/mock server...")
+    try:
+        from server import qemu_launcher
+        qemu_launcher.start_qemu()
+    except ImportError:
+        try:
+            import qemu_launcher
+            qemu_launcher.start_qemu()
+        except Exception as e:
+            logger.error(f"Failed to import and start qemu_launcher: {e}")
+    except Exception as e:
+        logger.error(f"Error starting qemu_launcher: {e}")
+    yield
+
+app = FastAPI(title="Zeus RPG Core Server", lifespan=lifespan)
 
 # Bind strictly to local loopback interface for safety
 app.add_middleware(
@@ -95,21 +111,6 @@ def init_db():
 
 init_db()
 
-@app.on_event("startup")
-def startup_event():
-    logger.info("FastAPI startup event triggered. Booting QEMU launcher/mock server...")
-    try:
-        from server import qemu_launcher
-        qemu_launcher.start_qemu()
-    except ImportError:
-        try:
-            import qemu_launcher
-            qemu_launcher.start_qemu()
-        except Exception as e:
-            logger.error(f"Failed to import and start qemu_launcher: {e}")
-    except Exception as e:
-        logger.error(f"Error starting qemu_launcher: {e}")
-
 
 class SaveStateModel(BaseModel):
     gold: int
@@ -176,6 +177,40 @@ def get_save():
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/api/saves")
+def list_saves(limit: int = 10):
+    try:
+        limit = max(1, min(limit, 50))
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT id, gold, compute_tokens, unlocked_chapters, state_json FROM player_state ORDER BY id DESC LIMIT ?",
+            (limit,),
+        )
+        rows = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+        return {"saves": rows}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/save/{save_id}")
+def get_save_by_id(save_id: int):
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM player_state WHERE id = ?", (save_id,))
+        row = cursor.fetchone()
+        conn.close()
+        if row:
+            return dict(row)
+        raise HTTPException(status_code=404, detail="Save not found")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.post("/api/save")
 def save_state(state: SaveStateModel):
     try:
@@ -219,7 +254,7 @@ def get_default_skeleton(chapter_id: int) -> str:
     return skeletons.get(chapter_id, f"# Chapter {chapter_id} Solution\n")
 
 @app.get("/api/code")
-def load_code(chapter_id: int):
+def load_code(chapter_id: int, skeleton: bool = False):
     try:
         filename = CHAPTER_FILENAME_MAP.get(chapter_id, f"ch{chapter_id}_solution.py")
         try:
@@ -227,13 +262,13 @@ def load_code(chapter_id: int):
         except ImportError:
             import sandbox_manager
         save_path = os.path.join(sandbox_manager.RELIC_SAVE_DIR, filename)
-        
-        if os.path.exists(save_path):
+
+        if not skeleton and os.path.exists(save_path):
             with open(save_path, "r", encoding="utf-8") as f:
                 code = f.read()
         else:
             code = get_default_skeleton(chapter_id)
-            
+
         return {"chapter_id": chapter_id, "filename": filename, "code": code}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -315,10 +350,22 @@ async def ws_shell(websocket: WebSocket):
             except Exception as e:
                 logger.error(f"Write PTY error: {e}")
 
-        await asyncio.gather(
-            read_from_pty(),
-            write_to_pty()
-        )
+        try:
+            done, pending = await asyncio.wait(
+                {asyncio.create_task(read_from_pty()), asyncio.create_task(write_to_pty())},
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            for task in pending:
+                task.cancel()
+        finally:
+            # Reap the shell so disconnects don't leave orphaned processes behind
+            if proc.returncode is None:
+                proc.kill()
+            await proc.wait()
+            try:
+                os.close(master_fd)
+            except OSError:
+                pass
     except Exception as e:
         logger.error(f"WebSocket shell error: {e}")
         await websocket.close()
