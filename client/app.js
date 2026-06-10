@@ -7275,6 +7275,13 @@ function toggleSettingsMenu(forceHide = false) {
     else menu.classList.toggle("hidden");
 }
 
+function toggleRequirementsModal(forceHide = false) {
+    const modal = document.getElementById("requirements-modal");
+    if (!modal) return;
+    if (forceHide) modal.classList.add("hidden");
+    else modal.classList.toggle("hidden");
+}
+
 // Held-key movement: first press steps immediately, holding repeats on a
 // fixed cadence instead of relying on OS key-repeat.
 const DIRECTION_KEYS = {
@@ -7480,6 +7487,36 @@ if (openSaveSlotsBtn) {
 const manualSaveBtn = document.getElementById("manual-save-btn");
 if (manualSaveBtn) {
     manualSaveBtn.addEventListener("click", () => manualSave());
+}
+
+// Requirements & Setup Warning Modal button triggers
+const openRequirementsBtn = document.getElementById("open-requirements-btn");
+if (openRequirementsBtn) {
+    openRequirementsBtn.addEventListener("click", () => {
+        toggleSettingsMenu(true);
+        toggleRequirementsModal(false);
+    });
+}
+
+const closeRequirementsBtn = document.getElementById("close-requirements-btn");
+if (closeRequirementsBtn) {
+    closeRequirementsBtn.addEventListener("click", () => {
+        toggleRequirementsModal(true);
+    });
+}
+
+const prologueReqBtn = document.getElementById("prologue-requirements-btn");
+if (prologueReqBtn) {
+    prologueReqBtn.addEventListener("click", () => {
+        toggleRequirementsModal(false);
+    });
+}
+
+const terminalReqBtn = document.getElementById("terminal-requirements-btn");
+if (terminalReqBtn) {
+    terminalReqBtn.addEventListener("click", () => {
+        toggleRequirementsModal(false);
+    });
 }
 
 // Dynamic Event Delegation Binder

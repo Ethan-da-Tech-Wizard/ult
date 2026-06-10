@@ -67,6 +67,15 @@ if ($venvOk) {
 }
 
 Write-Host ""
+Write-Host "=========================================================="
+Write-Host " ⚠️  SYSTEM REQUIREMENTS & SETUP NOTICE:"
+Write-Host " Core game only requires Python (running now)."
+Write-Host " To enable optional Arch Sandbox (T2) & TempleOS VM (T3):"
+Write-Host "   - Make sure Docker & QEMU are installed on your host."
+Write-Host "   - Run: python setup/install_all.py to build them."
+Write-Host "   - If missing, the game falls back to host execution."
+Write-Host "=========================================================="
+Write-Host ""
 Write-Host "▶️   The Sacred Tech is starting..."
 Write-Host "    Open http://127.0.0.1:8000 in your browser."
 Write-Host ""
