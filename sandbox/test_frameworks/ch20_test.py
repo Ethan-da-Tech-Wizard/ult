@@ -1,5 +1,6 @@
 import os
 import sys
+import json
 import sqlite3
 
 def test_chapter_20():
@@ -36,15 +37,24 @@ def test_chapter_20():
     except Exception as e:
         print(f"Warning: Mock database setup issue: {e}")
 
+    mock_json = "mock_scanned_relic.json"
     try:
-        # Mock file check
-        mock_img = "mock_scanned_relic.png"
-        with open(mock_img, "w") as f:
-            f.write("mock png payload")
+        # Mock OCR layout JSON with coordinates
+        # Group 1: "Zeus" (10) + "Relic" (50) + "Shield" (105) -> distances 10 and 15 -> merged into "Zeus Relic Shield"
+        # Group 2: "Power:" (10) + "95" (60) -> distance 10 -> merged into "Power: 95"
+        layout_data = [
+            {"text": "Zeus", "x": 10, "y": 10, "w": 30, "h": 10},
+            {"text": "Relic", "x": 50, "y": 10, "w": 40, "h": 10},
+            {"text": "Shield", "x": 105, "y": 10, "w": 50, "h": 10},
+            {"text": "Power:", "x": 10, "y": 30, "w": 40, "h": 10},
+            {"text": "95", "x": 60, "y": 30, "w": 20, "h": 10}
+        ]
+        with open(mock_json, "w") as f:
+            json.dump(layout_data, f)
             
         # Run test pipeline
         result = module.run_assembler_pipeline(
-            image_path=mock_img,
+            layout_json_path=mock_json,
             query_text="Find power levels for our shield item",
             db_path=test_db_path
         )
@@ -59,12 +69,12 @@ def test_chapter_20():
         print("Pipeline schema verification: PASS")
         
         # Verify content integration
-        if not result["ocr_text"]:
-            print("Error: Pipeline returned empty OCR results.")
+        if "Zeus Relic Shield" not in result["ocr_text"] or "Power: 95" not in result["ocr_text"]:
+            print(f"Error: Pipeline returned incorrect OCR grouping results. Got:\n{result['ocr_text']}")
             sys.exit(1)
             
-        if not isinstance(result["db_results"], list):
-            print("Error: Database results should be returned as a list of matching records.")
+        if not isinstance(result["db_results"], list) or len(result["db_results"]) == 0 or result["db_results"][0][0] != 'ITM001':
+            print(f"Error: Database results should return the matching 'Zeus Relic Shield' record. Got: {result.get('db_results')}")
             sys.exit(1)
             
         print("Integrated pipeline coordination: PASS")
@@ -76,8 +86,8 @@ def test_chapter_20():
         # Cleanup mock files
         if os.path.exists(test_db_path):
             os.remove(test_db_path)
-        if os.path.exists(mock_img):
-            os.remove(mock_img)
+        if os.path.exists(mock_json):
+            os.remove(mock_json)
 
     print("\n>>> All Chapter 20 tests passed! The Grand Assembly pipeline is fully synchronized.")
     sys.exit(0)
