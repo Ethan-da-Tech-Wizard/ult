@@ -40,11 +40,22 @@ def main():
             assert initial_state.get("currentChapter") == 0
             print("[PASS] fresh save starts at dark Chapter 0")
 
-            code_data = request_json("/api/code?chapter_id=0")
+            # The untouched skeleton must fail (tutorial teaches the export),
+            # then a player-written solution must pass.
+            skeleton_data = request_json("/api/code?chapter_id=0&skeleton=1")
+            skeleton_result = request_json(
+                "/api/compile",
+                method="POST",
+                payload={"chapter_id": 0, "code": skeleton_data.get("code", "")},
+                timeout=30,
+            )
+            assert not skeleton_result.get("success"), "Chapter 0 skeleton should not pass untouched"
+            print("[PASS] Chapter 0 skeleton correctly rejected")
+
             compile_result = request_json(
                 "/api/compile",
                 method="POST",
-                payload={"chapter_id": 0, "code": code_data.get("code", "")},
+                payload={"chapter_id": 0, "code": 'export PATH=$PATH:/usr/local/bin\necho "Booting environment..."\n'},
                 timeout=30,
             )
             assert compile_result.get("success"), compile_result.get("output", "")

@@ -5,6 +5,15 @@
 # for the Chapter 21 Altar bare-metal HolyC compilation experience.
 #
 # Requirements: qemu-img, qemu-system-x86_64
+#
+# IMPORTANT — serial console limitation:
+#   Stock TempleOS is VGA + PS/2 only; Terry never wrote a serial driver.
+#   The in-game Alt+7 telnet bridge therefore stays silent with the stock
+#   ISO, and the game falls back to the validating mock HolyC altar.
+#   To get REAL HolyC over the bridge, point TEMPLEOS_ISO_URL at a
+#   serial-console-patched community build (e.g. a TempleOS fork with a
+#   serial shell), or run the server with ZEUS_TEMPLEOS_VNC=1 and connect
+#   a VNC viewer to 127.0.0.1:5900 to use the real TempleOS display.
 # ─────────────────────────────────────────────────────────────────────────────
 set -euo pipefail
 
@@ -12,7 +21,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 SAVE_DIR="$PROJECT_ROOT/save_data"
 IMG_PATH="$SAVE_DIR/templeos_core.img"
-ISO_URL="https://templeos.org/Downloads/TempleOS.ISO"
+# Override with a serial-patched community ISO for a working serial bridge:
+#   TEMPLEOS_ISO_URL=https://example.org/TempleOS-serial.ISO ./build_templeos_img.sh
+ISO_URL="${TEMPLEOS_ISO_URL:-https://templeos.org/Downloads/TempleOS.ISO}"
 ISO_PATH="$SAVE_DIR/TempleOS.ISO"
 DISK_SIZE="256M"
 
@@ -27,6 +38,14 @@ echo ""
 echo "TempleOS was written by Terry A. Davis (1969–2018)."
 echo "It is public domain. The OS and all its tools are free."
 echo ""
+if [[ -z "${TEMPLEOS_ISO_URL:-}" ]]; then
+    echo "⚠️   NOTE: stock TempleOS has NO serial console driver."
+    echo "    The in-game Alt+7 serial bridge will stay silent with this ISO"
+    echo "    and the game will use the validating mock HolyC altar instead."
+    echo "    For real HolyC: set TEMPLEOS_ISO_URL to a serial-patched fork,"
+    echo "    or run the server with ZEUS_TEMPLEOS_VNC=1 and use a VNC viewer."
+    echo ""
+fi
 
 # Check prerequisites
 check_cmd() {

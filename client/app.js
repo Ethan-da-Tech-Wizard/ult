@@ -47,20 +47,33 @@ const SHOP_ITEMS = [
     { id: "debug_spray", name: "Debug Spray", price: 40, desc: "Repel random encounters for 40 steps." }
 ];
 
+// Patrol routes are loops of tiles; unwalkable points are skipped at runtime
+// (getPatrolPosition filters against the map grid), so routes degrade safely.
 const NPC_PATROLS = {
-    3: { "7,7": { to: [7, 6], interval: 1500 } },
-    4: { "7,7": { to: [7, 6], interval: 1500 } },
-    6: { "7,7": { to: [8, 7], interval: 1600 } },
-    7: { "7,7": { to: [8, 7], interval: 1600 } },
-    11: { "7,7": { to: [8, 7], interval: 1600 } },
-    12: { "7,7": { to: [7, 6], interval: 1500 } },
-    16: { "7,7": { to: [7, 6], interval: 1500 } },
-    20: { "7,7": { to: [8, 7], interval: 1700 } }
+    1: { "7,7": { route: [[7, 7], [8, 7], [8, 6]], interval: 1700 } },
+    2: { "7,7": { route: [[7, 7], [7, 6], [8, 6], [8, 7]], interval: 1600 } },
+    3: { "7,7": { route: [[7, 7], [7, 6], [8, 6], [8, 7]], interval: 1500 } },
+    4: { "7,7": { route: [[7, 7], [7, 6], [6, 6], [6, 7]], interval: 1500 } },
+    5: { "7,7": { route: [[7, 7], [8, 7], [8, 8]], interval: 1800 } },
+    6: { "7,7": { route: [[7, 7], [8, 7], [8, 8], [7, 8]], interval: 1600 } },
+    7: { "7,7": { route: [[7, 7], [8, 7], [8, 6], [7, 6]], interval: 1600 } },
+    9: { "7,7": { route: [[7, 7], [7, 8], [8, 8]], interval: 1700 } },
+    11: { "7,7": { route: [[7, 7], [8, 7], [8, 6], [7, 6]], interval: 1600 } },
+    12: { "7,7": { route: [[7, 7], [7, 6], [6, 6], [6, 7]], interval: 1500 } },
+    14: { "7,7": { route: [[7, 7], [8, 7], [8, 8]], interval: 1800 } },
+    16: { "7,7": { route: [[7, 7], [7, 6], [8, 6], [8, 7]], interval: 1500 } },
+    18: { "7,7": { route: [[7, 7], [7, 8], [6, 8]], interval: 1900 } },
+    20: { "7,7": { route: [[7, 7], [8, 7], [8, 8], [7, 8]], interval: 1700 } }
 };
 
 let autosaveTimer = null;
 let encounterGraceSteps = 0;
 let repelSteps = 0;
+
+// Visual (sub-tile) player position used for smooth tile-to-tile tweening.
+// Logical position stays in player.x/y; this lags behind by up to one tile.
+const playerVisual = { x: 8, y: 7 };
+const TWEEN_TILES_PER_SEC = 9;
 
 // Retro 8-bit pixel art character sprites
 const SPRITE_PLAYER = [
@@ -665,6 +678,20 @@ function expandMapGrid(mapId, baseGrid) {
             grid[y][x] = 1;
         });
         carveRoad(grid, [[21, 15]]);
+    }
+
+    // Sprinkle a few deterministic bonus chests on open floor tiles so the
+    // expanded regions reward exploring. Placing on tile 0 keeps them
+    // walkable/reachable by construction.
+    let bonusChests = 0;
+    for (let y = 4; y < MAP_ROWS - 3 && bonusChests < 3; y++) {
+        for (let x = 17; x < MAP_COLS - 2 && bonusChests < 3; x++) {
+            if (grid[y][x] !== 0) continue;
+            if (terrainNoise(mapId, x * 3 + 1, y * 3 + 2) > 0.987) {
+                grid[y][x] = 3;
+                bonusChests++;
+            }
+        }
     }
 
     return grid;
@@ -2922,6 +2949,34 @@ function playSfx(type) {
     }
 }
 
+// Multi-note jingles for the big moments (combat victory, level up, validator pass)
+function playJingle(kind) {
+    if (!audioCtx || gameSettings.muted) return;
+    const sequences = {
+        victory: [[523.25, 0], [659.25, 0.12], [783.99, 0.24], [1046.5, 0.36]],
+        levelup: [[659.25, 0], [783.99, 0.1], [987.77, 0.2], [1318.5, 0.3], [1318.5, 0.45]],
+        fanfare: [[392.0, 0], [523.25, 0.1], [659.25, 0.2], [783.99, 0.3], [1046.5, 0.45]]
+    };
+    const notes = sequences[kind] || sequences.victory;
+    try {
+        notes.forEach(([freq, at]) => {
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            const t = audioCtx.currentTime + at;
+            osc.type = "square";
+            osc.frequency.setValueAtTime(freq, t);
+            gain.gain.setValueAtTime(0.05 * getMasterVolumeFactor(), t);
+            gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.15);
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            osc.start(t);
+            osc.stop(t + 0.16);
+        });
+    } catch (e) {
+        console.error("Jingle error:", e);
+    }
+}
+
 function playBgm(theme) {
     if (!audioCtx) return;
     stopBgm();
@@ -3242,15 +3297,22 @@ function updateObjectiveTracker() {
 
 function getPatrolPosition(mapId, key) {
     const patrol = NPC_PATROLS[mapId]?.[key];
-    if (!patrol) {
-        const [x, y] = key.split(",").map(Number);
-        return { x, y };
-    }
+    const [homeX, homeY] = key.split(",").map(Number);
+    if (!patrol) return { x: homeX, y: homeY };
 
-    const [fromX, fromY] = key.split(",").map(Number);
-    const [toX, toY] = patrol.to;
-    const step = Math.floor(Date.now() / patrol.interval) % 2;
-    return step === 0 ? { x: fromX, y: fromY } : { x: toX, y: toY };
+    // Routes can be multi-point loops; legacy entries use a single `to` tile.
+    const route = patrol.route || [[homeX, homeY], patrol.to];
+    const grid = MAP_GRIDS[mapId];
+    const safeRoute = route.filter(([x, y]) => {
+        if (x === homeX && y === homeY) return true;
+        const tile = grid && grid[y] && grid[y][x];
+        return tile === 0 || tile === 2;
+    });
+    if (safeRoute.length === 0) return { x: homeX, y: homeY };
+
+    const step = Math.floor(Date.now() / patrol.interval) % safeRoute.length;
+    const [x, y] = safeRoute[step];
+    return { x, y };
 }
 
 function getNPCAtPosition(x, y) {
@@ -3887,10 +3949,26 @@ function getMapForChapter(chapterId) {
 function updateUIHeaders() {
     const highestLevel = Math.max(...player.party.map(char => char.level || 1));
     document.getElementById("currency-text").innerText = `Gold: ${player.gold} | Tokens: ${player.tokens} | Lv ${highestLevel}`;
-    
+
     document.getElementById("location-text").innerText = `${getLocationNameForChapter(player.currentChapter)} (Ch ${player.currentChapter})`;
     updateObjectiveTracker();
     renderSaveStatus();
+    renderPartyHud();
+}
+
+function renderPartyHud() {
+    const hud = document.getElementById("party-hud");
+    if (!hud) return;
+    hud.innerHTML = player.party.map(char => {
+        const pct = Math.max(0, Math.min(1, char.hp / char.max_hp));
+        const color = pct > 0.5 ? "#4ade80" : pct > 0.25 ? "#facc15" : "#ef4444";
+        return `
+        <div class="party-hud-row">
+            <span class="party-hud-name">${char.name}</span>
+            <div class="party-hud-bar"><div class="party-hud-fill" style="width:${Math.round(pct * 100)}%; background:${color};"></div></div>
+            <span class="party-hud-hp">${char.hp}/${char.max_hp}</span>
+        </div>`;
+    }).join("");
 }
 
 function getCameraOrigin() {
@@ -3899,6 +3977,16 @@ function getCameraOrigin() {
     return {
         x: Math.max(0, Math.min(maxX, player.x - Math.floor(VIEW_COLS / 2))),
         y: Math.max(0, Math.min(maxY, player.y - Math.floor(VIEW_ROWS / 2)))
+    };
+}
+
+// Fractional camera that follows the tweened visual position for smooth scrolling
+function getVisualCameraOrigin() {
+    const maxX = Math.max(0, MAP_COLS - VIEW_COLS);
+    const maxY = Math.max(0, MAP_ROWS - VIEW_ROWS);
+    return {
+        x: Math.max(0, Math.min(maxX, playerVisual.x - Math.floor(VIEW_COLS / 2))),
+        y: Math.max(0, Math.min(maxY, playerVisual.y - Math.floor(VIEW_ROWS / 2)))
     };
 }
 
@@ -3952,47 +4040,55 @@ function drawMap() {
     
     const mapId = getMapForChapter(player.currentChapter);
     const activeGrid = MAP_GRIDS[mapId] || MAP_GRIDS[0];
-    const camera = getCameraOrigin();
-    
-    for (let r = 0; r < VIEW_ROWS; r++) {
-        for (let c = 0; c < VIEW_COLS; c++) {
-            const worldX = camera.x + c;
-            const worldY = camera.y + r;
+    const camera = getVisualCameraOrigin();
+    const camTileX = Math.floor(camera.x);
+    const camTileY = Math.floor(camera.y);
+    const fracX = camera.x - camTileX;
+    const fracY = camera.y - camTileY;
+
+    // One extra row/column so fractional scrolling never shows a gap
+    for (let r = 0; r <= VIEW_ROWS; r++) {
+        for (let c = 0; c <= VIEW_COLS; c++) {
+            const worldX = camTileX + c;
+            const worldY = camTileY + r;
+            if (worldX >= MAP_COLS || worldY >= MAP_ROWS) continue;
             const tile = activeGrid[worldY][worldX];
-            
+            const sx = (c - fracX) * TILE_SIZE;
+            const sy = (r - fracY) * TILE_SIZE;
+
             // Render Tiles based on Color Palette settings
             if (screenMode === 'monochrome') {
                 ctx.fillStyle = (tile === 1) ? "#555555" : "#aaaaaa";
             } else {
                 ctx.fillStyle = getTileColor(tile, mapId);
             }
-            
-            ctx.fillRect(c * TILE_SIZE, r * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+
+            ctx.fillRect(sx, sy, TILE_SIZE, TILE_SIZE);
             ctx.strokeStyle = screenMode === 'monochrome' ? "#777777" : "#0d5c3a";
-            ctx.strokeRect(c * TILE_SIZE, r * TILE_SIZE, TILE_SIZE, TILE_SIZE);
-            
+            ctx.strokeRect(sx, sy, TILE_SIZE, TILE_SIZE);
+
             // Draw Interactive Entities (Chests, Altars, NPCs)
             if (tile === 3) {
                 ctx.fillStyle = isChestOpened(mapId, worldX, worldY) ? "#6b7280" : "#d97706";
-                ctx.fillRect(c * TILE_SIZE + 6, r * TILE_SIZE + 6, TILE_SIZE - 12, TILE_SIZE - 12);
+                ctx.fillRect(sx + 6, sy + 6, TILE_SIZE - 12, TILE_SIZE - 12);
             }
-            
+
             if (tile === 4) {
                 // Terminal Rock
                 ctx.fillStyle = "#374151";
-                ctx.fillRect(c * TILE_SIZE + 4, r * TILE_SIZE + 4, TILE_SIZE - 8, TILE_SIZE - 8);
+                ctx.fillRect(sx + 4, sy + 4, TILE_SIZE - 8, TILE_SIZE - 8);
                 ctx.fillStyle = "#22c55e";
-                ctx.fillRect(c * TILE_SIZE + 10, r * TILE_SIZE + 8, TILE_SIZE - 20, 8);
+                ctx.fillRect(sx + 10, sy + 8, TILE_SIZE - 20, 8);
             }
         }
     }
-    
+
     // Draw NPCs
     drawNPCs(camera);
-    
-    // Draw Player sprite
-    const playerScreenX = player.x - camera.x;
-    const playerScreenY = player.y - camera.y;
+
+    // Draw Player sprite at the tweened visual position
+    const playerScreenX = playerVisual.x - camera.x;
+    const playerScreenY = playerVisual.y - camera.y;
     if (screenMode === 'monochrome') {
         ctx.fillStyle = "#ffffff";
         ctx.font = "20px monospace";
@@ -4019,7 +4115,7 @@ function drawNPCs(camera = getCameraOrigin()) {
                 const drawPos = getPatrolPosition(currentMap, key);
                 const screenX = drawPos.x - camera.x;
                 const screenY = drawPos.y - camera.y;
-                if (screenX < 0 || screenX >= VIEW_COLS || screenY < 0 || screenY >= VIEW_ROWS) continue;
+                if (screenX < -1 || screenX > VIEW_COLS || screenY < -1 || screenY > VIEW_ROWS) continue;
                 
                 if (screenMode === 'monochrome') {
                     ctx.fillStyle = "#ffffff";
@@ -4674,6 +4770,11 @@ function hideDialogue() {
 }
 
 // Turn-based Combat logic
+// 30% chance the enemy winds up its special — shown to the player a turn early
+function rollEnemyIntent() {
+    return currentEnemy && currentEnemy.ability && Math.random() < 0.30 ? "ability" : "attack";
+}
+
 function triggerCombat(options = {}) {
     isCombat = true;
     combatTurn = 'player';
@@ -4697,6 +4798,7 @@ function triggerCombat(options = {}) {
         statuses: [],
         isBoss: Boolean(options.isBoss)
     };
+    currentEnemy.nextMove = rollEnemyIntent();
     
     document.getElementById("combat-overlay").classList.remove("hidden");
     const log = document.getElementById("combat-log-text");
@@ -4722,6 +4824,9 @@ function initCombatScreen() {
     const statusLine = currentEnemy.statuses && currentEnemy.statuses.length
         ? `<div class="combat-status-line">Status: ${currentEnemy.statuses.map(status => `${status.name}(${status.turns})`).join(", ")}</div>`
         : '';
+    const intentLine = currentEnemy.nextMove === "ability" && currentEnemy.ability
+        ? `<div class="combat-intent-line">⚠ Telegraph: preparing [${currentEnemy.ability.split(' — ')[0]}]!</div>`
+        : `<div class="combat-intent-line combat-intent-calm">Telegraph: readying a standard attack.</div>`;
     
     enemyList.innerHTML = `
         <div class="combat-char-row" style="flex-direction: column; align-items: flex-start; gap: 2px;">
@@ -4733,6 +4838,7 @@ function initCombatScreen() {
             <div class="combat-weakness-line">Weakness: ${currentEnemy.weakness}</div>
             ${abilityLine}
             ${statusLine}
+            ${intentLine}
         </div>
     `;
     
@@ -5003,10 +5109,11 @@ function enemyTurn() {
     }
     
     const target = aliveMembers[Math.floor(Math.random() * aliveMembers.length)];
-    
-    // 30% chance to use special ability, otherwise normal attack
+
+    // The telegraphed intent (rolled last turn) is what actually happens now
     const syntaxBlocked = consumeEnemyStatus("Syntax Error");
-    const useAbility = !syntaxBlocked && currentEnemy.ability && Math.random() < 0.30;
+    const useAbility = !syntaxBlocked && currentEnemy.ability && currentEnemy.nextMove === "ability";
+    currentEnemy.nextMove = rollEnemyIntent();
     
     let damage = Math.round(currentEnemy.atk * (0.8 + Math.random() * 0.4));
     if (consumeEnemyStatus("Rate Limited")) {
@@ -5053,6 +5160,7 @@ function winCombat() {
     
     log.innerText = `🏆 VICTORY!\n\n${victoryMsg}${levelUpMsg}`;
     log.style.fontSize = '0.85em';
+    playJingle(levelUps.length > 0 ? "levelup" : "victory");
     
     if (currentEnemy.name === 'Librarian Veridicus') {
         addInventoryFlag(VERIDICUS_DEFEATED_FLAG);
@@ -5091,11 +5199,37 @@ function loseCombat() {
         document.getElementById("combat-overlay").classList.add("hidden");
         playBgm('overworld');
 
-        // Checkpoint warp location (Shrine of Terry coordinates)
-        player.x = 2;
-        player.y = 7;
+        // Checkpoint warp to the Shrine of Terry, or the nearest open tile
+        const respawn = getRespawnPoint();
+        player.x = respawn.x;
+        player.y = respawn.y;
         drawMap();
     }, 2500);
+}
+
+// Shrine of Terry is at (2,7) on map 0, but generated maps don't guarantee
+// that tile is open — fall back to the nearest walkable, NPC-free tile.
+function getRespawnPoint() {
+    const grid = MAP_GRIDS[getMapForChapter(player.currentChapter)] || MAP_GRIDS[0];
+    const isOpen = (x, y) => {
+        const tile = getTileAt(grid, x, y);
+        return (tile === 0 || tile === 3) && !getNPCAtPosition(x, y);
+    };
+    if (isOpen(2, 7)) return { x: 2, y: 7 };
+
+    let best = null;
+    let bestDist = Infinity;
+    for (let y = 1; y < MAP_ROWS - 1; y++) {
+        for (let x = 1; x < MAP_COLS - 1; x++) {
+            if (!isOpen(x, y)) continue;
+            const dist = Math.abs(x - 2) + Math.abs(y - 7);
+            if (dist < bestDist) {
+                bestDist = dist;
+                best = { x, y };
+            }
+        }
+    }
+    return best || { x: 2, y: 7 };
 }
 
 function endCombat() {
@@ -5217,6 +5351,7 @@ runBtn.addEventListener("click", async () => {
             
             if (data.success) {
                 log.innerHTML += `\n>>> Verification PASS! Restoration complete.\n`;
+                playJingle("fanfare");
                 if (!player.unlockedChapters.includes(player.currentChapter)) {
                     player.unlockedChapters.push(player.currentChapter);
                 }
@@ -6349,6 +6484,11 @@ async function runWiringDiagnostics() {
             addDiagnosticIssue(items, "critical", `Chapter ${chapterId} spawn blocked`, `Transition spawn (1,7) lands on tile ${spawnTile}.`);
         }
 
+        const respawnTile = getTileAt(grid, 2, 7);
+        if (!isWalkableForDiagnostics(respawnTile)) {
+            addDiagnosticIssue(items, "warn", `Map ${mapId} shrine respawn blocked`, `Death warp target (2,7) lands on tile ${respawnTile}; loseCombat will fall back to the nearest open tile.`);
+        }
+
         const portals = findTiles(grid, 6);
         portalCount += portals.length;
         if (portals.length === 0) {
@@ -6537,11 +6677,34 @@ async function runWiringDiagnostics() {
 
 // Local PTY Terminal WebSocket Integration
 let shellSocket = null;
+async function refreshSandboxStatusBadge() {
+    const badge = document.getElementById("sandbox-status-badge");
+    if (!badge) return;
+    try {
+        const res = await fetch("http://127.0.0.1:8000/api/sandbox-status");
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        badge.classList.remove("sandbox-badge-unknown", "sandbox-badge-ok", "sandbox-badge-fallback");
+        if (data.container_running) {
+            badge.innerText = "Sandbox: Arch Linux container connected";
+            badge.classList.add("sandbox-badge-ok");
+        } else {
+            badge.innerText = "Sandbox: OFFLINE — host shell fallback (run setup/build_sandbox.sh)";
+            badge.classList.add("sandbox-badge-fallback");
+        }
+    } catch (e) {
+        badge.innerText = "Sandbox: backend offline";
+        badge.classList.remove("sandbox-badge-ok", "sandbox-badge-fallback");
+        badge.classList.add("sandbox-badge-unknown");
+    }
+}
+
 function initShellWebSocket() {
+    refreshSandboxStatusBadge();
     if (shellSocket) return;
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const host = window.location.host || '127.0.0.1:8000';
-    
+
     const shellOutput = document.getElementById("shell-output");
     shellOutput.innerHTML += `\n[Connecting to secure WebSocket shell routing...]\n`;
     
@@ -6789,7 +6952,27 @@ const HELD_MOVE_INTERVAL_MS = 150;
 const heldDirections = [];
 let lastHeldMoveAt = 0;
 
+// Slide the visual position toward the logical tile; snap on warps (dist > 2)
+function tickPlayerTween(dt) {
+    const dx = player.x - playerVisual.x;
+    const dy = player.y - playerVisual.y;
+    if (dx === 0 && dy === 0) return false;
+    if (Math.abs(dx) + Math.abs(dy) > 2 || dt <= 0) {
+        playerVisual.x = player.x;
+        playerVisual.y = player.y;
+        return true;
+    }
+    const step = TWEEN_TILES_PER_SEC * dt;
+    playerVisual.x = Math.abs(dx) <= step ? player.x : playerVisual.x + Math.sign(dx) * step;
+    playerVisual.y = Math.abs(dy) <= step ? player.y : playerVisual.y + Math.sign(dy) * step;
+    return true;
+}
+
+let lastFrameAt = 0;
 function heldMovementLoop(now) {
+    const dt = lastFrameAt ? (now - lastFrameAt) / 1000 : 0;
+    lastFrameAt = now;
+
     if (heldDirections.length > 0 && focusMode === 'explore' && !dialogueActive && !isCombat && !isInventoryOpen()) {
         if (now - lastHeldMoveAt >= HELD_MOVE_INTERVAL_MS) {
             const dir = DIRECTION_KEYS[heldDirections[heldDirections.length - 1]];
@@ -6798,6 +6981,10 @@ function heldMovementLoop(now) {
                 lastHeldMoveAt = now;
             }
         }
+    }
+
+    if (screenMode !== 'dark' && tickPlayerTween(dt)) {
+        drawMap();
     }
     requestAnimationFrame(heldMovementLoop);
 }
