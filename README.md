@@ -115,6 +115,25 @@ recipient needs no Python, no pip, nothing — Tiers 2 and 3 remain optional
 extras on their machine. Build it on the OS you're targeting (PyInstaller
 doesn't cross-compile).
 
+### Automated GitHub Releases
+
+GitHub Actions can build those files for you. Push a version tag:
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+The release workflow builds and uploads:
+
+- `Zeus_Assistant-windows.exe`
+- `Zeus_Assistant-macos`
+- `Zeus_Assistant-linux`
+
+The CI workflow also runs on pushes and pull requests to `main`, checking
+syntax, installer bootstrap, the full 22-chapter smoke test, and the first
+portal smoke test.
+
 ---
 
 ## Windows Notes

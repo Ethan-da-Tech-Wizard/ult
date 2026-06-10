@@ -274,3 +274,20 @@ Changes made:
   nothing.
 * Verified: `install_all.sh --minimal` builds a clean venv; `run_dev.sh`
   boots the server end-to-end serving the client at 127.0.0.1:8000.
+
+### 6.1 GitHub Actions release automation
+
+* **`.github/workflows/ci.yml`** — runs on pushes and pull requests to
+  `main`. It installs `requirements.txt`, checks `client/app.js` with Node,
+  compiles the Python entry points/scripts, runs `git diff --check`, then
+  executes `scripts/full_stack_smoke.py`, `scripts/first_portal_smoke.py`,
+  and `setup/install_all.sh --minimal`.
+* **`.github/workflows/release.yml`** — runs on manual dispatch or tags
+  matching `v*`. Matrix builds on Linux, macOS, and Windows by installing
+  `requirements.txt pyinstaller`, running `python server/build_desktop.py`,
+  and uploading OS-specific binaries:
+  `Zeus_Assistant-linux`, `Zeus_Assistant-macos`,
+  `Zeus_Assistant-windows.exe`.
+* Release workflow uses `softprops/action-gh-release` only for tag builds, so
+  pushing `git tag v0.1.0 && git push origin v0.1.0` is the intended path for
+  player-facing downloads.
