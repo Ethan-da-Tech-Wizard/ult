@@ -1,6 +1,5 @@
 import os
 import sys
-import subprocess
 
 def test_chapter_6():
     print("Testing Chapter 6: Docker Relic Dependency Auditing...")

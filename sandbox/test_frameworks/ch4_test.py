@@ -1,7 +1,6 @@
 import os
 import sys
 import threading
-import time
 
 def test_chapter_4():
     print("Testing Chapter 4: Parallel Swamp Mutex Safeguards...")
