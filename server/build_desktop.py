@@ -61,14 +61,11 @@ def main():
 
         if use_uv:
             print("Invoking PyInstaller via UV...")
-            # We bundle PyInstaller and other required packages into uv runtime
+            # We bundle PyInstaller and the app dependencies into uv runtime.
             cmd = [
                 "uv", "run",
                 "--with", "pyinstaller",
-                "--with", "fastapi",
-                "--with", "uvicorn",
-                "--with", "pydantic",
-                "--with", "jinja2"
+                "--with-requirements", os.path.join(project_root, "requirements.txt")
             ] + pyinstaller_args
             subprocess.run(cmd, check=True)
         else:
