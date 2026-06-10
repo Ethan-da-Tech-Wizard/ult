@@ -56,7 +56,24 @@ def main():
 
     print("\n==========================================================")
     print("   The Sacred Tech — Unified Setup Installer              ")
+    print("==========================================================")
+    print(" ⚠️  SYSTEM WARNING & EXTERNAL REQUIREMENTS NOTICE:")
+    print(" To play the core JRPG, only Python 3.10+ is required.")
+    print(" The advanced sandbox and VM features require external tools")
+    print(" that cannot be downloaded automatically by this script:")
+    print("\n 1. DOCKER (For Chapter 1-20 isolated Arch Linux sandbox)")
+    print("    How to download:")
+    print("      - Windows/macOS: Download Docker Desktop from https://www.docker.com/")
+    print("      - Linux: sudo apt install docker.io (or your distro's package manager)")
+    print("\n 2. QEMU (For Chapter 21 TempleOS Virtual Machine)")
+    print("    How to download:")
+    print("      - Windows: winget install SoftwareDesignLabs.QEMU")
+    print("      - macOS: brew install qemu")
+    print("      - Linux: sudo apt install qemu-system-x86 qemu-utils")
+    print("\n (Note: The game automatically falls back to host-level execution")
+    print(" and simulated altars if these tools are missing. You can still play!)")
     print("==========================================================\n")
+
 
     # 1. Verify Python version
     major, minor = sys.version_info.major, sys.version_info.minor
