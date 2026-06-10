@@ -83,7 +83,7 @@ def init_db():
             unlocked_chapters TEXT DEFAULT '0',
             active_lead TEXT DEFAULT 'Low-Level Optimizer',
             inventory_json TEXT DEFAULT '[]',
-            stats_json TEXT DEFAULT '{}',
+            stats_json TEXT DEFAULT '[]',
             state_json TEXT DEFAULT '{}'
         )
     """)
@@ -94,15 +94,17 @@ def init_db():
     # Insert default state if empty
     cursor.execute("SELECT COUNT(*) FROM player_state")
     if cursor.fetchone()[0] == 0:
+        # stats_json is an ARRAY matching the client's party order
+        # (normalizePartyStats merges by index, not by name)
         cursor.execute("""
             INSERT INTO player_state (gold, compute_tokens, unlocked_chapters, active_lead, inventory_json, stats_json, state_json)
             VALUES (
-                200, 
-                100, 
-                '0', 
-                'Low-Level Optimizer', 
-                '[]', 
-                '{"Optimizer": {"hp": 120, "max_hp": 120, "atk": 18, "def": 10, "spd": 14, "luc": 8}, "Architect": {"hp": 100, "max_hp": 100, "atk": 12, "def": 14, "spd": 10, "luc": 10}, "Orchestrator": {"hp": 90, "max_hp": 90, "atk": 10, "def": 8, "spd": 12, "luc": 12}, "PromptEng": {"hp": 80, "max_hp": 80, "atk": 16, "def": 6, "spd": 8, "luc": 14}}',
+                200,
+                100,
+                '0',
+                'Low-Level Optimizer',
+                '[]',
+                '[{"name": "Optimizer", "race": "Silicon Automaton", "class": "Low-Level Optimizer", "level": 1, "exp": 0, "next_exp": 100, "hp": 120, "max_hp": 120, "atk": 18, "def": 10, "spd": 14, "luc": 8, "tokens": 100}, {"name": "Architect", "race": "Bare-Metal Carbon", "class": "Data Architect", "level": 1, "exp": 0, "next_exp": 100, "hp": 100, "max_hp": 100, "atk": 12, "def": 14, "spd": 10, "luc": 10, "tokens": 100}, {"name": "Orchestrator", "race": "Compiler Elf", "class": "Agent Orchestrator", "level": 1, "exp": 0, "next_exp": 100, "hp": 90, "max_hp": 90, "atk": 10, "def": 8, "spd": 12, "luc": 12, "tokens": 100}, {"name": "PromptEng", "race": "Neuron Cyborg", "class": "Prompt Engineer", "level": 1, "exp": 0, "next_exp": 100, "hp": 80, "max_hp": 80, "atk": 16, "def": 6, "spd": 8, "luc": 14, "tokens": 100}]',
                 '{"currentChapter": 0, "x": 8, "y": 7, "openedChests": [], "readManuals": [], "readManualPages": [], "screenMode": "dark", "lastSavedAt": null}'
             )
         """)
@@ -124,6 +126,26 @@ class SaveStateModel(BaseModel):
 @app.get("/api/health")
 def health():
     return {"status": "ok", "host": "127.0.0.1"}
+
+@app.get("/api/sandbox-status")
+def sandbox_status():
+    """Reports whether the Arch Linux Docker sandbox is available, so the
+    client terminal can show real-sandbox vs host-shell-fallback."""
+    import subprocess
+    docker_available = False
+    container_running = False
+    try:
+        check = subprocess.run(
+            ["docker", "ps", "--filter", "name=zeus-sandbox", "-q"],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=5
+        )
+        docker_available = check.returncode == 0
+        container_running = docker_available and bool(check.stdout.strip())
+    except FileNotFoundError:
+        docker_available = False
+    except Exception:
+        pass
+    return {"docker": docker_available, "container_running": container_running}
 
 @app.get("/api/diagnostics")
 def diagnostics():
@@ -228,7 +250,7 @@ def save_state(state: SaveStateModel):
 
 def get_default_skeleton(chapter_id: int) -> str:
     skeletons = {
-        0: '# Outpost Zero: Environment config\n# Set the path variable or export keys to restore console graphics.\n# Example: export PATH=$PATH:/usr/bin\nexport PATH=$PATH:/usr/local/bin\necho "Booting environment..."\n',
+        0: '# Outpost Zero: Environment config\n# The citadel gates read your $PATH. Restore the toolchain by APPENDING\n# /usr/local/bin to the existing PATH. Keep $PATH in your export so the\n# old entries are not lost.\n#\n# Write your export statement below this line:\n\necho "Booting environment..."\n',
         1: '# Alexandria Library: OCR Filters\ndef monochrome_filter(rgb_matrix):\n    # Convert 3D RGB matrix to 2D Grayscale matrix\n    # rgb_matrix is a list of lists of (R, G, B) tuples\n    # Return a list of lists of numbers (0-255)\n    gray_matrix = []\n    for row in rgb_matrix:\n        gray_row = []\n        for r, g, b in row:\n            gray_val = int(0.299 * r + 0.587 * g + 0.114 * b)\n            gray_row.append(gray_val)\n        gray_matrix.append(gray_row)\n    return gray_matrix\n\ndef threshold_filter(gray_matrix, threshold):\n    # Values > threshold -> 255, <= threshold -> 0\n    binary_matrix = []\n    for row in gray_matrix:\n        binary_row = []\n        for val in row:\n            binary_row.append(255 if val > threshold else 0)\n        binary_matrix.append(binary_row)\n    return binary_matrix\n',
         2: '# Relational Meadows: SQL injection security\ndef run_injection_exploit():\n    # Return exploit payload username to bypass credentials\n    return "\' OR 1=1;--"\n\ndef get_character_secured(conn, username):\n    # Safely query secret keys from DB using parameters\n    cursor = conn.cursor()\n    cursor.execute("SELECT secret_key FROM users WHERE username = ?", (username,))\n    return cursor.fetchall()\n',
         3: '# Document Dunes: Redis cache\nimport json\nimport time\n\nclass PolymorphicItemParser:\n    def parse(self, json_str):\n        # Parse and return item dict structure from JSON string\n        return json.loads(json_str)\n\nclass TimedCache:\n    def __init__(self, ttl_seconds=5):\n        self.cache = {}\n        self.ttl = ttl_seconds\n\n    def get(self, key):\n        if key in self.cache:\n            val, expiry = self.cache[key]\n            if time.time() < expiry:\n                return val\n            del self.cache[key]\n        return None\n\n    def set(self, key, value):\n        self.cache[key] = (value, time.time() + self.ttl)\n',
@@ -313,8 +335,13 @@ async def ws_shell(websocket: WebSocket):
         container_check = os.popen("docker ps --filter name=zeus-sandbox -q").read().strip()
         if container_check:
             cmd = ["docker", "exec", "-it", "zeus-sandbox", "bash"]
+            await websocket.send_text("\r\n[Sandbox: connected to Arch Linux container 'zeus-sandbox']\r\n")
         else:
             cmd = ["bash"]
+            await websocket.send_text(
+                "\r\n[Sandbox OFFLINE: this is your HOST shell, not the Arch container.\r\n"
+                " Run setup/build_sandbox.sh with Docker installed for the real sandbox.]\r\n"
+            )
 
         # Run process with pseudo-terminal binding
         import pty

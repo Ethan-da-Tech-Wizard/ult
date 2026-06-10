@@ -40,6 +40,10 @@
                 <button id="manual-save-btn" title="Manual Save">Save</button>
             </div>
 
+            <div id="party-hud" class="ui-panel">
+                <!-- Party HP bars rendered by updateUIHeaders -->
+            </div>
+
             <!-- Combat Overlay Screen -->
             <div id="combat-overlay" class="hidden">
                 <div class="combat-grid">
@@ -166,6 +170,7 @@
 
                 <!-- Terminal Console Tab -->
                 <div class="tab-pane" id="pane-terminal">
+                    <div id="sandbox-status-badge" class="sandbox-badge sandbox-badge-unknown">Sandbox: checking...</div>
                     <div class="terminal-shell" id="ws-shell-terminal">
                         <!-- Custom interactive command-line screen -->
                         <div class="terminal-stdout" id="shell-output">

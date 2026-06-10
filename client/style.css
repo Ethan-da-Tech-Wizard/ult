@@ -1286,6 +1286,79 @@ body {
     background-color: var(--accent-color);
 }
 
+/* Overworld party HP HUD */
+#party-hud {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 8px;
+    padding: 6px 8px;
+}
+
+.party-hud-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.party-hud-name {
+    width: 80px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.party-hud-bar {
+    flex: 1;
+    height: 6px;
+    background: rgba(0, 0, 0, 0.5);
+    border: 1px solid var(--border-color);
+}
+
+.party-hud-fill {
+    height: 100%;
+    transition: width 0.3s ease;
+}
+
+.party-hud-hp {
+    min-width: 52px;
+    text-align: right;
+}
+
+/* Enemy telegraph line in combat */
+.combat-intent-line {
+    font-size: 0.72em;
+    color: #f87171;
+    margin-top: 2px;
+}
+
+.combat-intent-calm {
+    color: #9ca3af;
+}
+
+/* Terminal sandbox status badge */
+.sandbox-badge {
+    font-size: 8px;
+    padding: 4px 8px;
+    margin-bottom: 4px;
+    border: 1px solid var(--border-color);
+    display: inline-block;
+}
+
+.sandbox-badge-ok {
+    color: #4ade80;
+    border-color: #4ade80;
+}
+
+.sandbox-badge-fallback {
+    color: #facc15;
+    border-color: #facc15;
+}
+
+.sandbox-badge-unknown {
+    color: #9ca3af;
+}
+
 .hidden {
     display: none !important;
 }
