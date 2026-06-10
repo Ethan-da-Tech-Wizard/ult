@@ -27,6 +27,15 @@ elif ! python3 -c "import fastapi, uvicorn, numpy" >/dev/null 2>&1; then
 fi
 
 echo ""
+echo "=========================================================="
+echo " ⚠️  SYSTEM REQUIREMENTS & SETUP NOTICE:"
+echo " Core game only requires Python (running now)."
+echo " To enable optional Arch Sandbox (T2) & TempleOS VM (T3):"
+echo "   - Make sure Docker & QEMU are installed on your host."
+echo "   - Run: python setup/install_all.py to build them."
+echo "   - If missing, the game falls back to host execution."
+echo "=========================================================="
+echo ""
 echo "▶️   The Sacred Tech is starting..."
 echo "    Open http://127.0.0.1:8000 in your browser."
 echo ""
