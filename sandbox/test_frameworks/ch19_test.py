@@ -5,7 +5,6 @@ import re
 def parse_simple_yaml(yaml_content):
     """Fallback basic parser if PyYAML is not present."""
     data = {}
-    current_key = None
     for line in yaml_content.splitlines():
         line = line.strip()
         if not line or line.startswith("#"):

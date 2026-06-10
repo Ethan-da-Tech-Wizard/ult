@@ -37,8 +37,7 @@ def start_mock_holyc_server():
         conn.sendall(b"\r\n--- Terry's Sanctuary: Headless TempleOS Altar (Mock) ---\r\n")
         conn.sendall(b"TempleOS V5.03\r\n")
         conn.sendall(b"Write HolyC scripts (.HC) and compile them natively.\r\n")
-        
-        buffer = ""
+
         while True:
             try:
                 conn.sendall(b"HolyC> ")

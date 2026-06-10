@@ -70,3 +70,93 @@ Each JRPG area unlocks a distinct sandbox validator checking logic outputs in `/
 * **Chapter 19: Kubernetes Citadel**: Resource memory limits, NodePort Services, and Ingress routing rules.
 * **Chapter 20: The Grand Assembly**: Integrated pipeline joining OCR, SQLite, Graph databases, and LLM text generation.
 * **Chapter 21: Altar of TempleOS**: Headless serial booting telnet streams and bare-metal HolyC compilation checksums.
+
+---
+
+## 4. Engineering Session Log — QoL & Lint Pass (2026-06-10)
+
+This section documents, in detail, the cleanup and quality-of-life work done on branch `claude/affectionate-keller-e00ku3` so future agents understand what changed, why, and what conventions to follow.
+
+### 4.1 Lint & Dead-Code Fixes
+
+**Python (all ruff findings resolved — `ruff check server scripts sandbox` is now clean):**
+
+| File | Fix |
+|---|---|
+| `server/main.py` | Removed unused `import json` |
+| `server/qemu_launcher.py` | Removed unused `buffer` variable in the mock HolyC client thread |
+| `sandbox/test_frameworks/ch4_test.py` | Removed unused `import time` |
+| `sandbox/test_frameworks/ch6_test.py` | Removed unused `import subprocess` |
+| `sandbox/test_frameworks/ch19_test.py` | Removed unused `current_key` variable in the YAML fallback parser |
+
+**JavaScript (`client/app.js`):**
+
+* Removed `formatValidatorHints()` — defined but never called anywhere.
+* Removed the dead `currentBgmNode` variable (replaced by real gain-node tracking, see 4.3).
+* Removed an unused `chapterNPCs` lookup at the top of `checkInteraction()`.
+* Removed the duplicated `palette-selector` "Settings handlers" change-listener block (it was registered twice from two identical copy-pasted sections).
+
+**Note for future agents:** the remaining `no-unused-vars` ESLint warnings (`buyShopItem`, `useInventoryItem`, `setActiveLead`, `executeCombatAction`, `openLibraryBook`, `insertLessonExample`, `applyLessonChapter`) are FALSE POSITIVES — these functions are invoked from generated inline `onclick="..."` HTML and must stay top-level globals. Do not delete them. `app.js` is loaded as a plain (non-module) script for exactly this reason.
+
+### 4.2 Real Bug Fixes
+
+* **Orphaned shell processes (`server/main.py`, `/ws/shell`)**: the PTY subprocess handle was previously dropped (`proc` assigned, never used), so every websocket disconnect leaked a live `bash` process and the handler's `asyncio.gather` never returned. Now the handler uses `asyncio.wait(..., return_when=FIRST_COMPLETED)`, cancels the surviving task, kills/reaps the subprocess, and closes the PTY master fd in a `finally` block. Verified: 3 connect/disconnect cycles leave zero stray bash processes.
+* **Deprecated FastAPI startup hook**: migrated `@app.on_event("startup")` to a `lifespan` async context manager passed to `FastAPI(...)`. The QEMU/mock-HolyC boot logic is unchanged.
+* **Unwired settings UI (`client/index.html` + `app.js`)**: the Dialogue Speed selector, Focus Controls selector, and Close button existed in HTML with zero JS references. All are now functional (see 4.3). The Focus Controls option label was corrected from "Both (Tab & Escape)" to "Both (Tab & Ctrl+E)" to match actual behavior.
+
+### 4.3 New QoL Features
+
+**Settings persistence (`client/app.js`)**
+* All settings live in the `gameSettings` object and persist to `localStorage` under the key `sacredTechSettings` (`loadGameSettings()` / `saveGameSettings()`).
+* Persisted fields: `palette`, `dialogueSpeed` (`scroll` | `instant`), `focusKeys` (`both` | `tab`), `bgmVolume` (0–100), `muted` (bool).
+* `syncSettingsUI()` pushes loaded values into the settings menu controls at startup; `applyPalette()` applies the body class.
+
+**Dialogue char-scroll**
+* `renderDialogueText()` implements retro typewriter scrolling (2 chars / 16 ms tick) when `gameSettings.dialogueSpeed === "scroll"`; instant print otherwise.
+* While text is typing, the advance keys first complete the text (`completeDialogueText()`), and only then close the dialogue — standard JRPG behavior. `hideDialogue()` clears any running typing timer.
+
+**Audio: volume, mute, and SFX**
+* Settings menu gained a Music Volume slider (`#bgm-volume-slider`) and Mute checkbox (`#mute-audio-toggle`).
+* `playBgm()` now sets a per-theme `baseGain` and routes the final gain through `applyBgmVolume()`; the tracked `currentBgmGainNode` lets the slider change volume live mid-track. Slider value 60 (`DEFAULT_BGM_VOLUME`) reproduces the originally-authored loudness.
+* New `playSfx(type)` synth blips: `step` (movement), `menu` (tab switch / dialogue open), `hit` (combat start), `coin` (shop purchase), `heal` (item use). All respect mute + volume.
+* The global keydown handler resumes a suspended `AudioContext` on first input (browser autoplay policy).
+
+**Held-key movement**
+* `DIRECTION_KEYS` maps WASD/arrows to deltas. First press moves immediately; holding repeats every `HELD_MOVE_INTERVAL_MS` (150 ms) via a `requestAnimationFrame` loop (`heldMovementLoop`) instead of relying on OS key-repeat.
+* `keyup` removes keys from `heldDirections`; `window blur` clears all held keys to prevent stuck movement.
+
+**Forgiving interact keys**
+* Space and `E` now advance dialogue and trigger `checkInteraction()` alongside Enter. Plain `e` interacts; `Ctrl+E` still toggles editor focus (only when Focus Controls is set to "both").
+* Keyboard handler now ignores game keys when the event target is an `INPUT`/`TEXTAREA`/`SELECT`, so typing `w` in the terminal/search inputs no longer moves the player.
+
+**Save history loader**
+* Server: new `GET /api/saves?limit=N` (id, gold, compute_tokens, unlocked_chapters, state_json of the most recent rows, limit clamped 1–50) and `GET /api/save/{save_id}` (full row, 404 if missing). Every save was already an `INSERT`, so history existed — it just wasn't exposed.
+* Client: Settings menu "Load Earlier Save..." button toggles `renderSaveSlotList()`, which lists recent saves (`#id — Ch X, gold, timestamp`) with Load buttons calling `loadSaveById()`.
+* `fetchSaveState()` was refactored: the save-application logic is now the reusable `applySaveData(data)`.
+
+**Encounter relief**
+* `encounterGraceSteps` (6 steps) is granted after every combat (win via `endCombat()`, loss via the `loseCombat()` warp) — no back-to-back random battles.
+* New shop item **Debug Spray** (`debug_spray`, 40 gold): sets `repelSteps = 40`; both counters tick down only on encounter-eligible (grass) tiles and suppress the encounter roll while active.
+
+**Minimap objective marker**
+* `getObjectiveMarker()` returns the tile the player should head toward: the Compiler Smith during the Chapter 0 tutorial stage, otherwise the portal tile (tile id `6`) once `isChapterGateOpen()` is true. Returns `null` in dark mode or when the objective is editor work.
+* `drawMinimap()` draws a pulsing yellow outline around the marker (pulse animates via the existing 700 ms ambient redraw interval).
+
+**Editor niceties**
+* `Ctrl+Enter` inside the code editor triggers Compile & Run (the `run-btn` tooltip already promised this; now it's real).
+* New "Reset to Skeleton" button in the editor header fetches `GET /api/code?chapter_id=X&skeleton=1` (new `skeleton` query param on the existing endpoint, which bypasses the saved relic file and returns `get_default_skeleton()`), with a `confirm()` guard before replacing editor contents.
+
+**Styling (`client/style.css`)**: added styles for the volume slider, `#open-save-slots-btn`, `#save-slot-list`, and `.save-slot-row` consistent with the retro panel look.
+
+### 4.4 Deliberately NOT Implemented
+
+* **Fast travel between visited maps** — excluded on purpose: fast travel is a late-game unlock by design. Do not add a free fast-travel system.
+
+### 4.5 Verification Performed
+
+* `ruff check server scripts sandbox` — clean.
+* `python3 -m py_compile` on all server/scripts files — clean.
+* `node --check client/app.js` — clean; ESLint shows 0 errors (remaining warnings are the inline-onclick false positives noted in 4.1).
+* `scripts/full_stack_smoke.py` — all 22 chapter validators PASS, save/load persistence PASS.
+* `scripts/first_portal_smoke.py` — all 3 checks PASS.
+* Live server boot: `/api/health`, `/api/saves`, `/api/save/{id}`, `/api/code?skeleton=1` all exercised with curl; websocket shell leak fix verified with 3 connect/disconnect cycles (no orphaned bash processes).
