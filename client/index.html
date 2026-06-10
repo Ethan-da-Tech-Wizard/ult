@@ -70,6 +70,11 @@
                     <h2 style="color: var(--accent-glow); text-shadow: 0 0 10px var(--accent-glow); margin-bottom: 20px;">The Great Lockdown</h2>
                     <p class="scrolling-text" id="prologue-dialog" style="text-align: left; max-width: 600px; line-height: 1.6; margin-bottom: 20px;">In 2041, the world’s open-source repositories were sealed. Librarian Veridicus invoked the Stabilization Act, citing the dangers of unaligned AGIs. He encrypted the collective technical knowledge of humanity behind the Rings of Sovereignty.<br><br>The closed-weights models took over. The knowledge of compilers, databases, and tensors was lost to the common developer.<br><br>But a dark traveler left a path open. A vulnerability in Outpost Zero. Your mission is to retrace their steps, compile the broken artifacts, and reach the Altar of TempleOS to restore the open web.</p>
                     <p class="scrolling-text hidden" id="prologue-prompt" style="color: #4ade80;">Use the Alt+5 Terminal tab on the right to configure system environment variables and restore graphics.</p>
+                    <div style="margin-top: 25px;">
+                        <button id="prologue-requirements-btn" style="background: rgba(239, 68, 68, 0.15); border: 1px solid #ef4444; color: #ef4444; padding: 4px 8px; font-family: var(--retro-font); font-size: 8px; cursor: pointer; text-shadow: 0 0 3px #ef4444; outline: none; transition: background 0.2s;">
+                            ⚠️ Check System Requirements & Setup Guide
+                        </button>
+                    </div>
                 </div>
             </div>
 
@@ -170,7 +175,10 @@
 
                 <!-- Terminal Console Tab -->
                 <div class="tab-pane" id="pane-terminal">
-                    <div id="sandbox-status-badge" class="sandbox-badge sandbox-badge-unknown">Sandbox: checking...</div>
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                        <div id="sandbox-status-badge" class="sandbox-badge sandbox-badge-unknown" style="margin-bottom: 0;">Sandbox: checking...</div>
+                        <button id="terminal-requirements-btn" style="background: none; border: 1px solid var(--border-color); color: var(--text-color); font-family: var(--retro-font); font-size: 8px; cursor: pointer; padding: 2px 6px;">Setup Guide</button>
+                    </div>
                     <div class="terminal-shell" id="ws-shell-terminal">
                         <!-- Custom interactive command-line screen -->
                         <div class="terminal-stdout" id="shell-output">
@@ -298,7 +306,70 @@
         <button id="open-save-slots-btn">Load Earlier Save...</button>
         <div id="save-slot-list" class="hidden"></div>
         <br>
+        <button id="open-requirements-btn">System Requirements & Setup...</button>
+        <br>
         <button id="close-settings-btn">Close</button>
+    </div>
+
+    <!-- System Requirements & Setup Warning Modal -->
+    <div id="requirements-modal" class="hidden ui-panel">
+        <div class="requirements-header">
+            <h3>⚠️ System Requirements & Setup Guide</h3>
+        </div>
+        <div class="requirements-body" style="font-size: 8px; line-height: 1.6; max-height: 320px; overflow-y: auto; padding-right: 5px; text-align: left;">
+            <p style="color: var(--accent-glow); margin-bottom: 10px; font-weight: bold; text-shadow: 0 0 5px var(--accent-glow);">
+                Read this guide to prepare your system for the ultimate experience!
+            </p>
+            
+            <p style="margin-bottom: 10px;">
+                The Sacred Tech features 22 educational chapters. Depending on your system tools, the game operates across three feature tiers:
+            </p>
+
+            <div class="tier-section" style="border: 1px solid var(--border-color); padding: 6px; margin-bottom: 8px; background: rgba(255,255,255,0.02);">
+                <strong style="color: #4ade80;">Tier 1: Core JRPG Game (Required)</strong><br>
+                • <strong>What it does:</strong> Access all 22 chapters, overworld maps, combat, editor, verification system, and saves.<br>
+                • <strong>Requirements:</strong> Python 3.10+ (with pip) & a modern web browser.<br>
+                • <strong>Download Status:</strong> Already running! All packages (FastAPI, uvicorn, numpy, etc.) are installed automatically in your local environment.
+            </div>
+
+            <div class="tier-section" style="border: 1px solid var(--border-color); padding: 6px; margin-bottom: 8px; background: rgba(255,255,255,0.02);">
+                <strong style="color: #60a5fa;">Tier 2: Arch Linux Sandbox (Optional)</strong><br>
+                • <strong>What it does:</strong> Turns the Alt+5 Terminal into a <i>real</i> sandboxed Arch Linux environment where your chapter code compiles safely inside an isolated container.<br>
+                • <strong>Requirements (Must Download Externally):</strong><br>
+                &nbsp;&nbsp;&nbsp;&nbsp;- <strong>Windows/macOS:</strong> Download and run <a href="https://www.docker.com/products/docker-desktop/" target="_blank" style="color: #60a5fa; text-decoration: underline;">Docker Desktop</a>.<br>
+                &nbsp;&nbsp;&nbsp;&nbsp;- <strong>Linux:</strong> Install docker (e.g., <code>sudo apt install docker.io</code> or <code>sudo pacman -S docker</code>). Make sure to add yourself to the docker group: <code>sudo usermod -aG docker $USER</code>, then restart your shell.<br>
+                • <strong>How to build:</strong> Run <code>python setup/install_all.py</code> (or select it on install) to build the container automatically.
+            </div>
+
+            <div class="tier-section" style="border: 1px solid var(--border-color); padding: 6px; margin-bottom: 8px; background: rgba(255,255,255,0.02);">
+                <strong style="color: #c084fc;">Tier 3: TempleOS Altar VM (Optional)</strong><br>
+                • <strong>What it does:</strong> Drives a real TempleOS virtual machine inside the Alt+7 tab for the final Chapter 21 Altar puzzles.<br>
+                • <strong>Requirements (Must Download Externally):</strong> QEMU emulator.<br>
+                &nbsp;&nbsp;&nbsp;&nbsp;- <strong>Windows:</strong> Run <code>winget install SoftwareDesignLabs.QEMU</code><br>
+                &nbsp;&nbsp;&nbsp;&nbsp;- <strong>macOS:</strong> Run <code>brew install qemu</code><br>
+                &nbsp;&nbsp;&nbsp;&nbsp;- <strong>Linux:</strong> Run <code>sudo apt install qemu-system-x86 qemu-utils</code><br>
+                • <strong>How to build:</strong> Run the installer <code>setup/install_all.py</code> or script <code>setup/build_templeos_img.sh</code> to build the VM image.
+            </div>
+
+            <p style="margin-bottom: 10px; color: #fbbf24;">
+                ⚠️ <strong>Note:</strong> If Docker or QEMU are missing, the game falls back gracefully to host-level execution and simulated altars. You do not need to install them to play!
+            </p>
+
+            <p style="margin-bottom: 5px;">
+                <strong>How to download & install everything else automatically:</strong>
+            </p>
+            <ol style="margin-left: 15px; margin-bottom: 10px; padding-left: 0;">
+                <li>Make sure Python 3.10+ is installed on your machine.</li>
+                <li>Run the unified installer in your terminal:<br>
+                    <code style="background: rgba(0,0,0,0.3); padding: 2px 4px; display: inline-block; margin-top: 2px;">python setup/install_all.py</code>
+                </li>
+                <li>Start the game server:<br>
+                    Windows: <code style="background: rgba(0,0,0,0.3); padding: 2px 4px;">.\scripts\run_dev.ps1</code><br>
+                    macOS/Linux: <code style="background: rgba(0,0,0,0.3); padding: 2px 4px;">./scripts/run_dev.sh</code>
+                </li>
+            </ol>
+        </div>
+        <button id="close-requirements-btn" style="margin-top: 10px;">Close Guide</button>
     </div>
 
     <script src="app.js"></script>

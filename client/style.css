@@ -1580,3 +1580,50 @@ body {
     color: var(--bg-primary);
     border-color: var(--accent-color);
 }
+
+/* Requirements & Setup Warning Modal */
+#requirements-modal {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 100;
+    width: 420px;
+    max-width: 90vw;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+#requirements-modal h3 {
+    margin-bottom: 4px;
+    border-bottom: 2px solid var(--border-color);
+    padding-bottom: 6px;
+    color: var(--accent-glow);
+    text-shadow: 0 0 8px var(--accent-glow);
+}
+
+#close-requirements-btn {
+    background-color: var(--border-color);
+    color: var(--text-color);
+    border: none;
+    padding: 6px;
+    cursor: pointer;
+    font-family: var(--retro-font);
+    font-size: 8px;
+    width: 100%;
+}
+
+#close-requirements-btn:hover {
+    background-color: var(--accent-color);
+}
+
+#prologue-requirements-btn:hover {
+    background: rgba(239, 68, 68, 0.35) !important;
+    text-shadow: 0 0 6px #ef4444 !important;
+}
+
+#terminal-requirements-btn:hover {
+    border-color: var(--accent-color) !important;
+    color: var(--accent-color) !important;
+}
