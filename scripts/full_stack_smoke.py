@@ -105,13 +105,31 @@ def main():
             assert saved_state.get("lastSavedAt") == "2026-06-09T00:00:00.000Z"
             print("[PASS] save/load persistence")
 
+            # Chapter 0's skeleton must NOT pass (the tutorial requires the
+            # player to actually write the export), so compile it with a
+            # player-style solution instead of the raw skeleton.
+            ch0_solution = 'export PATH=$PATH:/usr/local/bin\necho "Booting environment..."\n'
+            ch0_skeleton = request_json("/api/code?chapter_id=0&skeleton=1", timeout=10)
+            skeleton_result = request_json(
+                "/api/compile",
+                method="POST",
+                payload={"chapter_id": 0, "code": ch0_skeleton.get("code", "")},
+                timeout=30,
+            )
+            assert not skeleton_result.get("success"), "Chapter 0 skeleton should not pass untouched"
+            print("[PASS] chapter 0 skeleton correctly rejected")
+
             failures = []
             for chapter_id in range(22):
-                code_data = request_json(f"/api/code?chapter_id={chapter_id}", timeout=10)
+                if chapter_id == 0:
+                    code = ch0_solution
+                else:
+                    code_data = request_json(f"/api/code?chapter_id={chapter_id}", timeout=10)
+                    code = code_data.get("code", "")
                 result = request_json(
                     "/api/compile",
                     method="POST",
-                    payload={"chapter_id": chapter_id, "code": code_data.get("code", "")},
+                    payload={"chapter_id": chapter_id, "code": code},
                     timeout=30,
                 )
                 if not result.get("success"):

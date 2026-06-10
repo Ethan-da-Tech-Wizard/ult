@@ -160,3 +160,90 @@ This section documents, in detail, the cleanup and quality-of-life work done on 
 * `scripts/full_stack_smoke.py` — all 22 chapter validators PASS, save/load persistence PASS.
 * `scripts/first_portal_smoke.py` — all 3 checks PASS.
 * Live server boot: `/api/health`, `/api/saves`, `/api/save/{id}`, `/api/code?skeleton=1` all exercised with curl; websocket shell leak fix verified with 3 connect/disconnect cycles (no orphaned bash processes).
+
+---
+
+## 5. Engineering Session Log — Playability & Authenticity Pass (2026-06-10, second session)
+
+### 5.1 TempleOS / HolyC authenticity
+
+**Why the Altar uses a mock:** HolyC's canonical compiler exists only *inside*
+TempleOS, and stock TempleOS is VGA + PS/2 only — Terry never wrote a serial
+console driver. The game's Alt+7 bridge talks over a QEMU serial telnet port
+(4444) that stock TempleOS never writes to, so with the stock ISO the bridge
+is silent. The mock is the offline fallback, NOT the goal.
+
+Changes made:
+* `server/qemu_launcher.py` — the mock HolyC altar now actually validates:
+  `looks_like_holyc()` rejects Python/JS syntax (`def `, `print(`, `import `,
+  `console.log`) and requires real HolyC markers (`U0`, `I64`, `U8`, `F64`,
+  `Print`); accepted snippets get a deterministic 16-bit checksum
+  (`holyc_checksum()`). `HELP` command added. Previously the mock replied
+  "Success" to ANY input.
+* `server/qemu_launcher.py` — `ZEUS_TEMPLEOS_VNC=1` env var launches QEMU with
+  `-vnc 127.0.0.1:0` so the player can connect any VNC viewer to 5900 and use
+  the REAL TempleOS display (real HolyC, graphical).
+* `setup/build_templeos_img.sh` — `TEMPLEOS_ISO_URL` env override for
+  serial-patched community builds, plus a printed warning explaining the
+  stock-ISO serial limitation.
+
+### 5.2 Broken-things fixes
+
+* `sandbox/Dockerfile` — added `numpy` to the venv pip list (chapters 8, 9,
+  14, 16 validators import it; the venv could not see pacman's
+  `python-numpy`, so those chapters crashed in-container). Replaced the wrong
+  `tesseract` PyPI package with `pytesseract`.
+* `sandbox/test_frameworks/ch0_test.py` — real validation now: strips
+  comments, requires `export PATH=...` whose value references `$PATH` AND
+  appends a directory. Teaching hints on each failure mode.
+* `server/main.py` — Chapter 0 skeleton no longer contains the solution
+  (instructions + `echo` only). The untouched skeleton now FAILS, which both
+  smoke suites assert explicitly.
+* `scripts/full_stack_smoke.py` / `scripts/first_portal_smoke.py` — submit a
+  player-style ch0 solution and assert the skeleton is rejected.
+* `client/app.js` `loseCombat` — death warp now uses `getRespawnPoint()`:
+  (2,7) if open, else nearest walkable NPC-free tile. `runWiringDiagnostics`
+  gained a per-map respawn-tile check.
+* `server/main.py` — default `stats_json` is now an ARRAY matching the
+  client's party order (`normalizePartyStats` merges by index); previously a
+  name-keyed dict that was silently discarded. Column default fixed to `[]`.
+
+### 5.3 Playability features
+
+* **Jingles** (`playJingle(kind)` in app.js): `victory` / `levelup` after
+  combat (`winCombat`), `fanfare` on validator pass (run-button success).
+  Respects mute/volume like all audio.
+* **Party HP HUD**: `#party-hud` panel (index.html) rendered by
+  `renderPartyHud()` from `updateUIHeaders()` — name + colored HP bar +
+  numbers for all four members, always visible in the overworld.
+* **Movement tweening**: `playerVisual {x,y}` lags `player.x/y` at
+  `TWEEN_TILES_PER_SEC = 9`; `drawMap` uses a fractional camera
+  (`getVisualCameraOrigin`) and draws one extra tile row/column so the map
+  scrolls smoothly. Warps (distance > 2 tiles) snap instantly. Tween ticks in
+  the existing `heldMovementLoop` rAF.
+* **NPC patrol routes**: `NPC_PATROLS` entries now support
+  `route: [[x,y],...]` loops (legacy `to` still works); 14 maps have routes
+  (was 8 two-point patrols). `getPatrolPosition` filters route points against
+  the grid at runtime, so an unwalkable point is skipped, never rendered.
+* **Bonus chests**: `expandMapGrid` deterministically places up to 3 extra
+  chests per map on open floor (tile 0) in the expanded region (x ≥ 17),
+  reachable by construction; rewards come from the existing per-map
+  `getChestReward`.
+* **Enemy telegraphs**: `currentEnemy.nextMove` is rolled at combat start and
+  re-rolled after each enemy action; `initCombatScreen` shows
+  "⚠ Telegraph: preparing [ability]" or "readying a standard attack", and
+  `enemyTurn` executes the telegraphed intent instead of rolling fresh.
+* **Sandbox status indicator**: new `GET /api/sandbox-status`
+  (`{docker, container_running}`), a colored badge above the Alt+5 terminal
+  (green = Arch container, yellow = host-shell fallback), and a banner line
+  sent over `/ws/shell` on connect stating which shell the player is in.
+
+### 5.4 Verification
+
+* ruff + py_compile + `node --check` clean; ESLint 0 errors (same inline-onclick
+  false positives as §4.1).
+* Both smoke suites pass, including the two new chapter-0 skeleton-rejection
+  assertions.
+* Live-tested: `/api/sandbox-status`; mock HolyC altar rejects
+  `def hack(): print("hi")` and accepts `U0 Hymn() { Print("Praise\n"); } Hymn();`
+  with checksum `0x0C3D`.
