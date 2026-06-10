@@ -49,26 +49,31 @@ const SHOP_ITEMS = [
 
 // Patrol routes are loops of tiles; unwalkable points are skipped at runtime
 // (getPatrolPosition filters against the map grid), so routes degrade safely.
-const NPC_PATROLS = {
-    1: { "7,7": { route: [[7, 7], [8, 7], [8, 6]], interval: 1700 } },
-    2: { "7,7": { route: [[7, 7], [7, 6], [8, 6], [8, 7]], interval: 1600 } },
-    3: { "7,7": { route: [[7, 7], [7, 6], [8, 6], [8, 7]], interval: 1500 } },
-    4: { "7,7": { route: [[7, 7], [7, 6], [6, 6], [6, 7]], interval: 1500 } },
-    5: { "7,7": { route: [[7, 7], [8, 7], [8, 8]], interval: 1800 } },
-    6: { "7,7": { route: [[7, 7], [8, 7], [8, 8], [7, 8]], interval: 1600 } },
-    7: { "7,7": { route: [[7, 7], [8, 7], [8, 6], [7, 6]], interval: 1600 } },
-    9: { "7,7": { route: [[7, 7], [7, 8], [8, 8]], interval: 1700 } },
-    11: { "7,7": { route: [[7, 7], [8, 7], [8, 6], [7, 6]], interval: 1600 } },
-    12: { "7,7": { route: [[7, 7], [7, 6], [6, 6], [6, 7]], interval: 1500 } },
-    14: { "7,7": { route: [[7, 7], [8, 7], [8, 8]], interval: 1800 } },
-    16: { "7,7": { route: [[7, 7], [7, 6], [8, 6], [8, 7]], interval: 1500 } },
-    18: { "7,7": { route: [[7, 7], [7, 8], [6, 8]], interval: 1900 } },
-    20: { "7,7": { route: [[7, 7], [8, 7], [8, 8], [7, 8]], interval: 1700 } }
+const NPC_PATROLS = {};
+const PATROL_TEMPLATES = {
+    "7,7": { route: [[7, 7], [8, 7], [8, 6]], interval: 1700 },
+    "3,9": { route: [[3, 9], [4, 9], [5, 9]], interval: 1500 },
+    "12,9": { route: [[12, 9], [13, 9], [14, 9]], interval: 1600 },
+    "12,5": { route: [[12, 5], [12, 4], [12, 3]], interval: 1800 },
+    "14,1": { route: [[14, 1], [13, 1], [12, 1]], interval: 1500 },
+    "3,3": { route: [[3, 3], [4, 3], [5, 3]], interval: 1600 }
 };
+for (let mapId = 0; mapId <= 21; mapId++) {
+    NPC_PATROLS[mapId] = {};
+    Object.entries(PATROL_TEMPLATES).forEach(([coord, config]) => {
+        NPC_PATROLS[mapId][coord] = {
+            route: config.route,
+            interval: config.interval + (mapId * 17) % 200
+        };
+    });
+}
+
 
 let autosaveTimer = null;
 let encounterGraceSteps = 0;
 let repelSteps = 0;
+let secretInteractCount = 0;
+
 
 // Visual (sub-tile) player position used for smooth tile-to-tile tweening.
 // Logical position stays in player.x/y; this lags behind by up to one tile.
@@ -3164,7 +3169,7 @@ function openShop(shopName = "Outpost Supply") {
                 <strong>${item.name} - ${item.price} Gold</strong>
                 <span>${item.desc}</span>
             </div>
-            <button onclick="buyShopItem('${item.id}')">Buy</button>
+            <button class="buy-shop-item-btn" data-item-id="${item.id}">Buy</button>
         </div>
     `).join("");
     overlay.classList.remove("hidden");
@@ -3187,7 +3192,7 @@ function openInventory() {
                     <strong>${item.name} x${countInventoryItem(item.id)}</strong>
                     <span>${item.desc}</span>
                 </div>
-                <button onclick="useInventoryItem('${item.id}')">Use</button>
+                <button class="use-inventory-item-btn" data-item-id="${item.id}">Use</button>
             </div>
         `).join("");
     }
@@ -3768,7 +3773,7 @@ function renderSpecialistHints(chapterId = player.currentChapter, forceOpen = fa
             <div class="hint-bubble-speaker">${hint.speaker}</div>
             <p>${hint.text}</p>
         </div>
-    `).join("") + `<button class="hint-dismiss-btn" onclick="document.getElementById('specialist-panel').classList.add('hidden')">Hide Hints</button>`;
+    `).join("") + `<button class="hint-dismiss-btn" id="specialist-hide-btn">Hide Hints</button>`;
 
     if (forceOpen || !panel.classList.contains("hidden")) {
         panel.classList.remove("hidden");
@@ -4588,6 +4593,39 @@ function checkInteraction() {
         if (pos.x >= 0 && pos.x < MAP_COLS && pos.y >= 0 && pos.y < MAP_ROWS) {
             const tile = activeGrid[pos.y][pos.x];
             
+            if (pos.x === 13 && pos.y === 6) {
+                secretInteractCount = (secretInteractCount || 0) + 1;
+                if (secretInteractCount === 1) {
+                    showDialogue("Ancient Brick Wall", "You knock on the wall. It sounds hollow... maybe try knocking a couple more times.");
+                    return;
+                } else if (secretInteractCount === 2) {
+                    showDialogue("Ancient Brick Wall", "You knock again. You hear a faint, polite squeak from the other side: 'Segmentation fault at address 0x0?'");
+                    return;
+                } else if (secretInteractCount >= 3) {
+                    const mapId = getMapForChapter(player.currentChapter);
+                    if (!NPCS[mapId]) NPCS[mapId] = {};
+                    if (!NPCS[mapId]["13,6"]) {
+                        NPCS[mapId]["13,6"] = {
+                            name: "Null Pointer",
+                            sprite: "👻",
+                            dialogue: "Oh! Hello! Thank you for dereferencing me. I am the Null Pointer. I've been wandering these coordinates since a bad malloc() call in Chapter 5. It is a relief to be defined, if only temporarily.",
+                            options: [
+                                { text: "Ask how she got here", reply: "In Chapter 5, a C++ thread allocated memory for a struct but forgot to initialize the pointer. I was born in that uninitialized gap. I spent three weeks pointing to random kernel heap addresses before someone finally set me to NULL. Very cozy here, actually." },
+                                { text: "Ask about safety", reply: "Remember: always set pointers to NULL after freeing them! A dangling pointer can be hijacked. A NULL pointer just crashes safely. Safety is a crash you can reproduce." },
+                                { text: "Chitchat", reply: "I like the number 0. It's so round. So empty. So void." }
+                            ]
+                        };
+                        activeGrid[6][13] = 2;
+                        showDialogue("Ancient Brick Wall", "The brick wall crumbles, revealing a hidden chamber! A polite, glowing figure steps forward.");
+                        drawMap();
+                    } else {
+                        const npc = getContextualNpcDialogue(NPCS[mapId]["13,6"], mapId);
+                        showDialogue(npc.name, npc.dialogue, npc.options);
+                    }
+                    return;
+                }
+            }
+            
             const npcHit = getNPCAtPosition(pos.x, pos.y);
             if (npcHit) {
                 // NPC Dialog
@@ -4859,12 +4897,12 @@ function initCombatScreen() {
     const menu = document.getElementById("combat-menu-options");
     if (combatTurn === 'player') {
         menu.innerHTML = `
-            <button onclick="executeCombatAction('attack')">⚔️ Attack</button>
-            <button onclick="executeCombatAction('spell')">✨ Spell</button>
-            <button onclick="executeCombatAction('skill')">Skill</button>
-            <button onclick="executeCombatAction('item')">🧪 Item</button>
-            <button onclick="executeCombatAction('lead')">🧭 Lead</button>
-            <button onclick="executeCombatAction('flee')">🏃 Flee</button>
+            <button class="combat-menu-btn" data-action="attack">⚔️ Attack</button>
+            <button class="combat-menu-btn" data-action="spell">✨ Spell</button>
+            <button class="combat-menu-btn" data-action="skill">Skill</button>
+            <button class="combat-menu-btn" data-action="item">🧪 Item</button>
+            <button class="combat-menu-btn" data-action="lead">🧭 Lead</button>
+            <button class="combat-menu-btn" data-action="flee">🏃 Flee</button>
         `;
     } else {
         menu.innerHTML = `<button style="color: #666; cursor: not-allowed;" disabled>⏳ Waiting...</button>`;
@@ -4874,8 +4912,8 @@ function initCombatScreen() {
 function showLeadSubmenu() {
     const menu = document.getElementById("combat-menu-options");
     menu.innerHTML = player.party.map((char, index) => `
-        <button onclick="setActiveLead(${index})">${char.name} (${getRaceAffinity(char.race)})</button>
-    `).join('') + `<button onclick="initCombatScreen()">[Back]</button>`;
+        <button class="combat-menu-btn" data-lead-index="${index}">${char.name} (${getRaceAffinity(char.race)})</button>
+    `).join('') + `<button class="combat-menu-btn combat-back-btn">[Back]</button>`;
 }
 
 function setActiveLead(index) {
@@ -4972,21 +5010,21 @@ function showSpellSubmenu() {
     const spells = CLASS_SPELLS[activeClass] || [];
     
     menu.innerHTML = spells.map(spell => `
-        <button onclick="executeCombatAction('spell', '${spell.name}')">${spell.name} (${spell.cost} Tokens)</button>
-    `).join('') + `<button onclick="initCombatScreen()">[Back]</button>`;
+        <button class="combat-menu-btn" data-spell-name="${spell.name}">${spell.name} (${spell.cost} Tokens)</button>
+    `).join('') + `<button class="combat-menu-btn combat-back-btn">[Back]</button>`;
 }
 
 function showChapterAbilitySubmenu() {
     const menu = document.getElementById("combat-menu-options");
     const abilities = getUnlockedCombatAbilities();
     if (abilities.length === 0) {
-        menu.innerHTML = `<button disabled>No chapter skills unlocked</button><button onclick="initCombatScreen()">[Back]</button>`;
+        menu.innerHTML = `<button disabled>No chapter skills unlocked</button><button class="combat-menu-btn combat-back-btn">[Back]</button>`;
         return;
     }
 
     menu.innerHTML = abilities.map(ability => `
-        <button title="${escapeDiagnosticText(ability.desc)}" onclick="executeCombatAction('skill', '${ability.name}')">${ability.name} (${ability.cost} Tokens)</button>
-    `).join('') + `<button onclick="initCombatScreen()">[Back]</button>`;
+        <button class="combat-menu-btn" title="${escapeDiagnosticText(ability.desc)}" data-ability-name="${ability.name}">${ability.name} (${ability.cost} Tokens)</button>
+    `).join('') + `<button class="combat-menu-btn combat-back-btn">[Back]</button>`;
 }
 
 function useChapterAbility(abilityName) {
@@ -5633,6 +5671,19 @@ const LIBRARY_BOOKS = [
                 expected: "The command output is captured in output.txt and can be inspected afterward.",
                 applyChapter: 0,
                 terms: ["stdout"]
+            },
+            {
+                title: "Grayscale & Thresholding",
+                body: "Optical Character Recognition (OCR) systems process visual inputs. Pixels are first converted to grayscale (monochrome) by taking a weighted average of R, G, and B values. Next, thresholding binarizes the grayscale matrix, converting pixel values above a threshold to white (255) and those at or below it to black (0) to isolate character shapes.",
+                bullets: [
+                    "Grayscale conversion: val = int(0.299*R + 0.587*G + 0.114*B).",
+                    "Thresholding: Output 255 if grayscale > threshold, else 0.",
+                    "Process row by row to maintain image dimensions."
+                ],
+                code: "def monochrome_filter(rgb_matrix):\n    # Convert 3D RGB to 2D Grayscale\n    return gray_matrix\n\ndef threshold_filter(gray_matrix, threshold):\n    # Convert Grayscale to Binary\n    return binary_matrix",
+                expected: "A binary matrix with 0 and 255 values isolating shapes.",
+                applyChapter: 1,
+                terms: ["Grayscale", "Binarization", "OCR Filter"]
             }
         ]
     },
@@ -5715,28 +5766,255 @@ const LIBRARY_BOOKS = [
         ]
     },
     {
-        id: "holyc-temple-notes",
-        title: "HolyC Temple Notes",
-        unlockChapter: 21,
-        subtitle: "Bare-metal syntax, serial bridges, and final checksums.",
+        id: "rag-retrieval-codex",
+        title: "RAG & Retrieval Codex",
+        unlockChapter: 10,
+        subtitle: "Advanced retrieval mechanics, control loops, and spatial heuristics.",
         pages: [
             {
-                title: "Speak In HolyC",
-                body: "The final chapter checks that the player understands they are not writing Python anymore. HolyC uses C-like types and immediate execution.",
-                bullets: ["Use U0 for void-like functions.", "Use I64 for 64-bit integers.", "Use Print rather than Python print."],
-                code: "U0 Main()\n{\n    I64 checksum = 21;\n    Print(\"checksum:%d\\n\", checksum);\n}",
-                expected: "The validator accepts HolyC-shaped source and rejects Python syntax.",
-                applyChapter: 21,
-                terms: ["HolyC"]
+                title: "Advanced Blending & Filters",
+                body: "Naive RAG relies solely on cosine semantic distance, which often misses lexical keywords. Advanced retrieval blends Sparse lexical scores (BM25) and Dense semantic scores (Cosine) using a blending factor (alpha). Pre-retrieval query expansion expands query variations before matching, and post-retrieval threshold filters remove low-scoring documents.",
+                bullets: [
+                    "Query Expansion: Generate synonyms/phrases using expand_query.",
+                    "Score Blending: Compute score = alpha * bm25 + (1 - alpha) * cosine.",
+                    "Post-Retrieval Filtering: Rerank and strip elements below threshold."
+                ],
+                code: "def expand_query(q):\n    return [q, q + ' relic', q + ' power']\n\ndef hybrid_search_blend(bm25, cosine, alpha=0.5):\n    # Combine scores from both dicts using alpha weight\n    return blended_sorted\n\ndef rerank_and_filter(results, threshold=0.50):\n    return [item for item in results if item[1] >= threshold]",
+                expected: "An array of expanded query strings, a sorted list of blended results, and a filtered list of only relevant results.",
+                applyChapter: 10,
+                terms: ["BM25", "Cosine Similarity", "Query Expansion", "Reranking"]
             },
             {
-                title: "Bridge To The Altar",
-                body: "The serial bridge routes typed bytes to the TempleOS VM. The game treats that connection as the last practical proof: can you reach the compiler directly?",
-                bullets: ["Boot the local VM or mock bridge.", "Connect to 127.0.0.1:4444.", "Transmit concise HolyC source."],
-                code: "telnet 127.0.0.1 4444",
-                expected: "A TempleOS-style prompt accepts HolyC input over the local bridge.",
+                title: "Tool Introspection",
+                body: "Agentic tool calling requires exporting python functions to structural JSON schemas. Using the inspect module, we introspect function signatures and docstrings to auto-generate parameter type and description definitions, allowing LLMs to invoke native tools accurately.",
+                bullets: [
+                    "Inspect signature: Use inspect.signature(func).",
+                    "Determine parameter types from annotations.",
+                    "Identify required arguments (parameters without default values)."
+                ],
+                code: "def generate_tool_schema(func):\n    sig = inspect.signature(func)\n    # Build properties map and required list\n    return {'name': func.__name__, 'parameters': ...}",
+                expected: "A JSON schema outlining function description, parameter types, and required lists.",
+                applyChapter: 17,
+                terms: ["Tool Calling", "Signature Introspection", "JSON Schema"]
+            },
+            {
+                title: "Self-Corrective Loops",
+                body: "Modular and Agentic RAG models introduce self-correction mechanisms. A corrective controller executes a loop: retrieves, evaluates contextual relevance, and if the retrieved data fails the test, rewrites the query and retries up to a maximum step limit to avoid infinite execution cycles.",
+                bullets: [
+                    "Control Loop: Cycle retrieval and evaluation iteratively.",
+                    "Relevance Evaluation: Assess if the context satisfies the request.",
+                    "Recursion Safeguard: Set max_steps to terminate loops."
+                ],
+                code: "def run_self_corrective_rag(initial_query, retrieve_fn, evaluate_fn, rewrite_fn, max_steps=3):\n    # Loop: retrieve, check evaluate, rewrite query, check max steps",
+                expected: "A final context dictionary and status flag indicating success or failure.",
+                applyChapter: 18,
+                terms: ["Agentic RAG", "ReAct Loop", "Self-Correction"]
+            },
+            {
+                title: "OCR Layout Proximity Analysis",
+                body: "Multi-Modal RAG requires reading raw text documents or visual scans. To preserve reading order and semantic structure, coordinate-aware OCR mapping is used. Grouping horizontally adjacent words on the same line if their horizontal distance is less than or equal to 15 pixels prevents text chunk fragmentation.",
+                bullets: [
+                    "Proximity Grouping: Group tokens on the same y coordinate if gap <= 15.",
+                    "Structured RAG: Retrieve items from SQLite inventory DB using merged OCR terms.",
+                    "Consolidated Context: Combine spatial strings, DB fields, and Neo4j graph relationships."
+                ],
+                code: "def run_assembler_pipeline(layout_json_path, query_text, db_path):\n    # Load JSON coordinates, group words by y coordinate,\n    # merge horizontally adjacent words if gap <= 15, query DB",
+                expected: "Merged horizontal tokens forming correct query entities and resolving DB records.",
+                applyChapter: 20,
+                terms: ["OCR Bounding Box", "Spatial Grouping", "Multi-Modal RAG"]
+            }
+        ]
+    },
+    {
+        id: "sandbox-os-kernel-codex",
+        title: "Sandbox & OS Kernel Codex",
+        unlockChapter: 6,
+        subtitle: "Container sandboxes, ring-0 architectures, and bare-metal compilation.",
+        pages: [
+            {
+                title: "Container Security & Audits",
+                body: "Docker containers provide isolated operating environments for running untrusted code. To secure a containerized application, packages must be audited against known CVEs (e.g. using pip-audit). Running commands requires proper group membership, and dependency versions should be declared with secure minima rather than static pins.",
+                bullets: [
+                    "Avoid executing arbitrary container shells as root.",
+                    "Audit requirements files for active CVE database listings.",
+                    "Configure user namespace mapping for host resource protections."
+                ],
+                code: "docker build -t zeus-arch:latest .\ndocker run --name zeus-sandbox -d zeus-arch:latest\npip-audit -r requirements.txt",
+                expected: "An active isolated container sandbox and an audit report showing zero active vulnerabilities.",
+                applyChapter: 6,
+                terms: ["Docker", "Sandbox", "pip-audit", "CVE"]
+            },
+            {
+                title: "TempleOS Internals",
+                body: "TempleOS is a 64-bit, non-preemptive, multi-tasking, ring-0 only operating system designed by Terry Davis. It features no memory protection, allowing all code to execute with bare-metal hardware access. Memory is identity-mapped, meaning virtual addresses correspond directly to physical RAM, optimizing system throughput at the expense of memory safety.",
+                bullets: [
+                    "Everything runs in ring 0 with full supervisor privilege.",
+                    "Single-address space with identity-mapped memory layout.",
+                    "Cooperative multi-tasking requires threads to yield voluntarily."
+                ],
+                code: "// Bare-metal hardware address manipulation\nU8 *vga_memory = 0xA0000;\n*vga_memory = 15; // Set pixel color",
+                expected: "Direct access to physical addresses and hardware registers without memory access violations.",
                 applyChapter: 21,
-                terms: ["serial bridge", "HolyC"]
+                terms: ["TempleOS", "Ring 0", "Identity Mapping", "Bare Metal"]
+            },
+            {
+                title: "HolyC & Serial Console",
+                body: "HolyC is a C/C++ dialect native to TempleOS. It compiles JIT (Just-In-Time) and features non-standard types like U0 (void-like) and I64 (64-bit integer), and uses Print rather than printf. Bridging into the TempleOS VM is achieved via a redirected serial port (telnet over port 4444) to pipe HolyC source lines directly into the shell compiler.",
+                bullets: [
+                    "HolyC JIT compiler executes source lines immediately.",
+                    "Communicate via serial redirect loopback port 4444.",
+                    "HolyC uses C-like pointer arithmetic with no safety checks."
+                ],
+                code: "telnet 127.0.0.1 4444\nU0 Main()\n{\n    I64 count = 10;\n    Print(\"Count: %d\\n\", count);\n}\nMain;",
+                expected: "A serial connection piping HolyC source code directly into the JIT compiler for execution.",
+                applyChapter: 21,
+                terms: ["HolyC JIT", "Serial Console", "QEMU redirect"]
+            }
+        ]
+    },
+    {
+        id: "llm-ops-security-manual",
+        title: "LLM Ops & Security Manual",
+        unlockChapter: 7,
+        subtitle: "Subword tokenizers, adapter tuning, parameter quantization, and prompt safety.",
+        pages: [
+            {
+                title: "Byte Pair Encoding",
+                body: "Tokenizers translate characters into token integers. Byte Pair Encoding (BPE) starts with individual characters and iteratively merges the most frequent adjacent token pairs according to a vocabulary mapping table, balancing lexical coverage and vocabulary size.",
+                bullets: [
+                    "Initialize tokens as character lists.",
+                    "Scan for high-frequency adjacent token pairs.",
+                    "Merge pairs repeatedly in vocabulary sequence."
+                ],
+                code: "def bpe_encode(text, merges):\n    # Iteratively map subword sequences\n    return tokens",
+                expected: "A list of subword tokens representing the input text.",
+                applyChapter: 7,
+                terms: ["BPE Tokenizer", "Subword merging", "Vocabulary mapping"]
+            },
+            {
+                title: "BLEU & ROUGE Evaluation",
+                body: "Evaluating text generation pipelines requires mathematical comparison against gold-standard references. BLEU measures unigram precision (clipped overlap count divided by candidate length) with a brevity penalty. ROUGE-L evaluates recall of the Longest Common Subsequence (LCS) to verify reference matches.",
+                bullets: [
+                    "BLEU: Clipped n-gram matches with length brevity penalty.",
+                    "ROUGE-L: Longest Common Subsequence using dynamic programming.",
+                    "Metrics range from 0.0 (no match) to 1.0 (exact match)."
+                ],
+                code: "bleu = calculate_bleu(cand, ref)\nrouge = calculate_rouge_l(cand, ref)",
+                expected: "BLEU and ROUGE-L scores indicating precision and recall relative to the reference text.",
+                applyChapter: 13,
+                terms: ["BLEU-1", "ROUGE-L", "Longest Common Subsequence"]
+            },
+            {
+                title: "LoRA Adapters",
+                body: "Low-Rank Adaptation (LoRA) fine-tunes LLMs by freezing base weights W0 and adding trainable low-rank matrices A and B ($W = W_0 + (alpha/r)*B*A$). This scales parameter updates down to a fraction of the base size.",
+                bullets: [
+                    "Keep W0 frozen during backpropagation.",
+                    "Use matrices A and B with rank r << d.",
+                    "Scale update by alpha / r."
+                ],
+                code: "def lora_forward(x, W0, A, B, alpha, r):\n    return x @ W0.T + (alpha / r) * (x @ A.T) @ B.T",
+                expected: "Forward pass incorporating low-rank weight updates without full parameter training.",
+                applyChapter: 14,
+                terms: ["LoRA", "Low-Rank Matrices", "Base Weights"]
+            },
+            {
+                title: "Guardrails & Sanitizers",
+                body: "Deploying LLMs safely requires checking inputs for jailbreaks (like instruction overrides) and sanitizing outputs to redact sensitive credentials (API keys, passwords) before displaying them.",
+                bullets: [
+                    "Verify inputs against jailbreak blocklists.",
+                    "Redact sensitive tokens using regular expressions.",
+                    "Ensure output matches expected schema."
+                ],
+                code: "if not is_safe_prompt(prompt):\n    raise ValueError('Jailbreak detected!')\noutput = sanitize_output(raw_output)",
+                expected: "Sanitized input validation and redacted output strings.",
+                applyChapter: 15,
+                terms: ["Jailbreak", "Prompt Injection", "Sanitization", "Regex Redaction"]
+            },
+            {
+                title: "Symmetric Quantization",
+                body: "Quantization reduces LLM resource footprints. Symmetric INT8 quantization maps 32-bit floating point weights to 8-bit integers by calculating a scale factor ($S = max(|x|) / 127$) and clipping values to $[-127, 127]$.",
+                bullets: [
+                    "Compute absolute maximum weight value.",
+                    "Divide weights by scale factor and round.",
+                    "Dequantize back to float32 using scale multiplier."
+                ],
+                code: "scale = np.max(np.abs(x)) / 127.0\nq = np.clip(np.round(x / scale), -127, 127)",
+                expected: "INT8 quantized matrix and corresponding floating-point scale factor.",
+                applyChapter: 16,
+                terms: ["INT8 Quantization", "Scale Factor", "Clipping"]
+            }
+        ]
+    },
+    {
+        id: "distributed-systems-graphs-guide",
+        title: "Distributed Systems & Graphs Guide",
+        unlockChapter: 3,
+        subtitle: "In-memory caching, Graph database Cypher walks, FastAPI servers, and Kubernetes routes.",
+        pages: [
+            {
+                title: "Cypher Query Language",
+                body: "Graph databases model relational data as nodes and edges. Neo4j's Cypher language uses ascii-art node matching (e.g. `(n:Node)`) and recursive shortestPath functions to quickly find relational links in network topologies.",
+                bullets: [
+                    "Represent nodes as parentheses: (n:Label {key: val}).",
+                    "Represent relationships as arrows: -[:TYPE]->.",
+                    "Use shortestPath() with variable-length path bounds."
+                ],
+                code: "MATCH (a:Node {name: 'A'}), (b:Node {name: 'B'})\nMATCH p = shortestPath((a)-[*..10]->(b))\nRETURN p",
+                expected: "A shortest path Cypher query string connecting start and end nodes.",
+                applyChapter: 12,
+                terms: ["Neo4j", "Cypher", "shortestPath", "Graph Node"]
+            },
+            {
+                title: "Redis Cache & TTL Eviction",
+                body: "Caching database operations in RAM avoids costly disk lookups. Key-value caches implement a Time-To-Live (TTL) eviction policy where keys expire and are deallocated after a set duration to prevent memory overload.",
+                bullets: [
+                    "Check cache hits before performing database reads.",
+                    "Write cache entries with expiry timestamps.",
+                    "Delete and return None when key is stale."
+                ],
+                code: "class TimedCache:\n    def get(self, key):\n        # check expiry time, clear if expired\n        return val",
+                expected: "A dictionary-backed timed cache with automatic TTL eviction.",
+                applyChapter: 3,
+                terms: ["Redis", "TTL Eviction", "In-Memory Cache"]
+            },
+            {
+                title: "Race Conditions & Mutexes",
+                body: "Running code in parallel threads can cause data corruption (race conditions) when multiple threads attempt to write to the same memory address simultaneously. Use a Mutex lock (threading.Lock in Python) to force threads to wait their turn.",
+                bullets: [
+                    "Identify shared mutable resources.",
+                    "Acquire mutex locks before writing/reading.",
+                    "Release lock inside a finally block or context manager."
+                ],
+                code: "lock = threading.Lock()\nwith lock:\n    shared_resource += value",
+                expected: "Thread-safe operations where concurrent writers wait in sequence.",
+                applyChapter: 4,
+                terms: ["Race Condition", "Mutex Lock", "Threading"]
+            },
+            {
+                title: "FastAPI Loopback Binding",
+                body: "FastAPI exposes web servers. For secure internal applications, bind strictly to loopback interfaces (127.0.0.1 or localhost) instead of exposing all interfaces (0.0.0.0), blocking external attackers.",
+                bullets: [
+                    "Define routes using decorators: @app.get('/path').",
+                    "Validate inputs using Pydantic schemas.",
+                    "Bind host to loopback address: 127.0.0.1."
+                ],
+                code: "import uvicorn\n@app.get('/api')\ndef read():\n    return {'status': 'ok'}\nuvicorn.run(app, host='127.0.0.1', port=8000)",
+                expected: "A functioning FastAPI web server bound to localhost.",
+                applyChapter: 11,
+                terms: ["FastAPI", "Loopback Binding", "Uvicorn"]
+            },
+            {
+                title: "K8s Pods & Ingress Routing",
+                body: "Kubernetes orchestrates container deployments. Pod manifests define container configurations including CPU/Memory requests/limits. Ingress manifests define routing rules to forward host HTTP traffic to backend cluster services.",
+                bullets: [
+                    "Set resource requests and limits in Pod specs.",
+                    "Define backend service endpoints in Ingress routes.",
+                    "Enforce resource constraints to prevent out-of-memory container crashes."
+                ],
+                code: "# Pod spec resources:\n#   limits: memory: 256Mi\n# Ingress spec rules:\n#   http: paths: backend: service: name: ...",
+                expected: "Validated Pod and Ingress YAML configurations routing external paths.",
+                applyChapter: 19,
+                terms: ["Kubernetes Pod", "Ingress Controller", "Resource Limits"]
             }
         ]
     }
@@ -5753,7 +6031,7 @@ const VALIDATOR_HINTS = {
     7: ["Apply merges repeatedly and in order.", "Return a token list, not one joined string."],
     8: ["Transpose K on the last two axes.", "Subtract max before exp for stable softmax."],
     9: ["LayerNorm normalizes along the last axis.", "The training step should return updated weights."],
-    10: ["Union dense and sparse document IDs.", "Sort blended results from highest score to lowest."],
+    10: ["Generate at least 2 query variations in expand_query.", "Blend BM25 and cosine scores using the alpha parameter: alpha*bm25 + (1-alpha)*cosine.", "Exclude any tuples from rerank_and_filter whose score is strictly less than the threshold value."],
     11: ["Return host exactly as 127.0.0.1.", "Use port 8000 as an integer."],
     12: ["Include shortestPath in the Cypher string.", "Return the path binding from the query."],
     13: ["BLEU needs clipped unigram overlap.", "ROUGE-L needs a longest common subsequence table."],
@@ -5761,9 +6039,9 @@ const VALIDATOR_HINTS = {
     15: ["Reject obvious instruction override phrases.", "Redact API-like keys and password fields."],
     16: ["Use max(abs(x)) / 127 for scale.", "Clip quantized values into the int8 range."],
     17: ["Use inspect.signature for parameters.", "Required args have no default value."],
-    18: ["Stop when status is no longer running.", "Set max_steps_exceeded when the loop never terminates."],
+    18: ["Check recursion state: stop loop when status is no longer 'running'.", "In run_self_corrective_rag, verify the evaluate function returns True or False.", "Rewrite the query on failure and track loop count; return failed status if max_steps is reached."],
     19: ["Return both Pod and Ingress YAML.", "Include memory limits and backend service routing."],
-    20: ["Return a dictionary with all pipeline outputs.", "Close SQLite connections even if queries fail."],
+    20: ["Parse coordinates from OCR layout JSON file.", "Group words on the same y-axis if their horizontal gap is 15 pixels or less.", "Query SQLite database for exact names matching the grouped phrases."],
     21: ["Reject Python def/print syntax.", "Accept HolyC markers such as U0, I64, or Print."]
 };
 
@@ -5772,14 +6050,33 @@ const VALIDATOR_EXPECTATIONS = {
         expected: "A shell script that exports or updates PATH and prints visible output.",
         library: { bookId: "python-field-manual", pageIndex: 0, label: "Python Field Manual p.1" }
     },
-    1: { expected: "monochrome_filter and threshold_filter return matrices with the expected dimensions and values." },
+    1: {
+        expected: "monochrome_filter and threshold_filter return matrices with the expected dimensions and values.",
+        library: { bookId: "python-field-manual", pageIndex: 2, label: "Python Field Manual p.3" }
+    },
     2: {
         expected: "run_injection_exploit returns a working payload, and get_character_secured uses SQL parameters.",
         library: { bookId: "sql-survival-guide", pageIndex: 0, label: "SQL Survival Guide p.1" }
     },
+    3: {
+        expected: "TimedCache retrieves cached values before TTL expiration and returns None when expired.",
+        library: { bookId: "distributed-systems-graphs-guide", pageIndex: 1, label: "Distributed Systems & Graphs Guide p.2" }
+    },
+    4: {
+        expected: "ThreadedBank handles concurrent transactions safely using thread locks.",
+        library: { bookId: "distributed-systems-graphs-guide", pageIndex: 2, label: "Distributed Systems & Graphs Guide p.3" }
+    },
     5: {
         expected: "optimized_array_sum returns the exact numeric total for the input array.",
         library: { bookId: "cpp-interop-grimoire", pageIndex: 0, label: "C++ Interop Grimoire p.1" }
+    },
+    6: {
+        expected: "requirements.txt includes requests with the secure version threshold.",
+        library: { bookId: "sandbox-os-kernel-codex", pageIndex: 0, label: "Sandbox & OS Kernel Codex p.1" }
+    },
+    7: {
+        expected: "bpe_encode tokenizes input strings using the predefined merges table.",
+        library: { bookId: "llm-ops-security-manual", pageIndex: 0, label: "LLM Ops & Security Manual p.1" }
     },
     8: {
         expected: "scaled_dot_product_attention returns both the attention output and normalized weights.",
@@ -5789,9 +6086,53 @@ const VALIDATOR_EXPECTATIONS = {
         expected: "LayerNorm normalizes along the last axis, and training_step returns updated weights.",
         library: { bookId: "transformer-atlas", pageIndex: 1, label: "Transformer Atlas p.2" }
     },
+    10: {
+        expected: "expand_query returns query variations, hybrid_search_blend computes blended weights, and rerank_and_filter applies threshold rules.",
+        library: { bookId: "rag-retrieval-codex", pageIndex: 0, label: "RAG & Retrieval Codex p.1" }
+    },
+    11: {
+        expected: "get_launch_config returns server bind host 127.0.0.1 and port 8000.",
+        library: { bookId: "distributed-systems-graphs-guide", pageIndex: 3, label: "Distributed Systems & Graphs Guide p.4" }
+    },
+    12: {
+        expected: "generate_cypher_path_walk builds Cypher shortestPath query linking nodes.",
+        library: { bookId: "distributed-systems-graphs-guide", pageIndex: 0, label: "Distributed Systems & Graphs Guide p.1" }
+    },
+    13: {
+        expected: "calculate_bleu computes n-gram precision and calculate_rouge_l computes longest common subsequence matches.",
+        library: { bookId: "llm-ops-security-manual", pageIndex: 1, label: "LLM Ops & Security Manual p.2" }
+    },
+    14: {
+        expected: "lora_forward scales updates by alpha/r and merge_weights collapses adapter weights.",
+        library: { bookId: "llm-ops-security-manual", pageIndex: 2, label: "LLM Ops & Security Manual p.3" }
+    },
+    15: {
+        expected: "is_safe_prompt rejects overrides, sanitize_output redacts secrets, and validate_json_response checks schema keys.",
+        library: { bookId: "llm-ops-security-manual", pageIndex: 3, label: "LLM Ops & Security Manual p.4" }
+    },
+    16: {
+        expected: "quantize_symmetric quantizes values into INT8 range and dequantize_symmetric restores float32 representation.",
+        library: { bookId: "llm-ops-security-manual", pageIndex: 4, label: "LLM Ops & Security Manual p.5" }
+    },
+    17: {
+        expected: "generate_tool_schema returns parameters and description schema, and execute_tool_call calls the correct tool mapping.",
+        library: { bookId: "rag-retrieval-codex", pageIndex: 1, label: "RAG & Retrieval Codex p.2" }
+    },
+    18: {
+        expected: "run_react_loop manages state transitions, and run_self_corrective_rag executes a retry-rewrite control loop.",
+        library: { bookId: "rag-retrieval-codex", pageIndex: 2, label: "RAG & Retrieval Codex p.3" }
+    },
+    19: {
+        expected: "get_k8s_manifests returns both Pod specs with memory limits and Ingress service routes.",
+        library: { bookId: "distributed-systems-graphs-guide", pageIndex: 4, label: "Distributed Systems & Graphs Guide p.5" }
+    },
+    20: {
+        expected: "run_assembler_pipeline performs spatial OCR grouping, queries SQLite, and consolidates context.",
+        library: { bookId: "rag-retrieval-codex", pageIndex: 3, label: "RAG & Retrieval Codex p.4" }
+    },
     21: {
         expected: "HolyC validation rejects Python syntax and accepts TempleOS-style U0, I64, or Print markers.",
-        library: { bookId: "holyc-temple-notes", pageIndex: 0, label: "HolyC Temple Notes p.1" }
+        library: { bookId: "sandbox-os-kernel-codex", pageIndex: 2, label: "Sandbox & OS Kernel Codex p.3" }
     }
 };
 
@@ -5834,8 +6175,8 @@ function renderValidatorFailureCoach(chapterId, output) {
     const hint = getNextValidatorHint(chapterId);
     const expectedText = summary.expectedFromOutput || summary.expected;
     const libraryButton = summary.library
-        ? `<button class="compile-help-btn" onclick="openLibraryBookAtPage('${summary.library.bookId}', ${summary.library.pageIndex})">Open ${escapeDiagnosticText(summary.library.label)}</button>`
-        : `<button class="compile-help-btn" onclick="activateWorkspaceTab('chronicles')">Open Field Contract</button>`;
+        ? `<button class="compile-help-btn open-manual-btn" data-book-id="${summary.library.bookId}" data-page-index="${summary.library.pageIndex}">Open ${escapeDiagnosticText(summary.library.label)}</button>`
+        : `<button class="compile-help-btn open-chronicles-btn">Open Field Contract</button>`;
 
     return `
 <div class="compile-coach">
@@ -5860,7 +6201,7 @@ const CODEX_ARTICLES = [
     { title: "Byte Pair Encoding (BPE)", tags: ["ch7", "bpe", "tokenizer", "subword", "nlp"], content: "Subword tokenizers split text into sub-word chunks. BPE operates by iteratively finding the most frequent adjacent pair of characters/tokens and merging them into a single token based on a pre-computed merges vocabulary." },
     { title: "Scaled Dot-Product Attention", tags: ["ch8", "attention", "transformer", "weights"], content: "Attention mechanisms project tokens into Q (Query), K (Key), and V (Value) vectors. Dot product QK^T computes similarities, scaled by sqrt(d_k) to prevent vanishing gradients. Softmax normalizes them into weights used to sum Value vectors." },
     { title: "Layer Normalization & SGD Backpropagation", tags: ["ch9", "layernorm", "backprop", "sgd", "pytorch"], content: "LayerNorm centers activation layers to mean=0 and variance=1. Backpropagation calculates MSE loss gradients and updates model parameters using Stochastic Gradient Descent." },
-    { title: "Vector Databases & Hybrid Search", tags: ["ch10", "vector", "search", "bm25", "hybrid"], content: "Hybrid search merges dense semantic search scores (Cosine similarity on vector embeddings) with sparse lexical search scores (BM25 keyword matching) using a blend weight (alpha) to query records accurately." },
+    { title: "Vector Databases & Hybrid Search", tags: ["ch10", "vector", "search", "bm25", "hybrid"], content: "Hybrid search bridges the gap between lexical keyword search (BM25) and dense vector semantic search (Cosine similarity). BM25 counts term frequencies and penalizes common terms across documents, making it excellent for exact jargon, product codes, or names. Dense retrieval computes semantic similarities between high-dimensional vector embeddings, finding synonyms and conceptual mappings but often losing track of exact keywords. Advanced RAG combines these using a linear combination: score = alpha * bm25 + (1 - alpha) * cosine. Pre-retrieval processing (e.g. query expansion) generates multiple query variations to broaden search scope. Post-retrieval processing applies score thresholds or cross-encoder rerankers to filter low-relevance results." },
     { title: "FastAPI REST Server Security", tags: ["ch11", "fastapi", "port", "loopback", "security"], content: "FastAPI exposes web servers. For secure internal applications, bind strictly to loopback interfaces (127.0.0.1 or localhost) instead of exposing all interfaces (0.0.0.0), blocking external attackers." },
     { title: "Graph Databases & Cypher Queries", tags: ["ch12", "graph", "neo4j", "cypher", "path"], content: "Graph databases model relationships. Neo4j's Cypher language uses ascii-art node matching (e.g. `(start)-[:CONNECTED_TO]->(end)`) and recursive shortestPath functions to quickly find relational links in network topologies." },
     { title: "BLEU and ROUGE Evaluation Metrics", tags: ["ch13", "bleu", "rouge", "metric", "eval"], content: "BLEU measures precision of n-grams (usually 1-grams) with a brevity penalty to evaluate generated translation text. ROUGE-L evaluates recall of the Longest Common Subsequence (LCS) to verify reference matches." },
@@ -5868,9 +6209,9 @@ const CODEX_ARTICLES = [
     { title: "Prompt Guardrails & Sanitizers", tags: ["ch15", "guardrail", "jailbreak", "security"], content: "Agent security systems use prompt checkers to reject jailbreak patterns (like ignore instructions) and output sanitizers to strip sensitive keys (like API secrets or passwords) before displaying results." },
     { title: "INT8 Quantization Scales", tags: ["ch16", "quantization", "int8", "deploy"], content: "Symmetric INT8 quantization maps 32-bit float weights to 8-bit integers by scaling ($S = max(|x|) / 127$), saving 75% memory and disk space with minimal accuracy loss." },
     { title: "Function Schema Exporters (Tool-Calling)", tags: ["ch17", "schema", "tool", "agent"], content: "Tool-calling agents parse python functions using signature introspection to generate JSON schemas, enabling LLMs to understand arguments and generate structured tool calls." },
-    { title: "ReAct Agent State Machines", tags: ["ch18", "react", "loop", "recursion"], content: "ReAct loops cycle through Thought -> Action -> Observation steps. Loops must implement recursion counters (max_steps limits) to prevent infinite loops and stack overflows." },
+    { title: "ReAct Agent State Machines", tags: ["ch18", "react", "loop", "recursion"], content: "ReAct (Reasoning and Acting) state machines alternate between thinking, picking an action, and processing observations. In Agentic RAG systems, self-correction loops evaluate the quality of retrieved contexts before passing them to the final generator. This corrective loop executes a state machine: retrieved context chunks are assessed by a heuristic evaluator. If they lack relevant information, a query rewrite utility rephrases the search criteria and runs retrieval again. To prevent execution deadlocks or infinite loops, corrective state machines must implement step limit safeguards (e.g., max_steps limit), terminating with a failure status if satisfactory context is not acquired." },
     { title: "Kubernetes Resource Limits & Routes", tags: ["ch19", "k8s", "kubernetes", "pod", "ingress"], content: "K8s manifests deploy applications: Pods define memory limits/requests (e.g. 256Mi limits) and exposed container ports. Ingress files route path patterns to named backend cluster services." },
-    { title: "Integrated Data Pipeline Assembly", tags: ["ch20", "pipeline", "assembler", "integration"], content: "Integrated systems tie multiple stages (OCR scanning, SQL queries, Graph lookups, and LLM text generation) into a unified synchronous pipeline to process inputs cleanly." },
+    { title: "Integrated Data Pipeline Assembly", tags: ["ch20", "pipeline", "assembler", "integration"], content: "Modern Multi-Modal and OCR-augmented RAG systems process printed documents, images, or layout schemas. OCR models output raw characters accompanied by bounding box geometry. To rebuild the reading structure, a horizontal proximity grouping heuristic clusters horizontally adjacent words on the same y-axis if their horizontal gap is less than or equal to 15 pixels. The merged phrases are then used to build queries for structured databases (like SQLite inventory databases), combine paths from graph engines, and supply rich visual-textual context to LLMs, executing a fully integrated retrieval pipeline." },
     { title: "TempleOS Serial console & HolyC", tags: ["ch21", "templeos", "holyc", "serial"], content: "Terry Davis's TempleOS runs on bare metal with no kernel memory protections. Serial consoles connect headless systems over loopback telnet port 4444. Verify bare-metal HolyC compilation checksums." }
 ];
 
@@ -5924,7 +6265,7 @@ function renderLibrary(trackRead = false) {
         const read = pagesRead === book.pages.length;
         return `
             <button class="library-book-btn ${book.id === activeLibraryBookId ? "active" : ""} ${unlocked ? "" : "locked"}"
-                onclick="${unlocked ? `openLibraryBook('${book.id}')` : ""}">
+                data-book-id="${book.id}">
                 <span class="library-book-title">${escapeDiagnosticText(book.title)}</span>
                 <span class="library-book-meta">${unlocked ? `${pagesRead}/${book.pages.length} pages${read ? " | read" : ""}` : `Unlocks at Ch ${book.unlockChapter}`}</span>
             </button>
@@ -5977,8 +6318,8 @@ function renderLibrary(trackRead = false) {
             <h4>Code Example</h4>
             <pre class="lesson-code">${escapeDiagnosticText(page.code)}</pre>
             <div class="lesson-actions">
-                <button class="lesson-action-btn" onclick="insertLessonExample('${book.id}', ${activeLibraryPage})">Try Example In Editor</button>
-                <button class="lesson-action-btn" onclick="applyLessonChapter(${page.applyChapter}, '${book.id}', ${activeLibraryPage})">Read This, Then Apply It</button>
+                <button class="lesson-action-btn try-example-btn" data-book-id="${book.id}" data-page-index="${activeLibraryPage}">Try Example In Editor</button>
+                <button class="lesson-action-btn apply-lesson-btn" data-apply-chapter="${page.applyChapter}" data-book-id="${book.id}" data-page-index="${activeLibraryPage}">Read This, Then Apply It</button>
             </div>
         </div>
         <div class="lesson-card">
@@ -5988,7 +6329,7 @@ function renderLibrary(trackRead = false) {
         <div class="lesson-card">
             <h4>Glossary Links</h4>
             <div class="lesson-actions">
-                ${page.terms.map(term => `<button class="term-chip" onclick="showGlossaryTerm('${escapeDiagnosticText(term)}')">${escapeDiagnosticText(term)}</button>`).join("")}
+                ${page.terms.map(term => `<button class="term-chip glossary-term-btn" data-term="${escapeDiagnosticText(term)}">${escapeDiagnosticText(term)}</button>`).join("")}
             </div>
         </div>
     `;
@@ -6288,8 +6629,8 @@ function renderChroniclesQuestTree() {
                 ${currentLesson ? `<small>Suggested reading: ${escapeDiagnosticText(currentLesson.bookTitle)} - ${escapeDiagnosticText(currentLesson.pageTitle)}</small>` : ""}
             </div>
             <div class="quest-action-row">
-                ${currentLesson ? `<button onclick="openLibraryBookAtPage('${currentLesson.bookId}', ${currentLesson.pageIndex})">Open Lesson</button>` : ""}
-                <button onclick="activateWorkspaceTab('editor')">Open Editor</button>
+                ${currentLesson ? `<button class="open-lesson-btn" data-book-id="${currentLesson.bookId}" data-page-index="${currentLesson.pageIndex}">Open Lesson</button>` : ""}
+                <button class="open-editor-btn">Open Editor</button>
             </div>
         </div>
     `;
@@ -6336,8 +6677,8 @@ function renderChroniclesQuestTree() {
                             ${contract.deliverables.map(deliverable => `<li>${deliverable}</li>`).join("")}
                         </ul>
                         <div class="quest-action-row">
-                            ${lesson ? `<button ${lessonUnlocked ? "" : "disabled"} onclick="event.stopPropagation(); openLibraryBookAtPage('${lesson.bookId}', ${lesson.pageIndex})">${lessonRead ? "Review Lesson" : "Read Lesson"}</button>` : ""}
-                            ${isUnlocked ? `<button onclick="event.stopPropagation(); player.currentChapter = ${ch.id}; loadChapterCode(${ch.id}); activateWorkspaceTab('editor')">Open Chapter</button>` : ""}
+                            ${lesson ? `<button class="open-lesson-btn" ${lessonUnlocked ? "" : "disabled"} data-book-id="${lesson.bookId}" data-page-index="${lesson.pageIndex}">${lessonRead ? "Review Lesson" : "Read Lesson"}</button>` : ""}
+                            ${isUnlocked ? `<button class="open-chapter-btn" data-chapter-id="${ch.id}">Open Chapter</button>` : ""}
                         </div>
                     </div>
                 ` : ""}
@@ -6345,13 +6686,7 @@ function renderChroniclesQuestTree() {
             <span class="quest-status-pill ui-panel">${statusText}</span>
         `;
         
-        if (isUnlocked) {
-            node.addEventListener("click", () => {
-                player.currentChapter = ch.id;
-                loadChapterCode(ch.id);
-            });
-        }
-        
+        // Row click selection handled by quest-tree event delegation
         tree.appendChild(node);
     });
 }
@@ -7147,8 +7482,178 @@ if (manualSaveBtn) {
     manualSaveBtn.addEventListener("click", () => manualSave());
 }
 
+// Dynamic Event Delegation Binder
+function initEventDelegation() {
+    // 1. Inventory & Shop Clicks
+    const inventoryContent = document.getElementById("inventory-content");
+    if (inventoryContent) {
+        inventoryContent.addEventListener("click", (e) => {
+            const buyBtn = e.target.closest(".buy-shop-item-btn");
+            const useBtn = e.target.closest(".use-inventory-item-btn");
+            if (buyBtn) {
+                buyShopItem(buyBtn.getAttribute("data-item-id"));
+            } else if (useBtn) {
+                useInventoryItem(useBtn.getAttribute("data-item-id"));
+            }
+        });
+    }
+
+    // 2. Specialist panel dismiss
+    const specialistPanel = document.getElementById("specialist-panel");
+    if (specialistPanel) {
+        specialistPanel.addEventListener("click", (e) => {
+            if (e.target.closest(".hint-dismiss-btn") || e.target.closest("#specialist-hide-btn")) {
+                specialistPanel.classList.add("hidden");
+            }
+        });
+    }
+
+    // 3. Combat Options
+    const combatMenuOptions = document.getElementById("combat-menu-options");
+    if (combatMenuOptions) {
+        combatMenuOptions.addEventListener("click", (e) => {
+            const btn = e.target.closest("button");
+            if (!btn || btn.disabled) return;
+
+            const action = btn.getAttribute("data-action");
+            const spellName = btn.getAttribute("data-spell-name");
+            const abilityName = btn.getAttribute("data-ability-name");
+            const leadIndex = btn.getAttribute("data-lead-index");
+            const isBack = btn.classList.contains("combat-back-btn");
+
+            if (action) {
+                executeCombatAction(action);
+            } else if (spellName) {
+                executeCombatAction("spell", spellName);
+            } else if (abilityName) {
+                executeCombatAction("skill", abilityName);
+            } else if (leadIndex !== null && typeof leadIndex !== "undefined") {
+                setActiveLead(parseInt(leadIndex));
+            } else if (isBack) {
+                initCombatScreen();
+            }
+        });
+    }
+
+    // 4. Learning Coach (inside Console log)
+    const consoleLog = document.getElementById("console-log");
+    if (consoleLog) {
+        consoleLog.addEventListener("click", (e) => {
+            const manualBtn = e.target.closest(".open-manual-btn");
+            const chroniclesBtn = e.target.closest(".open-chronicles-btn");
+            if (manualBtn) {
+                openLibraryBookAtPage(
+                    manualBtn.getAttribute("data-book-id"),
+                    parseInt(manualBtn.getAttribute("data-page-index") || "0")
+                );
+            } else if (chroniclesBtn) {
+                activateWorkspaceTab("chronicles");
+            }
+        });
+    }
+
+    // 5. Library Book List Selector
+    const libraryBookList = document.getElementById("library-book-list");
+    if (libraryBookList) {
+        libraryBookList.addEventListener("click", (e) => {
+            const bookBtn = e.target.closest(".library-book-btn");
+            if (bookBtn && !bookBtn.classList.contains("locked")) {
+                openLibraryBook(bookBtn.getAttribute("data-book-id"));
+            }
+        });
+    }
+
+    // 6. Library Page Interactive Actions
+    const libraryPageContent = document.getElementById("library-page-content");
+    if (libraryPageContent) {
+        libraryPageContent.addEventListener("click", (e) => {
+            const tryExampleBtn = e.target.closest(".try-example-btn");
+            const applyLessonBtn = e.target.closest(".apply-lesson-btn");
+            const termChipBtn = e.target.closest(".glossary-term-btn");
+
+            if (tryExampleBtn) {
+                insertLessonExample(
+                    tryExampleBtn.getAttribute("data-book-id"),
+                    parseInt(tryExampleBtn.getAttribute("data-page-index") || "0")
+                );
+            } else if (applyLessonBtn) {
+                applyLessonChapter(
+                    parseInt(applyLessonBtn.getAttribute("data-apply-chapter")),
+                    applyLessonBtn.getAttribute("data-book-id"),
+                    parseInt(applyLessonBtn.getAttribute("data-page-index") || "0")
+                );
+            } else if (termChipBtn) {
+                showGlossaryTerm(termChipBtn.getAttribute("data-term"));
+            }
+        });
+    }
+
+    // 7. Quest tree clicks (Chronicles)
+    const questTree = document.getElementById("quest-tree");
+    if (questTree) {
+        questTree.addEventListener("click", (e) => {
+            const openLessonBtn = e.target.closest(".open-lesson-btn");
+            const openEditorBtn = e.target.closest(".open-editor-btn");
+            const openChapterBtn = e.target.closest(".open-chapter-btn");
+            const questNode = e.target.closest(".quest-node");
+
+            if (openLessonBtn) {
+                e.stopPropagation();
+                openLibraryBookAtPage(
+                    openLessonBtn.getAttribute("data-book-id"),
+                    parseInt(openLessonBtn.getAttribute("data-page-index") || "0")
+                );
+            } else if (openEditorBtn) {
+                e.stopPropagation();
+                activateWorkspaceTab("editor");
+            } else if (openChapterBtn) {
+                e.stopPropagation();
+                const chId = parseInt(openChapterBtn.getAttribute("data-chapter-id"));
+                player.currentChapter = chId;
+                loadChapterCode(chId);
+                activateWorkspaceTab("editor");
+            } else if (questNode) {
+                const chId = parseInt(questNode.getAttribute("data-id"));
+                if (player.unlockedChapters.includes(chId)) {
+                    player.currentChapter = chId;
+                    loadChapterCode(chId);
+                }
+            }
+        });
+    }
+}
+
+// Development Auto-Reload Websocket Connection
+function initDevReloadWebSocket() {
+    if (window.location.hostname !== "127.0.0.1" && window.location.hostname !== "localhost") {
+        return;
+    }
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const host = window.location.host || '127.0.0.1:8000';
+    let socket = null;
+    try {
+        socket = new WebSocket(`${protocol}//${host}/ws/dev-reload`);
+        socket.onmessage = (event) => {
+            if (event.data === "reload") {
+                console.log("[DevReload] Source files changed. Reloading page...");
+                window.location.reload();
+            }
+        };
+        socket.onclose = () => {
+            setTimeout(initDevReloadWebSocket, 2000);
+        };
+        socket.onerror = () => {
+            if (socket) socket.close();
+        };
+    } catch (e) {
+        // Dev mode offline fallback
+    }
+}
+
 // Startup Bootstrap
 window.addEventListener("load", () => {
+    initEventDelegation();
+    initDevReloadWebSocket();
     loadGameSettings();
     applyPalette(gameSettings.palette);
     syncSettingsUI();

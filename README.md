@@ -13,16 +13,14 @@ This document covers **everything you need to download and play**.
 ```bash
 git clone https://github.com/Ethan-da-Tech-Wizard/ult.git
 cd ult
-./setup/install_all.sh     # one file installs everything it can find
-./scripts/run_dev.sh       # starts the game
+python setup/install_all.py     # cross-platform python installer
+./scripts/run_dev.sh            # starts the game (macOS/Linux)
+# on Windows, run: .\scripts\run_dev.ps1
 ```
 
 Then open **http://127.0.0.1:8000** in your browser.
 
-Don't want to run the installer? `./scripts/run_dev.sh` alone also works —
-it bootstraps its own Python dependencies into a local `.venv` on first
-launch, so by the time the game starts, everything it needs is on your
-machine.
+Don't want to run the installer? The run scripts (`run_dev.sh` / `run_dev.ps1`) alone also work—they bootstrap their own Python dependencies into a local `.venv` on first launch, so by the time the game starts, everything it needs is on your machine.
 
 ---
 
@@ -51,15 +49,17 @@ VNC display.
 
 ---
 
-## The One-File Installer: `setup/install_all.sh`
+## The One-File Installer: `setup/install_all.py`
 
 Every download the game needs, handled by one script:
 
 ```bash
-./setup/install_all.sh            # interactive: asks before optional tiers
-./setup/install_all.sh --minimal  # Tier 1 only, no questions
-./setup/install_all.sh --full     # everything your machine supports, no questions
+python setup/install_all.py           # interactive: asks before optional tiers
+python setup/install_all.py --minimal # Tier 1 only, no questions
+python setup/install_all.py --full    # everything your machine supports, no questions
 ```
+
+*(Note: OS-specific shell wrappers `./setup/install_all.sh` and `.\setup\install_all.ps1` are also provided and delegate to this script.)*
 
 What it does, in order:
 

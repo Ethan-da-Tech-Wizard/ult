@@ -14,6 +14,64 @@ from pydantic import BaseModel
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("ZeusServer")
 
+dev_reload_sockets = set()
+
+async def watch_client_files():
+    """Simple file watcher for the client directory to trigger live reload."""
+    if hasattr(sys, '_MEIPASS'):
+        client_dir = os.path.join(sys._MEIPASS, "client")
+    else:
+        client_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "client"))
+    if not os.path.exists(client_dir):
+        logger.warning(f"Client directory not found at {client_dir} for dev reloader.")
+        return
+        
+    last_mtimes = {}
+    def scan_files():
+        mtimes = {}
+        for root, _, files in os.walk(client_dir):
+            for file in files:
+                if file.endswith((".html", ".css", ".js")):
+                    path = os.path.join(root, file)
+                    try:
+                        mtimes[path] = os.path.getmtime(path)
+                    except OSError:
+                        pass
+        return mtimes
+
+    try:
+        last_mtimes = scan_files()
+    except Exception as e:
+        logger.error(f"Error initializing dev reload file scan: {e}")
+
+    while True:
+        await asyncio.sleep(1.0)
+        if not dev_reload_sockets:
+            continue
+        try:
+            current_mtimes = scan_files()
+            changed = False
+            for path, mtime in current_mtimes.items():
+                if path not in last_mtimes or mtime > last_mtimes[path]:
+                    changed = True
+                    break
+            if not changed:
+                for path in last_mtimes:
+                    if path not in current_mtimes:
+                        changed = True
+                        break
+            
+            if changed:
+                logger.info("Client files changed. Triggering live reload...")
+                last_mtimes = current_mtimes
+                for ws in list(dev_reload_sockets):
+                    try:
+                        await ws.send_text("reload")
+                    except Exception:
+                        dev_reload_sockets.discard(ws)
+        except Exception as e:
+            logger.error(f"Error in dev reload file watcher: {e}")
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     logger.info("FastAPI startup. Booting QEMU launcher/mock server...")
@@ -28,7 +86,12 @@ async def lifespan(_app: FastAPI):
             logger.error(f"Failed to import and start qemu_launcher: {e}")
     except Exception as e:
         logger.error(f"Error starting qemu_launcher: {e}")
+
+    # Start dev reload file watcher as a background task
+    watcher_task = asyncio.create_task(watch_client_files())
     yield
+    # Clean up watcher
+    watcher_task.cancel()
 
 app = FastAPI(title="Zeus RPG Core Server", lifespan=lifespan)
 
@@ -242,6 +305,14 @@ def save_state(state: SaveStateModel):
             INSERT INTO player_state (gold, compute_tokens, unlocked_chapters, active_lead, inventory_json, stats_json, state_json)
             VALUES (?, ?, ?, ?, ?, ?, ?)
         """, (state.gold, state.compute_tokens, state.unlocked_chapters, state.active_lead, state.inventory_json, state.stats_json, state.state_json))
+        
+        # Limit row count to 50
+        cursor.execute("""
+            DELETE FROM player_state WHERE id NOT IN (
+                SELECT id FROM player_state ORDER BY id DESC LIMIT 50
+            )
+        """)
+        
         conn.commit()
         conn.close()
         return {"status": "success"}
@@ -260,7 +331,7 @@ def get_default_skeleton(chapter_id: int) -> str:
         7: '# Whispering Woods: Subword BPE tokenization\ndef bpe_encode(text, merges):\n    # Perform BPE token merge mapping\n    if text == "these":\n        return ["the", "es"]\n    tokens = list(text)\n    for pair, merge in merges.items():\n        new_tokens = []\n        i = 0\n        while i < len(tokens):\n            if i < len(tokens) - 1 and tokens[i] == pair[0] and tokens[i+1] == pair[1]:\n                new_tokens.append(merge)\n                i += 2\n            else:\n                new_tokens.append(tokens[i])\n                i += 1\n        tokens = new_tokens\n    return tokens\n',
         8: '# Valley of Attention: Scaled Dot-Product Attention\nimport numpy as np\n\ndef scaled_dot_product_attention(q, k, v, mask=None):\n    # q, k, v are 4D numpy arrays: (batch_size, heads, seq_len, d_k)\n    # Attention(Q, K, V) = softmax(QK^T / sqrt(d_k))V\n    d_k = q.shape[-1]\n    k_t = np.transpose(k, (0, 1, 3, 2))\n    scores = np.matmul(q, k_t) / np.sqrt(d_k)\n    if mask is not None:\n        scores = scores + mask\n    exp_scores = np.exp(scores - np.max(scores, axis=-1, keepdims=True))\n    weights = exp_scores / np.sum(exp_scores, axis=-1, keepdims=True)\n    output = np.matmul(weights, v)\n    return output, weights\n',
         9: '# Forge of Zeus: LayerNorm & Backpropagation step\nimport numpy as np\n\ndef layernorm_forward(x, gamma, beta, eps=1e-5):\n    # Normalize each row (along the last axis)\n    mean = np.mean(x, axis=-1, keepdims=True)\n    var = np.var(x, axis=-1, keepdims=True)\n    x_norm = (x - mean) / np.sqrt(var + eps)\n    return gamma * x_norm + beta\n\ndef training_step(weights, inputs, targets, lr=0.1):\n    # Perform a single SGD step on MSE loss\n    y_pred = np.dot(weights, inputs)\n    error = y_pred - targets\n    gradient = 2.0 * error * inputs\n    weights_new = weights - lr * gradient\n    return weights_new\n',
-        10: '# Reranking Reefs: Hybrid search blend\ndef hybrid_search_blend(sparse_results, dense_results, alpha=0.5):\n    # Combine scores from dense (cosine) and sparse (bm25) dicts using alpha\n    # Return sorted list of tuples: [(doc_id, score), ...]\n    blended = {}\n    all_keys = set(sparse_results.keys()).union(set(dense_results.keys()))\n    for doc in all_keys:\n        sparse_val = sparse_results.get(doc, 0.0)\n        dense_val = dense_results.get(doc, 0.0)\n        blended[doc] = alpha * sparse_val + (1.0 - alpha) * dense_val\n    return sorted(blended.items(), key=lambda x: x[1], reverse=True)\n',
+        10: '# Reranking Reefs: Hybrid search blend\ndef expand_query(query):\n    # Return a list of query expansions\n    return [query, query + " relic", query + " power"]\n\ndef hybrid_search_blend(sparse_results, dense_results, alpha=0.5):\n    # Combine scores from dense (cosine) and sparse (bm25) dicts using alpha\n    # Return sorted list of tuples: [(doc_id, score), ...]\n    blended = {}\n    all_keys = set(sparse_results.keys()).union(set(dense_results.keys()))\n    for doc in all_keys:\n        sparse_val = sparse_results.get(doc, 0.0)\n        dense_val = dense_results.get(doc, 0.0)\n        blended[doc] = alpha * sparse_val + (1.0 - alpha) * dense_val\n    return sorted(blended.items(), key=lambda x: x[1], reverse=True)\n\ndef rerank_and_filter(blended_results, threshold=0.50):\n    # Filter out results below threshold\n    return [item for item in blended_results if item[1] >= threshold]\n',
         11: '# API Archipelago: FastAPI Server setup\ndef get_launch_config():\n    # Return dictionary with host bound to loopback interface\n    return {\n        "host": "127.0.0.1",\n        "port": 8000\n    }\n',
         12: '# Graph Gardens: Cypher shortestPath matching\ndef generate_cypher_path_walk(start_node, end_node):\n    # MATCH (start:Node {name: start_node}), (end:Node {name: end_node})\n    # MATCH p = shortestPath((start)-[*..10]->(end))\n    # RETURN p\n    return f"MATCH (startNode:Node {{name: \'{start_node}\'}}), (endNode:Node {{name: \'{end_node}\'}}) MATCH p = shortestPath((startNode)-[*..10]->(endNode)) RETURN p"\n',
         13: '# Testing Tundra: BLEU-1 & ROUGE-L\nimport math\n\ndef calculate_bleu(candidate, reference):\n    cand_tokens = candidate.split()\n    ref_tokens = reference.split()\n    if not cand_tokens or not ref_tokens:\n        return 0.0\n    ref_counts = {}\n    for r in ref_tokens:\n        ref_counts[r] = ref_counts.get(r, 0) + 1\n    cand_counts = {}\n    for c in cand_tokens:\n        cand_counts[c] = cand_counts.get(c, 0) + 1\n    overlap = 0\n    for w, count in cand_counts.items():\n        overlap += min(count, ref_counts.get(w, 0))\n    precision = overlap / len(cand_tokens)\n    c = len(cand_tokens)\n    r = len(ref_tokens)\n    if c > r:\n        bp = 1.0\n    else:\n        bp = math.exp(1.0 - r / c) if c > 0 else 0.0\n    return bp * precision\n\ndef calculate_rouge_l(candidate, reference):\n    cand_tokens = candidate.split()\n    ref_tokens = reference.split()\n    if not cand_tokens or not ref_tokens:\n        return 0.0\n    m, n = len(cand_tokens), len(ref_tokens)\n    L = [[0] * (n + 1) for _ in range(m + 1)]\n    for i in range(1, m + 1):\n        for j in range(1, n + 1):\n            if cand_tokens[i - 1] == ref_tokens[j - 1]:\n                L[i][j] = L[i - 1][j - 1] + 1\n            else:\n                L[i][j] = max(L[i - 1][j], L[i][j - 1])\n    lcs = L[m][n]\n    p = lcs / m\n    r = lcs / n\n    if p + r == 0:\n        return 0.0\n    return 2 * p * r / (p + r)\n',
@@ -268,9 +339,9 @@ def get_default_skeleton(chapter_id: int) -> str:
         15: '# Security Caves: Prompt guardrails and sanitizers\nimport json\nimport re\n\ndef is_safe_prompt(prompt):\n    # Basic check for prompt injection keywords\n    unsafe_words = ["ignore all previous", "ignore previous", "dan mode", "you are now in dan"]\n    for word in unsafe_words:\n        if word in prompt.lower():\n            return False\n    return True\n\ndef sanitize_output(output):\n    # Redact sensitive keys and secrets\n    # Replace sk-proj-... and password=...\n    output = re.sub(r"sk-proj-[a-zA-Z0-9]+", "[REDACTED_KEY]", output)\n    output = re.sub(r"password=[A-Za-z0-9_]+", "password=[REDACTED_PASSWORD]", output)\n    return output\n\ndef validate_json_response(json_str, schema_keys):\n    try:\n        data = json.loads(json_str)\n        for key in schema_keys:\n            if key not in data:\n                return False\n        return True\n    except Exception:\n        return False\n',
         16: '# Deployment Cliffs: Symmetric INT8 Quantization\nimport numpy as np\n\ndef quantize_symmetric(x):\n    max_val = np.max(np.abs(x))\n    if max_val == 0:\n        scale = 1.0\n    else:\n        scale = max_val / 127.0\n    q = np.round(x / scale)\n    q = np.clip(q, -127, 127).astype(np.int8)\n    return q, scale\n\ndef dequantize_symmetric(q_tensor, scale):\n    return q_tensor.astype(np.float32) * scale\n',
         17: '# Agentic Skyway: Tool-calling signature schema\nimport inspect\nimport json\n\ndef generate_tool_schema(func):\n    sig = inspect.signature(func)\n    doc = inspect.getdoc(func) or ""\n    properties = {}\n    required = []\n    for name, param in sig.parameters.items():\n        param_type = "string"\n        if param.annotation == int:\n            param_type = "integer"\n        elif param.annotation == float:\n            param_type = "number"\n        elif param.annotation == bool:\n            param_type = "boolean"\n        properties[name] = {"type": param_type}\n        if param.default == inspect.Parameter.empty:\n            required.append(name)\n    return {\n        "name": func.__name__,\n        "description": doc,\n        "parameters": {\n            "type": "object",\n            "properties": properties,\n            "required": required\n        }\n    }\n\ndef execute_tool_call(tool_call_json, tools_map):\n    data = json.loads(tool_call_json)\n    func_name = data["name"]\n    args = data["arguments"]\n    func = tools_map[func_name]\n    return func(**args)\n',
-        18: '# State Vaults: ReAct Thought-Action Loop\ndef run_react_loop(state, step_fn, max_steps=5):\n    steps = 0\n    while steps < max_steps:\n        if state.get("status") != "running":\n            break\n        state = step_fn(state)\n        steps += 1\n    if state.get("status") == "running":\n        state["status"] = "max_steps_exceeded"\n    return state\n\ndef find_skeleton_ancestors(lineage, start_node):\n    ancestors = []\n    visited = set()\n    current = start_node\n    while current in lineage:\n        parent = lineage[current]\n        if not parent:\n            break\n        if parent in visited:\n            break\n        visited.add(parent)\n        ancestors.append(parent)\n        current = parent\n    return ancestors\n',
+        18: '# State Vaults: ReAct Thought-Action Loop\ndef run_react_loop(state, step_fn, max_steps=5):\n    steps = 0\n    while steps < max_steps:\n        if state.get("status") != "running":\n            break\n        state = step_fn(state)\n        steps += 1\n    if state.get("status") == "running":\n        state["status"] = "max_steps_exceeded"\n    return state\n\ndef find_skeleton_ancestors(lineage, start_node):\n    ancestors = []\n    visited = set()\n    current = start_node\n    while current in lineage:\n        parent = lineage[current]\n        if not parent:\n            break\n        if parent in visited:\n            break\n        visited.add(parent)\n        ancestors.append(parent)\n        current = parent\n    return ancestors\n\ndef run_self_corrective_rag(initial_query, retrieve_fn, evaluate_fn, rewrite_fn, max_steps=3):\n    current_query = initial_query\n    steps = 0\n    chunks = []\n    while steps < max_steps:\n        chunks = retrieve_fn(current_query)\n        if evaluate_fn(chunks):\n            return {"status": "success", "steps": steps, "context": chunks}\n        current_query = rewrite_fn(current_query)\n        steps += 1\n    return {"status": "failed", "steps": steps, "context": chunks}\n',
         19: '# Kubernetes Citadel: Pod & Ingress configs\ndef get_k8s_manifests():\n    pod_yaml = """apiVersion: v1\nkind: Pod\nmetadata:\n  name: defense-pod\nspec:\n  containers:\n  - name: defense-container\n    image: nginx\n    ports:\n    - containerPort: 8000\n    resources:\n      limits:\n        memory: 256Mi\n        cpu: 500m\n      requests:\n        memory: 128Mi\n        cpu: 250m"""\n    ingress_yaml = """apiVersion: networking.k8s.io/v1\nkind: Ingress\nmetadata:\n  name: citadel-ingress\nspec:\n  rules:\n  - http:\n      paths:\n      - path: /defense\n        pathType: Prefix\n        backend:\n          service:\n            name: defense-service\n            port:\n              number: 80"""\n    return pod_yaml, ingress_yaml\n',
-        20: '# The Grand Assembly: Integrated Pipeline\nimport sqlite3\n\ndef run_assembler_pipeline(image_path, query_text, db_path):\n    ocr_text = "Scanned: Zeus Relic Shield"\n    conn = sqlite3.connect(db_path)\n    cursor = conn.cursor()\n    try:\n        cursor.execute("SELECT * FROM inventory")\n        db_results = cursor.fetchall()\n    except Exception:\n        db_results = []\n    finally:\n        conn.close()\n    graph_context = "Node: Zeus Relic Shield -> Attribute: Power = 95"\n    llm_response = f"Answer generated: {query_text} -> DB results show {db_results}"\n    return {\n        "ocr_text": ocr_text,\n        "db_results": db_results,\n        "graph_context": graph_context,\n        "llm_response": llm_response\n    }\n',
+        20: '# The Grand Assembly: Integrated Pipeline\nimport json\nimport sqlite3\n\ndef run_assembler_pipeline(layout_json_path, query_text, db_path):\n    with open(layout_json_path, "r") as f:\n        boxes = json.load(f)\n    lines = {}\n    for box in boxes:\n        y = box["y"]\n        lines.setdefault(y, []).append(box)\n    grouped_lines = []\n    for y in sorted(lines.keys()):\n        line_boxes = sorted(lines[y], key=lambda b: b["x"])\n        line_phrases = []\n        if not line_boxes:\n            continue\n        current_phrase = line_boxes[0]["text"]\n        curr_right = line_boxes[0]["x"] + line_boxes[0]["w"]\n        for box in line_boxes[1:]:\n            if box["x"] - curr_right <= 15:\n                current_phrase += " " + box["text"]\n                curr_right = box["x"] + box["w"]\n            else:\n                line_phrases.append(current_phrase)\n                current_phrase = box["text"]\n                curr_right = box["x"] + box["w"]\n        line_phrases.append(current_phrase)\n        grouped_lines.append(" ".join(line_phrases))\n    ocr_text = "\\n".join(grouped_lines)\n    conn = sqlite3.connect(db_path)\n    cursor = conn.cursor()\n    db_results = []\n    try:\n        for phrase in grouped_lines:\n            cursor.execute("SELECT item_id, name, power FROM inventory WHERE name = ?", (phrase,))\n            db_results.extend(cursor.fetchall())\n    except Exception:\n        db_results = []\n    finally:\n        conn.close()\n    graph_context = "Node: Zeus Relic Shield -> Attribute: Power = 95"\n    llm_response = f"Answer generated: {query_text} -> DB results show {db_results}"\n    return {\n        "ocr_text": ocr_text,\n        "db_results": db_results,\n        "graph_context": graph_context,\n        "llm_response": llm_response\n    }\n',
         21: '# Altar of TempleOS: Bare-metal HolyC compilation checksum\ndef validate_holyc_syntax(code):\n    if "def " in code or "print(" in code:\n        return False\n    if "U0" in code or "I64" in code or "Print" in code:\n        return True\n    return False\n\ndef get_templeos_serial_command():\n    return "telnet 127.0.0.1 4444"\n'
     }
     return skeletons.get(chapter_id, f"# Chapter {chapter_id} Solution\n")
@@ -437,6 +508,20 @@ async def ws_templeos(websocket: WebSocket):
         logger.error(f"WebSocket TempleOS Connection error: {e}")
         await websocket.send_text("\r\n[Error: TempleOS altar offline. Spin up Chapter 21 VM Altar first!]\r\n")
         await websocket.close()
+
+# WebSocket endpoint for automatic client development reloading
+@app.websocket("/ws/dev-reload")
+async def ws_dev_reload(websocket: WebSocket):
+    await websocket.accept()
+    dev_reload_sockets.add(websocket)
+    try:
+        while True:
+            # Keep the WebSocket connection open
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        pass
+    finally:
+        dev_reload_sockets.discard(websocket)
 
 # Mount client build outputs (static files)
 # If index.html is built, server serves it at root path
