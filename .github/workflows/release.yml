@@ -1,0 +1,67 @@
+name: Build Release Binaries
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            artifact_name: Zeus_Assistant-linux
+            binary_name: Zeus_Assistant
+            asset_name: Zeus_Assistant-linux
+          - os: macos-latest
+            artifact_name: Zeus_Assistant-macos
+            binary_name: Zeus_Assistant
+            asset_name: Zeus_Assistant-macos
+          - os: windows-latest
+            artifact_name: Zeus_Assistant-windows
+            binary_name: Zeus_Assistant.exe
+            asset_name: Zeus_Assistant-windows.exe
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install build dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt pyinstaller
+
+      - name: Build desktop executable
+        run: python server/build_desktop.py
+
+      - name: Rename executable
+        shell: bash
+        run: |
+          mkdir -p release-artifacts
+          cp "save_data/export/${{ matrix.binary_name }}" "release-artifacts/${{ matrix.asset_name }}"
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: release-artifacts/*
+          if-no-files-found: error
+
+      - name: Attach binary to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release-artifacts/*
