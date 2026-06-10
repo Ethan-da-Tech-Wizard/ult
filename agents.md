@@ -247,3 +247,30 @@ Changes made:
 * Live-tested: `/api/sandbox-status`; mock HolyC altar rejects
   `def hack(): print("hi")` and accepts `U0 Hymn() { Print("Praise\n"); } Hymn();`
   with checksum `0x0C3D`.
+
+---
+
+## 6. Distribution & Onboarding (2026-06-10, third session)
+
+* **`README.md`** (new, repo root) — the player-facing requirements doc:
+  three-tier requirements table (Python core required; Docker sandbox and
+  QEMU TempleOS VM optional), quick start, controls, single-file exe build
+  instructions, Windows notes, troubleshooting. Keep it player-focused;
+  agents.md stays the engineering doc.
+* **`setup/install_all.sh`** (new) — the single installer file covering every
+  download: Tier 1 Python venv + requirements (required), Tier 2 Docker
+  sandbox image/container, Tier 3 TempleOS VM. Flags: `--minimal`, `--full`,
+  default interactive. Idempotent — every step checks existing state.
+* **`scripts/run_dev.sh`** — now self-bootstrapping: on first launch it
+  creates `.venv` and installs `requirements.txt` automatically before
+  starting the server, so "download → run one script → play" holds even if
+  the installer was never run. Checks `fastapi, uvicorn, numpy` imports to
+  decide.
+* Design constraint to remember: a downloaded archive cannot execute code
+  *during* download, so "all dependencies present when the download
+  finishes" is delivered as (a) one-command post-download bootstrap and
+  (b) the PyInstaller single-file build (`python server/build_desktop.py`)
+  which bakes Python + packages into one executable so end users install
+  nothing.
+* Verified: `install_all.sh --minimal` builds a clean venv; `run_dev.sh`
+  boots the server end-to-end serving the client at 127.0.0.1:8000.
