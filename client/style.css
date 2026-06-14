@@ -54,6 +54,15 @@ body.palette-darkmode {
     --accent-glow: rgba(14, 99, 156, 0.4);
 }
 
+body.palette-ff1 {
+    --bg-primary: #080c10;
+    --bg-secondary: #0000a8;
+    --border-color: #ffffff;
+    --text-color: #ffffff;
+    --accent-color: #3b82f6;
+    --accent-glow: rgba(59, 130, 246, 0.4);
+}
+
 * {
     box-sizing: border-box;
     margin: 0;
@@ -87,16 +96,33 @@ body {
 #game-container {
     width: 100vw;
     height: 100vh;
-    display: grid;
-    grid-template-columns: 520px 1fr;
+    display: flex;
+    flex-direction: row;
     background-color: var(--bg-primary);
     border: var(--border-pixel-width) solid var(--border-color);
+    overflow: hidden;
+}
+
+/* Vertical Drag Resize Splitter */
+#layout-splitter {
+    width: 8px;
+    background-color: var(--bg-secondary);
+    border-left: var(--border-pixel-width) solid var(--border-color);
+    border-right: var(--border-pixel-width) solid var(--border-color);
+    cursor: col-resize;
+    transition: background-color 0.2s, box-shadow 0.2s;
+    flex-shrink: 0;
+    z-index: 40;
+}
+
+#layout-splitter:hover, #layout-splitter.dragging {
+    background-color: var(--accent-color) !important;
+    box-shadow: 0 0 10px var(--accent-glow);
 }
 
 /* LEFT: JRPG Canvas screen */
 #jrpg-viewport {
     background-color: #000;
-    border-right: var(--border-pixel-width) solid var(--border-color);
     position: relative;
     display: flex;
     flex-direction: column;
@@ -104,6 +130,8 @@ body {
     align-items: center;
     height: 100%;
     overflow: hidden;
+    width: 520px;
+    flex-shrink: 0;
 }
 
 #jrpg-canvas {
@@ -196,6 +224,13 @@ body {
     gap: 8px;
     max-width: 330px;
     font-size: 8px;
+}
+
+#jrpg-viewport:has(#dialogue-box:not(.hidden)) #save-status-panel,
+#jrpg-viewport:has(#combat-overlay:not(.hidden)) #save-status-panel,
+#jrpg-viewport:has(#inventory-overlay:not(.hidden)) #save-status-panel,
+#jrpg-viewport:has(#prologue-overlay:not(.hidden)) #save-status-panel {
+    display: none !important;
 }
 
 #save-status-text {
@@ -456,6 +491,9 @@ body {
     flex-direction: column;
     height: 100%;
     overflow: hidden;
+    flex-grow: 1;
+    flex-shrink: 1;
+    min-width: 200px;
 }
 
 .workspace-tabs {
