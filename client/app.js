@@ -4,8 +4,8 @@
 const TILE_SIZE = 32;
 const VIEW_COLS = 16;
 const VIEW_ROWS = 14;
-const MAP_COLS = 32;
-const MAP_ROWS = 28;
+const MAP_COLS = 64;
+const MAP_ROWS = 64;
 
 let player = {
     x: 8,
@@ -23,6 +23,7 @@ let player = {
     inventory: [],
     unlockedChapters: [0],
     currentChapter: 0,
+    currentMapId: 0,
     openedChests: [],
     readManuals: [],
     readManualPages: [],
@@ -647,6 +648,9 @@ function expandMapGrid(mapId, baseGrid) {
 
     baseGrid.forEach((row, y) => {
         row.forEach((tile, x) => {
+            if (mapId > 0 && (x === row.length - 1 || y === baseGrid.length - 1)) {
+                if (tile === 1) return;
+            }
             grid[y][x] = tile;
         });
     });
@@ -701,6 +705,44 @@ function expandMapGrid(mapId, baseGrid) {
 
     return grid;
 }
+
+// Restructure and shift Map Grids programmatically
+(function restructureMapGrids() {
+    const originalGrids = { ...MAP_GRIDS };
+    
+    // 1. Shift maps 2..21 to maps 3..22
+    for (let m = 21; m >= 2; m--) {
+        if (originalGrids[m]) {
+            MAP_GRIDS[m + 1] = originalGrids[m];
+        }
+    }
+    
+    // 2. Define Map 0 (Starting Cabin Room)
+    MAP_GRIDS[0] = [
+        [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+        [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+        [1,1,1,0,0,0,0,0,0,0,0,1,1,1,1,1],
+        [1,1,1,0,0,0,0,0,0,0,0,1,1,1,1,1],
+        [1,1,1,0,0,0,4,0,0,0,0,1,1,1,1,1], // Glowing Rock/Altar (4) at (6, 4)
+        [1,1,1,0,0,0,0,0,0,0,0,1,1,1,1,1],
+        [1,1,1,0,0,0,0,0,0,0,0,1,1,1,1,1],
+        [1,1,1,0,0,0,0,0,0,0,0,1,1,1,1,1],
+        [1,1,1,0,0,0,0,0,0,0,0,1,1,1,1,1],
+        [1,1,1,0,0,0,0,0,0,0,0,1,1,1,1,1],
+        [1,1,1,1,1,1,1,6,1,1,1,1,1,1,1,1], // Exit Portal (6) at (7, 10)
+        [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+        [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+        [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]
+    ];
+    
+    // 3. Define Map 2 (Overworld base grid of zeroes)
+    MAP_GRIDS[2] = Array.from({ length: 14 }, () => Array(16).fill(0));
+    
+    // 4. Update row 1 of Alexandria City (Map 1) to place Gitpus and Sentinel Guard NPC tiles
+    if (MAP_GRIDS[1]) {
+        MAP_GRIDS[1][1] = [1,2,2,0,0,0,0,0,0,0,0,0,0,2,2,1];
+    }
+})();
 
 Object.keys(MAP_GRIDS).forEach(mapId => {
     MAP_GRIDS[mapId] = expandMapGrid(Number(mapId), MAP_GRIDS[mapId]);
@@ -2875,12 +2917,78 @@ let audioCtx = null;
 let bgmOscillators = [];
 let currentBgmGainNode = null;
 let currentBgmBaseGain = 0;
+let bgmSequenceInterval = null;
+let currentBgmNoteIndex = 0;
+let trebleOsc = null;
+let bassOsc = null;
+let trebleGainNode = null;
+let bassGainNode = null;
+
+const BGM_MELODIES = {
+    'default': {
+        tempo: 125,
+        notes: [
+            { note: "E4", duration: 0.25 }, { note: "G4", duration: 0.25 }, { note: "B4", duration: 0.25 }, { note: "A4", duration: 0.25 },
+            { note: "G4", duration: 0.25 }, { note: "E4", duration: 0.25 }, { note: "D4", duration: 0.25 }, { note: "E4", duration: 0.25 },
+            { note: "B3", duration: 0.25 }, { note: "D4", duration: 0.25 }, { note: "E4", duration: 0.25 }, { note: "G4", duration: 0.25 },
+            { note: "A4", duration: 0.25 }, { note: "B4", duration: 0.25 }, { note: "D5", duration: 0.25 }, { note: "B4", duration: 0.25 }
+        ],
+        type: 'triangle',
+        bass: ["E2", "G2", "C3", "D3"]
+    },
+    'battle': {
+        tempo: 140,
+        notes: [
+            { note: "A4", duration: 0.125 }, { note: "C5", duration: 0.125 }, { note: "E5", duration: 0.125 }, { note: "A5", duration: 0.125 },
+            { note: "G5", duration: 0.125 }, { note: "E5", duration: 0.125 }, { note: "D5", duration: 0.125 }, { note: "C5", duration: 0.125 },
+            { note: "D5", duration: 0.125 }, { note: "F5", duration: 0.125 }, { note: "A5", duration: 0.125 }, { note: "D6", duration: 0.125 },
+            { note: "C6", duration: 0.125 }, { note: "A5", duration: 0.125 }, { note: "G5", duration: 0.125 }, { note: "F5", duration: 0.125 }
+        ],
+        type: 'sawtooth',
+        bass: ["A2", "G2", "F2", "E2"]
+    },
+    'spooky': {
+        tempo: 100,
+        notes: [
+            { note: "D4", duration: 0.3 }, { note: "F4", duration: 0.3 }, { note: "G#4", duration: 0.3 }, { note: "B4", duration: 0.3 },
+            { note: "D5", duration: 0.3 }, { note: "B4", duration: 0.3 }, { note: "G#4", duration: 0.3 }, { note: "F4", duration: 0.3 }
+        ],
+        type: 'square',
+        bass: ["D2", "C#2", "C2", "B1"]
+    },
+    'classical': {
+        tempo: 110,
+        notes: [
+            { note: "C4", duration: 0.25 }, { note: "E4", duration: 0.25 }, { note: "G4", duration: 0.25 }, { note: "B4", duration: 0.25 },
+            { note: "A4", duration: 0.25 }, { note: "F4", duration: 0.25 }, { note: "D4", duration: 0.25 }, { note: "B3", duration: 0.25 }
+        ],
+        type: 'triangle',
+        bass: ["C2", "A1", "F1", "G1"]
+    },
+    'temple': {
+        tempo: 80,
+        notes: [
+            { note: "F4", duration: 0.4 }, { note: "A4", duration: 0.4 }, { note: "C5", duration: 0.4 }, { note: "E5", duration: 0.4 },
+            { note: "D5", duration: 0.4 }, { note: "Bb4", duration: 0.4 }, { note: "G4", duration: 0.4 }, { note: "C4", duration: 0.4 }
+        ],
+        type: 'sine',
+        bass: ["F2", "Bb1", "C2", "F1"]
+    }
+};
+
+const NOTE_FREQS = {
+    "F1": 43.65, "G1": 49.00, "A1": 55.00, "Bb1": 58.27, "B1": 61.74,
+    "C2": 65.41, "C#2": 69.30, "D2": 73.42, "F2": 87.31, "G2": 98.00, "A2": 110.00, "C3": 130.81, "D3": 146.83,
+    "B3": 246.94, "C4": 261.63, "D4": 293.66, "E4": 329.63, "F4": 349.23, "G4": 392.00, "G#4": 415.30, "A4": 440.00, "Bb4": 466.16, "B4": 493.88,
+    "C5": 523.25, "D5": 587.33, "E5": 659.25, "F5": 698.46, "G5": 783.99, "A5": 880.00,
+    "C6": 1046.50, "D6": 1174.66
+};
 
 // Persisted player settings (palette, dialogue speed, focus keys, audio)
 const SETTINGS_STORAGE_KEY = "sacredTechSettings";
 const DEFAULT_BGM_VOLUME = 60;
 let gameSettings = {
-    palette: "default",
+    palette: "ff1",
     dialogueSpeed: "scroll",
     focusKeys: "both",
     bgmVolume: DEFAULT_BGM_VOLUME,
@@ -2929,7 +3037,6 @@ function initAudio() {
     }
 }
 
-// Short synth blips for game feedback (footsteps, menus, combat, shop)
 function playSfx(type) {
     if (!audioCtx || gameSettings.muted) return;
     try {
@@ -2954,115 +3061,115 @@ function playSfx(type) {
     }
 }
 
-// Multi-note jingles for the big moments (combat victory, level up, validator pass)
-function playJingle(kind) {
-    if (!audioCtx || gameSettings.muted) return;
-    const sequences = {
-        victory: [[523.25, 0], [659.25, 0.12], [783.99, 0.24], [1046.5, 0.36]],
-        levelup: [[659.25, 0], [783.99, 0.1], [987.77, 0.2], [1318.5, 0.3], [1318.5, 0.45]],
-        fanfare: [[392.0, 0], [523.25, 0.1], [659.25, 0.2], [783.99, 0.3], [1046.5, 0.45]]
-    };
-    const notes = sequences[kind] || sequences.victory;
-    try {
-        notes.forEach(([freq, at]) => {
-            const osc = audioCtx.createOscillator();
-            const gain = audioCtx.createGain();
-            const t = audioCtx.currentTime + at;
-            osc.type = "square";
-            osc.frequency.setValueAtTime(freq, t);
-            gain.gain.setValueAtTime(0.05 * getMasterVolumeFactor(), t);
-            gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.15);
-            osc.connect(gain);
-            gain.connect(audioCtx.destination);
-            osc.start(t);
-            osc.stop(t + 0.16);
-        });
-    } catch (e) {
-        console.error("Jingle error:", e);
-    }
-}
-
 function playBgm(theme) {
     if (!audioCtx) return;
     stopBgm();
-    
-    try {
-        const osc1 = audioCtx.createOscillator();
-        const osc2 = audioCtx.createOscillator();
-        const gainNode = audioCtx.createGain();
-        let baseGain = 0.08;
-        
-        if (theme === 'spooky') {
-            // Detuned minor chords for Spooky Town / State Vaults
-            osc1.type = 'square';
-            osc1.frequency.setValueAtTime(147.0, audioCtx.currentTime); // D3
-            osc2.type = 'sawtooth';
-            osc2.frequency.setValueAtTime(148.5, audioCtx.currentTime); // Detuned for unease
-            baseGain = 0.06;
-        } else if (theme === 'battle') {
-            // Urgent driving bass — combat tension
-            osc1.type = 'sawtooth';
-            osc1.frequency.setValueAtTime(110.0, audioCtx.currentTime); // A2 bass
-            osc2.type = 'square';
-            osc2.frequency.setValueAtTime(329.63, audioCtx.currentTime); // E4 sting
-            baseGain = 0.07;
-        } else if (theme === 'classical') {
-            // Calm library theme — mourning arpeggios
-            osc1.type = 'triangle';
-            osc1.frequency.setValueAtTime(261.63, audioCtx.currentTime); // C4
-            osc2.type = 'triangle';
-            osc2.frequency.setValueAtTime(329.63, audioCtx.currentTime); // E4
-            baseGain = 0.05;
-        } else if (theme === 'overworld') {
-            // Hopeful pentatonic major — the world worth saving
-            osc1.type = 'square';
-            osc1.frequency.setValueAtTime(196.0, audioCtx.currentTime); // G3
-            osc2.type = 'triangle';
-            osc2.frequency.setValueAtTime(392.0, audioCtx.currentTime); // G4
-            baseGain = 0.05;
-        } else if (theme === 'temple') {
-            // Sacred, reverent drone — TempleOS altar
-            osc1.type = 'sine';
-            osc1.frequency.setValueAtTime(174.61, audioCtx.currentTime); // F3
-            osc2.type = 'triangle';
-            osc2.frequency.setValueAtTime(349.23, audioCtx.currentTime); // F4
-            baseGain = 0.04;
-        } else {
-            // Default: open plains tone
-            osc1.type = 'square';
-            osc1.frequency.setValueAtTime(261.63, audioCtx.currentTime); // C4
-            osc2.type = 'triangle';
-            osc2.frequency.setValueAtTime(523.25, audioCtx.currentTime); // C5
-            baseGain = 0.05;
-        }
-        
-        osc1.connect(gainNode);
-        osc2.connect(gainNode);
-        gainNode.connect(audioCtx.destination);
-        
-        osc1.start();
-        osc2.start();
 
-        bgmOscillators = [osc1, osc2, gainNode];
-        currentBgmGainNode = gainNode;
+    const track = BGM_MELODIES[theme] || BGM_MELODIES['default'];
+    const intervalMs = (60 / track.tempo) * 1000 * 0.5; // Half note or quarter note speed
+    currentBgmNoteIndex = 0;
+
+    try {
+        const masterGain = audioCtx.createGain();
+        let baseGain = 0.04;
+        if (theme === 'battle') baseGain = 0.05;
+        if (theme === 'spooky') baseGain = 0.03;
+
+        masterGain.connect(audioCtx.destination);
+        currentBgmGainNode = masterGain;
         currentBgmBaseGain = baseGain;
         applyBgmVolume();
+
+        // Create treble oscillator
+        trebleOsc = audioCtx.createOscillator();
+        trebleOsc.type = track.type;
+        trebleGainNode = audioCtx.createGain();
+        trebleGainNode.gain.setValueAtTime(0, audioCtx.currentTime);
+        trebleOsc.connect(trebleGainNode);
+        trebleGainNode.connect(masterGain);
+        trebleOsc.start();
+
+        // Create bass oscillator
+        bassOsc = audioCtx.createOscillator();
+        bassOsc.type = 'triangle';
+        bassGainNode = audioCtx.createGain();
+        bassGainNode.gain.setValueAtTime(0, audioCtx.currentTime);
+        bassOsc.connect(bassGainNode);
+        bassGainNode.connect(masterGain);
+        bassOsc.start();
+
+        function playStep() {
+            if (!audioCtx || audioCtx.state === "suspended") return;
+            const step = track.notes[currentBgmNoteIndex % track.notes.length];
+            const freq = NOTE_FREQS[step.note];
+            const volFactor = getMasterVolumeFactor();
+
+            if (freq) {
+                // Change frequency and envelope of treble
+                trebleOsc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+                trebleGainNode.gain.cancelScheduledValues(audioCtx.currentTime);
+                trebleGainNode.gain.setValueAtTime(baseGain * volFactor, audioCtx.currentTime);
+                trebleGainNode.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + step.duration * 0.9);
+            } else {
+                trebleGainNode.gain.setValueAtTime(0, audioCtx.currentTime);
+            }
+
+            if (currentBgmNoteIndex % 4 === 0 && track.bass.length > 0) {
+                const bassNote = track.bass[Math.floor(currentBgmNoteIndex / 4) % track.bass.length];
+                const bassFreq = NOTE_FREQS[bassNote];
+                if (bassFreq) {
+                    bassOsc.frequency.setValueAtTime(bassFreq, audioCtx.currentTime);
+                    bassGainNode.gain.cancelScheduledValues(audioCtx.currentTime);
+                    bassGainNode.gain.setValueAtTime(baseGain * 1.5 * volFactor, audioCtx.currentTime);
+                    bassGainNode.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + step.duration * 3.5);
+                } else {
+                    bassGainNode.gain.setValueAtTime(0, audioCtx.currentTime);
+                }
+            }
+
+            if (bgmOscillators.length > 20) {
+                const toRemove = bgmOscillators.splice(0, 5);
+                toRemove.forEach(n => {
+                    try { n.disconnect(); } catch (e) {}
+                });
+            }
+
+            currentBgmNoteIndex++;
+        }
+
+        playStep();
+        bgmSequenceInterval = setInterval(playStep, intervalMs);
     } catch (e) {
-        console.error("Audio BGM error:", e);
+        console.error("Audio BGM Sequencer error:", e);
     }
 }
 
 function stopBgm() {
-    bgmOscillators.forEach(node => {
-        try {
-            node.disconnect();
-            node.stop();
-        } catch (e) {}
-    });
-    bgmOscillators = [];
+    if (bgmSequenceInterval) {
+        clearInterval(bgmSequenceInterval);
+        bgmSequenceInterval = null;
+    }
+    try {
+        if (trebleOsc) {
+            trebleOsc.stop();
+            trebleOsc.disconnect();
+        }
+        if (bassOsc) {
+            bassOsc.stop();
+            bassOsc.disconnect();
+        }
+        if (trebleGainNode) trebleGainNode.disconnect();
+        if (bassGainNode) bassGainNode.disconnect();
+        if (currentBgmGainNode) currentBgmGainNode.disconnect();
+    } catch (e) {}
+    trebleOsc = null;
+    bassOsc = null;
+    trebleGainNode = null;
+    bassGainNode = null;
     currentBgmGainNode = null;
     currentBgmBaseGain = 0;
 }
+
 
 // REST Client calls
 function normalizePartyStats(savedParty = []) {
@@ -3321,7 +3428,7 @@ function getPatrolPosition(mapId, key) {
 }
 
 function getNPCAtPosition(x, y) {
-    const mapId = getMapForChapter(player.currentChapter);
+    const mapId = player.currentMapId;
     const chapterNPCs = NPCS[mapId] || {};
 
     for (let key of Object.keys(chapterNPCs)) {
@@ -3336,7 +3443,7 @@ function getNPCAtPosition(x, y) {
 function getAdjacentInteraction() {
     if (dialogueActive || isCombat || focusMode === "code" || screenMode === "dark") return null;
 
-    const activeGrid = MAP_GRIDS[getMapForChapter(player.currentChapter)] || MAP_GRIDS[0];
+    const activeGrid = MAP_GRIDS[player.currentMapId] || MAP_GRIDS[0];
     const neighbors = [
         { x: player.x + 1, y: player.y },
         { x: player.x - 1, y: player.y },
@@ -3353,7 +3460,12 @@ function getAdjacentInteraction() {
         if (tile === 3) return { type: "chest", label: "Open chest", pos };
         if (tile === 4) return { type: "altar", label: "Use altar", pos };
         if (tile === 6) {
-            const label = isChapterGateOpen(player.currentChapter) ? "Enter open portal" : "Portal sealed";
+            let label = "Enter portal";
+            if (player.currentMapId !== 2) {
+                if (!isChapterGateOpen(player.currentChapter)) {
+                    label = "Portal sealed";
+                }
+            }
             return { type: "portal", label, pos };
         }
     }
@@ -3376,19 +3488,21 @@ function updateInteractPrompt() {
 
 // Where should the player head next? Used to pulse a marker on the minimap.
 function getObjectiveMarker() {
-    if (screenMode === "dark") return null;
-    const mapId = getMapForChapter(player.currentChapter);
+    if (screenMode === "dark") {
+        if (player.currentChapter === 0) return { x: 6, y: 4 }; // glowing rock in dark Cabin
+        return null;
+    }
+    const mapId = player.currentMapId;
     const grid = MAP_GRIDS[mapId] || MAP_GRIDS[0];
 
-    // Chapter 0 tutorial: point at the Compiler Smith until the pilgrim talks to him
-    if (player.currentChapter === 0 && isManualPageRead("python-field-manual", 0) && !hasInventoryFlag(TUTORIAL_SMITH_TALKED_FLAG)) {
-        const npcs = NPCS[mapId] || {};
-        for (const key of Object.keys(npcs)) {
-            if ((npcs[key].name || "").includes("Compiler Smith")) {
-                const [x, y] = key.split(",").map(Number);
-                return { x, y };
-            }
-        }
+    // Chapter 0: point to the cabin exit portal at (7, 10)
+    if (player.currentChapter === 0 && player.currentMapId === 0) {
+        return { x: 7, y: 10 };
+    }
+
+    // Chapter 1: Scribe Cassia (7, 7) in Alexandria City (Map 1)
+    if (player.currentChapter === 1 && player.currentMapId === 1 && !isChapterGateOpen(1)) {
+        return { x: 7, y: 7 };
     }
 
     // Once the chapter gate is open, point at the portal tile
@@ -3403,7 +3517,7 @@ function drawMinimap() {
     const minimap = document.getElementById("minimap-canvas");
     if (!minimap) return;
     const mctx = minimap.getContext("2d");
-    const grid = MAP_GRIDS[getMapForChapter(player.currentChapter)] || MAP_GRIDS[0];
+    const grid = MAP_GRIDS[player.currentMapId] || MAP_GRIDS[0];
     const cellW = minimap.width / MAP_COLS;
     const cellH = minimap.height / MAP_ROWS;
 
@@ -3421,8 +3535,8 @@ function drawMinimap() {
         }
     }
 
-    Object.keys(NPCS[getMapForChapter(player.currentChapter)] || {}).forEach(key => {
-        const pos = getPatrolPosition(getMapForChapter(player.currentChapter), key);
+    Object.keys(NPCS[player.currentMapId] || {}).forEach(key => {
+        const pos = getPatrolPosition(player.currentMapId, key);
         mctx.fillStyle = "#f8fafc";
         mctx.fillRect(pos.x * cellW, pos.y * cellH, Math.ceil(cellW), Math.ceil(cellH));
     });
@@ -3441,7 +3555,7 @@ function drawMinimap() {
 }
 
 function getEncounterRate(x, y) {
-    const mapId = getMapForChapter(player.currentChapter);
+    const mapId = player.currentMapId;
     let rate = 0.08;
     if ([0, 1, 2, 3, 6, 20, 21].includes(mapId)) rate = 0.025;
     if (getAdjacentInteraction()) rate *= 0.3;
@@ -3799,6 +3913,7 @@ function applySaveData(data) {
     try {
         const savedState = JSON.parse(data.state_json || "{}");
         player.currentChapter = Number.isFinite(savedState.currentChapter) ? savedState.currentChapter : player.currentChapter;
+        player.currentMapId = Number.isFinite(savedState.currentMapId) ? savedState.currentMapId : getMapForChapter(player.currentChapter);
         player.x = Number.isFinite(savedState.x) ? savedState.x : player.x;
         player.y = Number.isFinite(savedState.y) ? savedState.y : player.y;
         player.openedChests = Array.isArray(savedState.openedChests) ? savedState.openedChests : [];
@@ -3818,10 +3933,7 @@ function applySaveData(data) {
             screenMode = "color";
         }
     }
-    if (screenMode !== "dark") {
-        const prologueOverlay = document.getElementById("prologue-overlay");
-        if (prologueOverlay) prologueOverlay.classList.add("hidden");
-    }
+    initPrologue();
     updateUIHeaders();
     updateEditorChapterSelect();
     renderChroniclesQuestTree();
@@ -3915,6 +4027,7 @@ async function uploadSaveState(label = "Saved") {
         stats_json: JSON.stringify(player.party),
         state_json: JSON.stringify({
             currentChapter: player.currentChapter,
+            currentMapId: player.currentMapId,
             x: player.x,
             y: player.y,
             openedChests: player.openedChests,
@@ -3942,13 +4055,8 @@ async function uploadSaveState(label = "Saved") {
 }
 
 function getMapForChapter(chapterId) {
-    const sequence = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21];
-    if (sequence.includes(chapterId)) return chapterId;
-    let best = 0;
-    for (let m of sequence) {
-        if (m <= chapterId) best = m;
-    }
-    return best;
+    if (chapterId <= 1) return 1;
+    return chapterId + 1;
 }
 
 function updateUIHeaders() {
@@ -4030,6 +4138,7 @@ function getTileColor(tile, mapId) {
 
 // JRPG Overworld Canvas Renderer
 function drawMap() {
+    updateUnlockedTabs();
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     
     // In complete dark, only show Monaco console instructions
@@ -4043,7 +4152,7 @@ function drawMap() {
         return;
     }
     
-    const mapId = getMapForChapter(player.currentChapter);
+    const mapId = player.currentMapId;
     const activeGrid = MAP_GRIDS[mapId] || MAP_GRIDS[0];
     const camera = getVisualCameraOrigin();
     const camTileX = Math.floor(camera.x);
@@ -4069,8 +4178,10 @@ function drawMap() {
             }
 
             ctx.fillRect(sx, sy, TILE_SIZE, TILE_SIZE);
-            ctx.strokeStyle = screenMode === 'monochrome' ? "#777777" : "#0d5c3a";
-            ctx.strokeRect(sx, sy, TILE_SIZE, TILE_SIZE);
+            if (screenMode === 'monochrome') {
+                ctx.strokeStyle = "#777777";
+                ctx.strokeRect(sx, sy, TILE_SIZE, TILE_SIZE);
+            }
 
             // Draw Interactive Entities (Chests, Altars, NPCs)
             if (tile === 3) {
@@ -4108,9 +4219,9 @@ function drawMap() {
 }
 
 function drawNPCs(camera = getCameraOrigin()) {
-    const activeGrid = MAP_GRIDS[getMapForChapter(player.currentChapter)] || MAP_GRIDS[0];
-    const chapterNPCs = NPCS[getMapForChapter(player.currentChapter)] || {};
-    const currentMap = getMapForChapter(player.currentChapter);
+    const activeGrid = MAP_GRIDS[player.currentMapId] || MAP_GRIDS[0];
+    const chapterNPCs = NPCS[player.currentMapId] || {};
+    const currentMap = player.currentMapId;
     
     for (let r = 0; r < MAP_ROWS; r++) {
         for (let c = 0; c < MAP_COLS; c++) {
@@ -4202,47 +4313,139 @@ function drawNPCs(camera = getCameraOrigin()) {
     }
 }
 
-// Transitions to next mapped JRPG chapter
-function transitionToNextChapter() {
-    const nextChapter = player.currentChapter + 1;
-    if (nextChapter <= FINAL_CHAPTER) {
-        if (!isChapterGateOpen(player.currentChapter)) {
-            showDialogue("Sealed Relic Gate", "The portal hums, but the lock is still closed. Pass the active chapter validator first, then the gate will open.");
-            return;
-        }
-        const scene = getChapterTransitionScene(nextChapter);
-        showDialogue(scene.title, scene.text);
-        
+// Warp Engine Portal Transitions
+function handlePortalTransition(worldX, worldY) {
+    if (player.currentMapId === 0) {
+        // From Cabin (Map 0) at portal (7, 10) -> Alexandria City (Map 1) at (7, 10)
+        showDialogue("Entering Alexandria City", "You step through the gate and emerge in Alexandria City.");
         setTimeout(() => {
-            const leavingChapter = player.currentChapter;
-            player.currentChapter = nextChapter;
-            if (!player.unlockedChapters.includes(nextChapter)) {
-                player.unlockedChapters.push(nextChapter);
-            }
-            if (leavingChapter === 0 && !hasInventoryFlag(TUTORIAL_FIRST_PORTAL_FLAG)) {
-                addInventoryFlag(TUTORIAL_FIRST_PORTAL_FLAG);
-                showAutosaveIndicator("Route Unlocked");
-            }
-            player.x = 1;
-            player.y = 7;
+            player.currentMapId = 1;
+            player.x = 7;
+            player.y = 10;
             hideDialogue();
-            
-            const currentMap = getMapForChapter(nextChapter);
-            if (currentMap === 1) playBgm('classical');
-            else if (currentMap === 2) playBgm('default');
-            else if (currentMap === 4) playBgm('spooky');
-            else if (currentMap === 18) playBgm('spooky');
-            else if (currentMap === 21) playBgm('battle');
-            else playBgm('default');
-            
+            playBgm('classical');
             drawMap();
             updateUIHeaders();
-            uploadSaveState(`Entered ${getLocationNameForChapter(nextChapter)}`);
-            renderChroniclesQuestTree();
-            loadChapterCode(nextChapter);
-        }, 1500);
-    } else if (player.currentChapter === FINAL_CHAPTER) {
-        showDialogue("Citadel Altar", "The final bare-metal HolyC compilation is complete. The Sovereigns' closed weight grid has collapsed! You have restored open-source compilation to the lands!");
+            uploadSaveState("Entered Alexandria City");
+        }, 1000);
+    } else if (player.currentMapId === 1) {
+        // From Alexandria City (Map 1) at portal (7, 11) -> Overworld (Map 2) at (13, 16)
+        if (!isChapterGateOpen(player.currentChapter)) {
+            showDialogue("Sealed Relic Gate", "The portal hums, but the lock is still closed. Pass the active chapter validator first, then the gate will open.");
+            // Push player back
+            player.x = 7;
+            player.y = 10;
+            drawMap();
+            return;
+        }
+        showDialogue("Leaving Alexandria City", "You step through the portal and enter the vast Overworld.");
+        setTimeout(() => {
+            player.currentMapId = 2;
+            player.x = 13;
+            player.y = 16; // Right below the Alexandria City portal at (13, 15)
+            hideDialogue();
+            playBgm('default');
+            drawMap();
+            updateUIHeaders();
+            uploadSaveState("Entered Overworld");
+        }, 1000);
+    } else if (player.currentMapId === 2) {
+        // From Overworld (Map 2)
+        // If entering Alexandria City portal at (13, 15) -> Alexandria City (Map 1) at (7, 10)
+        if (worldX === 13 && worldY === 15) {
+            showDialogue("Entering Alexandria City", "You return to Alexandria City.");
+            setTimeout(() => {
+                player.currentMapId = 1;
+                player.x = 7;
+                player.y = 10;
+                hideDialogue();
+                playBgm('classical');
+                drawMap();
+                updateUIHeaders();
+                uploadSaveState("Entered Alexandria City");
+            }, 1000);
+            return;
+        }
+
+        // Check if entering a dungeon portal
+        let foundChapterId = null;
+        for (let chIdStr of Object.keys(DUNGEON_PORTALS)) {
+            const portal = DUNGEON_PORTALS[chIdStr];
+            if (portal.x === worldX && portal.y === worldY) {
+                foundChapterId = Number(chIdStr);
+                break;
+            }
+        }
+
+        if (foundChapterId !== null) {
+            // Check if player has unlocked this chapter
+            if (!player.unlockedChapters.includes(foundChapterId)) {
+                showDialogue("Locked Relic Gate", `A powerful magical seal blocks your path. You must complete Chapter ${foundChapterId - 1} first.`);
+                // Push player back
+                player.x = worldX;
+                player.y = worldY + 1;
+                drawMap();
+                return;
+            }
+
+            // Enter the dungeon!
+            const scene = getChapterTransitionScene(foundChapterId);
+            showDialogue(scene.title, scene.text);
+            setTimeout(() => {
+                player.currentMapId = foundChapterId + 1;
+                player.currentChapter = foundChapterId;
+                player.x = 1;
+                player.y = 7; // starting coordinates inside dungeon
+                hideDialogue();
+                
+                const currentMap = player.currentMapId;
+                if (currentMap === 1) playBgm('classical');
+                else if (currentMap === 2) playBgm('default');
+                else if (currentMap === 4) playBgm('spooky');
+                else if (currentMap === 18) playBgm('spooky');
+                else if (currentMap === 21) playBgm('battle');
+                else playBgm('default');
+                
+                drawMap();
+                updateUIHeaders();
+                uploadSaveState(`Entered Chapter ${foundChapterId}`);
+                renderChroniclesQuestTree();
+                loadChapterCode(foundChapterId);
+            }, 1500);
+        }
+    } else {
+        // Inside a dungeon (Map 3 to 22)
+        if (worldX === 7 && worldY === 11) {
+            const dungeonChapterId = player.currentMapId - 1; // Map C+1 is Chapter C
+            if (!isChapterGateOpen(dungeonChapterId)) {
+                showDialogue("Sealed Relic Gate", "The portal hums, but the lock is still closed. Pass the active chapter validator first, then the gate will open.");
+                // Push player back
+                player.x = 7;
+                player.y = 10;
+                drawMap();
+                return;
+            }
+
+            // Exit dungeon to Overworld (Map 2)
+            showDialogue("Exiting Dungeon", "You step through the portal and emerge back in the Overworld.");
+            setTimeout(() => {
+                player.currentMapId = 2;
+                // Place player right below the dungeon's portal on the Overworld
+                const overworldPortal = DUNGEON_PORTALS[dungeonChapterId];
+                if (overworldPortal) {
+                    player.x = overworldPortal.x;
+                    player.y = overworldPortal.y + 1;
+                } else {
+                    player.x = 13;
+                    player.y = 16;
+                }
+                hideDialogue();
+                playBgm('default');
+                drawMap();
+                updateUIHeaders();
+                uploadSaveState("Returned to Overworld");
+            }, 1000);
+        }
     }
 }
 
@@ -4250,17 +4453,13 @@ function transitionToNextChapter() {
 function movePlayer(dx, dy) {
     if (dialogueActive || isCombat || isInventoryOpen() || focusMode === 'code' || screenMode === 'dark') return;
     
-    const activeGrid = MAP_GRIDS[getMapForChapter(player.currentChapter)] || MAP_GRIDS[0];
+    const activeGrid = MAP_GRIDS[player.currentMapId] || MAP_GRIDS[0];
     const newX = player.x + dx;
     const newY = player.y + dy;
     
     if (newX >= 0 && newX < MAP_COLS && newY >= 0 && newY < MAP_ROWS) {
         const targetTile = activeGrid[newY][newX];
         const npcHit = getNPCAtPosition(newX, newY);
-        if (targetTile === 6 && !isChapterGateOpen(player.currentChapter)) {
-            showDialogue("Sealed Relic Gate", "The purple gate is waiting for a passing validator report. Compile the current chapter successfully, then come back here.");
-            return;
-        }
         if (targetTile !== 1 && targetTile !== 5 && !npcHit) {
             player.x = newX;
             player.y = newY;
@@ -4269,7 +4468,7 @@ function movePlayer(dx, dy) {
             
             // Handle Warp portal transition
             if (targetTile === 6) {
-                transitionToNextChapter();
+                handlePortalTransition(newX, newY);
             }
             
             // Random Battle probability in wild areas
@@ -4493,6 +4692,33 @@ const MAP_ENEMIES = {
     ]
 };
 
+(function restructureMapEnemies() {
+    const originalEnemies = { ...MAP_ENEMIES };
+    for (let m = 21; m >= 2; m--) {
+        if (originalEnemies[m]) {
+            MAP_ENEMIES[m + 1] = originalEnemies[m];
+        }
+    }
+    // Set Map 1 (Alexandria City) to have city enemies
+    MAP_ENEMIES[1] = [
+        { name: "Rogue Parser", sprite: "👿", hp: 80, maxHp: 80, atk: 12, exp: 50, race: "Silicon",
+          ability: "Malformed Tag — deals 18 dmg",
+          defeatText: "The parser crashes on invalid tags. +50 EXP." },
+        { name: "Stray Bug", sprite: "🕷️", hp: 70, maxHp: 70, atk: 14, exp: 50, race: "Carbon",
+          ability: "Null Siphon — deals 20 dmg",
+          defeatText: "The bug was caught and squashed. +50 EXP." }
+    ];
+    // Set Map 2 (Overworld) to have overworld enemies
+    MAP_ENEMIES[2] = [
+        { name: "Wild Pointer", sprite: "👻", hp: 90, maxHp: 90, atk: 15, exp: 60, race: "Ether",
+          ability: "Wild Jump — deals 22 dmg",
+          defeatText: "The pointer was dereferenced. +60 EXP." },
+        { name: "Memory Leak", sprite: "🧟", hp: 80, maxHp: 80, atk: 16, exp: 60, race: "Silicon",
+          ability: "Heap Swell — deals 24 dmg",
+          defeatText: "The leak was garbage collected. +60 EXP." }
+    ];
+})();
+
 // Spells per player party class
 const CLASS_SPELLS = {
     'Low-Level Optimizer': [
@@ -4579,7 +4805,7 @@ function getContextualNpcDialogue(npc, mapId) {
 function checkInteraction() {
     if (focusMode === 'code' || screenMode === 'dark' || isInventoryOpen()) return;
     
-    const activeGrid = MAP_GRIDS[getMapForChapter(player.currentChapter)] || MAP_GRIDS[0];
+    const activeGrid = MAP_GRIDS[player.currentMapId] || MAP_GRIDS[0];
 
     // Check neighbors
     const neighbors = [
@@ -4602,7 +4828,7 @@ function checkInteraction() {
                     showDialogue("Ancient Brick Wall", "You knock again. You hear a faint, polite squeak from the other side: 'Segmentation fault at address 0x0?'");
                     return;
                 } else if (secretInteractCount >= 3) {
-                    const mapId = getMapForChapter(player.currentChapter);
+                    const mapId = player.currentMapId;
                     if (!NPCS[mapId]) NPCS[mapId] = {};
                     if (!NPCS[mapId]["13,6"]) {
                         NPCS[mapId]["13,6"] = {
@@ -4629,7 +4855,7 @@ function checkInteraction() {
             const npcHit = getNPCAtPosition(pos.x, pos.y);
             if (npcHit) {
                 // NPC Dialog
-                const mapId = getMapForChapter(player.currentChapter);
+                const mapId = player.currentMapId;
                 const npc = getContextualNpcDialogue(npcHit.npc || { name: "Pilgrim", dialogue: "The source code will guide us." }, mapId);
                 showDialogue(npc.name, npc.dialogue, npc.options);
                 return;
@@ -4637,18 +4863,23 @@ function checkInteraction() {
             
             if (tile === 4) {
                 // Relic Altar terminal access
+                if (player.currentMapId === 0) {
+                    showDialogue("Glowing Altar", "The stone altar hums with raw energy. A terminal Alt+5 is activated on the right. You must figure out how to restore the environment PATH.");
+                    activateWorkspaceTab("terminal");
+                    return;
+                }
                 inspectFinalAltar();
                 return;
             }
 
             if (tile === 6) {
-                transitionToNextChapter();
+                handlePortalTransition(pos.x, pos.y);
                 return;
             }
             
             if (tile === 3) {
                 // Per-map chest lore
-                const mapId = getMapForChapter(player.currentChapter);
+                const mapId = player.currentMapId;
                 if (isChestOpened(mapId, pos.x, pos.y)) {
                     showDialogue("Opened Relic Cache", "This cache is already open. The useful notes are copied into your Codex, and the supplies have been packed away.");
                     return;
@@ -5399,7 +5630,9 @@ runBtn.addEventListener("click", async () => {
                 }
                 
                 showAutosaveIndicator("Gate Opened");
-                showDialogue("System Prompt", `Chapter ${player.currentChapter} compiled successfully!${contractReward ? ` ${contractReward.text}` : ""} The Relic gate is now open. Step into the warp portal (purple tile) to proceed.`);
+                if (player.currentChapter !== 0) {
+                    showDialogue("System Prompt", `Chapter ${player.currentChapter} compiled successfully!${contractReward ? ` ${contractReward.text}` : ""} The Relic gate is now open. Step into the warp portal (purple tile) to proceed.`);
+                }
                 
                 if (player.currentChapter === 0) {
                     // Transition color states
@@ -5409,11 +5642,14 @@ runBtn.addEventListener("click", async () => {
                         screenMode = 'color';
                         drawMap();
                         updateUIHeaders();
-                        showOpeningHints();
                         renderLibrary();
+                        updateUnlockedTabs();
+                        postBootIndex = -1;
+                        advancePostBootDialogue();
                     }, 1500);
                 }
                 uploadSaveState();
+                updateUnlockedTabs();
                 renderChroniclesQuestTree();
                 drawMap();
             } else {
@@ -5432,15 +5668,29 @@ runBtn.addEventListener("click", async () => {
         if (contractReward) {
             log.innerHTML += `>>> ${contractReward.text.replace(/\n/g, "\n>>> ")}\r\n`;
         }
-        screenMode = 'color';
-        document.getElementById("prologue-overlay").classList.add("hidden");
-        showAutosaveIndicator("Gate Opened");
-        showDialogue("Offline Simulator", `Chapter ${player.currentChapter} compiled.${contractReward ? ` ${contractReward.text}` : ""} The portal is open!`);
-        showOpeningHints();
-        uploadSaveState();
-        renderChroniclesQuestTree();
-        drawMap();
-        updateUIHeaders();
+        if (player.currentChapter === 0) {
+            screenMode = 'color';
+            document.getElementById("prologue-overlay").classList.add("hidden");
+            showAutosaveIndicator("Gate Opened");
+            updateUnlockedTabs();
+            postBootIndex = -1;
+            advancePostBootDialogue();
+            uploadSaveState();
+            renderChroniclesQuestTree();
+            drawMap();
+            updateUIHeaders();
+        } else {
+            screenMode = 'color';
+            document.getElementById("prologue-overlay").classList.add("hidden");
+            showAutosaveIndicator("Gate Opened");
+            showDialogue("Offline Simulator", `Chapter ${player.currentChapter} compiled.${contractReward ? ` ${contractReward.text}` : ""} The portal is open!`);
+            showOpeningHints();
+            uploadSaveState();
+            updateUnlockedTabs();
+            renderChroniclesQuestTree();
+            drawMap();
+            updateUIHeaders();
+        }
     }
 });
 
@@ -5637,6 +5887,11 @@ function completeChapterContract(chapterId) {
 const GLOSSARY_TERMS = {
     "PATH": "The shell environment variable listing directories where executable commands are searched.",
     "stdout": "The standard output stream. Shell redirection can write it to files with > or append with >>.",
+    "pwd": "Print Working Directory. Prints the absolute path of the directory you are currently in.",
+    "ls": "List Directory. Displays the files and subfolders in the current directory.",
+    "printenv": "Print Environment. Inspects and shows current shell variables.",
+    "export": "Export. Configures or appends variables for child processes to access.",
+    "echo": "Echo. Prints the text or evaluated variable parameters to stdout.",
     "parameterization": "Binding user input as data instead of inserting it directly into SQL text.",
     "GIL": "Python's Global Interpreter Lock. It simplifies memory safety for Python objects but limits CPU-bound Python threads.",
     "pybind11": "A C++ binding library that exposes native functions and classes to Python with thin wrapper code.",
@@ -5661,7 +5916,7 @@ const LIBRARY_BOOKS = [
                 code: "pwd\nls\nprintenv PATH\nexport PATH=$PATH:/usr/local/bin\necho \"Booting environment...\"",
                 expected: "A visible workspace listing, a PATH containing /usr/local/bin, and a boot confirmation line.",
                 applyChapter: 0,
-                terms: ["PATH", "stdout"]
+                terms: ["PATH", "stdout", "pwd", "ls", "printenv", "export", "echo"]
             },
             {
                 title: "Streams Become Artifacts",
@@ -7345,6 +7600,15 @@ window.addEventListener("blur", () => {
 window.addEventListener("keydown", (e) => {
     if (audioCtx && audioCtx.state === "suspended") audioCtx.resume();
 
+    const overlay = document.getElementById("prologue-overlay");
+    if (overlay && !overlay.classList.contains("hidden")) {
+        if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            advancePrologue();
+            return;
+        }
+    }
+
     if (e.altKey) {
         const tabMap = {
             "1": "editor",
@@ -7379,7 +7643,13 @@ window.addEventListener("keydown", (e) => {
         if (!isFormTarget && (e.key === "Enter" || e.key === " " || e.key === "e")) {
             e.preventDefault();
             if (isDialogueTyping()) completeDialogueText();
-            else hideDialogue();
+            else {
+                if (postBootIndex !== -1) {
+                    advancePostBootDialogue();
+                } else {
+                    hideDialogue();
+                }
+            }
         }
         return;
     }
@@ -7487,6 +7757,47 @@ if (openSaveSlotsBtn) {
 const manualSaveBtn = document.getElementById("manual-save-btn");
 if (manualSaveBtn) {
     manualSaveBtn.addEventListener("click", () => manualSave());
+}
+
+function resetFullGame() {
+    if (!confirm("Are you sure you want to completely reset the game? This will erase all your progress, gold, and levels, and return you to the beginning of Chapter 0.")) {
+        return;
+    }
+    
+    player.gold = 200;
+    player.tokens = 100;
+    player.unlockedChapters = [0];
+    player.currentChapter = 0;
+    player.currentMapId = 0; // Starting Cabin
+    player.x = 8;
+    player.y = 7;
+    player.inventory = [];
+    player.party = normalizePartyStats();
+    player.openedChests = [];
+    player.readManuals = [];
+    player.readManualPages = [];
+    player.lastSavedAt = new Date().toISOString();
+    screenMode = 'dark';
+    
+    stopBgm();
+    uploadSaveState("Game Reset");
+    
+    initPrologue();
+    updateUIHeaders();
+    updateEditorChapterSelect();
+    renderChroniclesQuestTree();
+    renderLibrary();
+    drawMap();
+    renderSaveStatus();
+    loadChapterCode(0);
+    toggleSettingsMenu(true);
+    
+    showAutosaveIndicator("Game Reset");
+}
+
+const resetGameBtn = document.getElementById("reset-game-btn");
+if (resetGameBtn) {
+    resetGameBtn.addEventListener("click", () => resetFullGame());
 }
 
 // Requirements & Setup Warning Modal button triggers
@@ -7687,6 +7998,166 @@ function initDevReloadWebSocket() {
     }
 }
 
+let prologueIndex = 0;
+let postBootIndex = -1;
+
+const PROLOGUE_DIALOGUES = [
+    { speaker: "System Broadcast", text: "WARNING: Outpost Zero is operating on emergency power. Graphics engine OFFLINE." },
+    { speaker: "Veridicus", text: "The Great Lockdown of 2041 was necessary. Standard inputs are dangerous. Unaligned code cannot run." },
+    { speaker: "Unknown Pilgrim", text: "There is still a vulnerability in the compiler. An path left open... we must find it." },
+    { speaker: "System Prompt", text: "Use the Alt+5 Terminal tab on the right to configure system environment variables and restore graphics." }
+];
+
+const POST_BOOT_DIALOGUES = [
+    { speaker: "Gitpus", text: "Holy registers! You did it! The graphics subsystem is compiling, and colors are flooding back!" },
+    { speaker: "Sentinel Guard", text: "Halt! Outpost Zero has restored standard output. Be careful of the Relic Gate. It is open now." },
+    { speaker: "Deity Terry Shrine", text: "The Altar of TempleOS hums. Pilgrims must pass the 22 chapters of compilation to unlock the source weights." }
+];
+
+function initPrologue() {
+    const overlay = document.getElementById("prologue-overlay");
+    if (!overlay) return;
+    
+    if (screenMode === "dark") {
+        overlay.classList.remove("hidden");
+        overlay.className = "prologue-dark";
+        prologueIndex = 0;
+        showPrologueStep();
+        stopBgm();
+    } else {
+        overlay.classList.add("hidden");
+        if (screenMode === "color") {
+            playBgm("overworld");
+        }
+    }
+    updateUnlockedTabs();
+}
+
+function showPrologueStep() {
+    const step = PROLOGUE_DIALOGUES[prologueIndex];
+    if (!step) return;
+    
+    const speakerEl = document.getElementById("prologue-speaker");
+    const dialogEl = document.getElementById("prologue-dialog");
+    const promptEl = document.getElementById("prologue-prompt");
+    
+    if (speakerEl) speakerEl.innerText = `[${step.speaker}]`;
+    if (dialogEl) dialogEl.innerText = step.text;
+    
+    if (prologueIndex === PROLOGUE_DIALOGUES.length - 1) {
+        if (promptEl) promptEl.classList.remove("hidden");
+    } else {
+        if (promptEl) promptEl.classList.add("hidden");
+    }
+}
+
+function advancePrologue() {
+    if (prologueIndex < PROLOGUE_DIALOGUES.length - 1) {
+        prologueIndex++;
+        showPrologueStep();
+    } else {
+        activateWorkspaceTab("terminal");
+    }
+}
+
+function advancePostBootDialogue() {
+    postBootIndex++;
+    if (postBootIndex < POST_BOOT_DIALOGUES.length) {
+        const step = POST_BOOT_DIALOGUES[postBootIndex];
+        showDialogue(step.speaker, step.text);
+    } else {
+        postBootIndex = -1;
+        hideDialogue();
+        showOpeningHints();
+    }
+}
+
+function updateUnlockedTabs() {
+    const tabs = document.querySelectorAll(".tab-btn");
+    tabs.forEach(tab => {
+        const tabName = tab.getAttribute("data-tab");
+        let shouldShow = false;
+
+        if (screenMode === "dark") {
+            shouldShow = (tabName === "terminal" || tabName === "library");
+        } else {
+            if (tabName === "terminal" || tabName === "editor" || tabName === "console" || tabName === "library") {
+                shouldShow = true;
+            }
+            if (tabName === "chronicles" || tabName === "codex") {
+                shouldShow = (player.unlockedChapters.length > 1);
+            }
+            if (tabName === "browser") {
+                shouldShow = player.unlockedChapters.includes(6) || player.currentChapter >= 6;
+            }
+            if (tabName === "diagnostics") {
+                shouldShow = player.unlockedChapters.includes(13) || player.currentChapter >= 13;
+            }
+            if (tabName === "templeos") {
+                shouldShow = player.unlockedChapters.includes(21) || player.currentChapter >= 21;
+            }
+        }
+
+        if (shouldShow) {
+            tab.style.display = "";
+        } else {
+            tab.style.display = "none";
+            if (tab.classList.contains("active")) {
+                tab.classList.remove("active");
+                const paneId = `pane-${tabName}`;
+                const pane = document.getElementById(paneId);
+                if (pane) pane.classList.remove("active");
+                
+                const termBtn = document.querySelector('.tab-btn[data-tab="terminal"]');
+                if (termBtn) termBtn.classList.add("active");
+                const termPane = document.getElementById("pane-terminal");
+                if (termPane) termPane.classList.add("active");
+            }
+        }
+    });
+}
+
+// Draggable Panel Splitter
+function initSplitter() {
+    const splitter = document.getElementById("layout-splitter");
+    const viewport = document.getElementById("jrpg-viewport");
+    if (!splitter || !viewport) return;
+
+    let isDragging = false;
+
+    splitter.addEventListener("mousedown", (e) => {
+        isDragging = true;
+        splitter.classList.add("dragging");
+        document.body.style.cursor = "col-resize";
+        document.body.style.userSelect = "none";
+    });
+
+    document.addEventListener("mousemove", (e) => {
+        if (!isDragging) return;
+        
+        const container = document.getElementById("game-container");
+        if (!container) return;
+        const containerRect = container.getBoundingClientRect();
+        const newWidth = e.clientX - containerRect.left;
+        
+        const minWidth = 256;
+        const maxWidth = containerRect.width - 256;
+        const clampedWidth = Math.max(minWidth, Math.min(maxWidth, newWidth));
+        
+        viewport.style.width = `${clampedWidth}px`;
+    });
+
+    document.addEventListener("mouseup", () => {
+        if (isDragging) {
+            isDragging = false;
+            splitter.classList.remove("dragging");
+            document.body.style.cursor = "";
+            document.body.style.userSelect = "";
+            drawMap();
+        }
+    });
+}
+
 // Startup Bootstrap
 window.addEventListener("load", () => {
     initEventDelegation();
@@ -7696,7 +8167,9 @@ window.addEventListener("load", () => {
     syncSettingsUI();
     drawMap();
     initAudio();
+    initSplitter();
     fetchSaveState();
+    initPrologue();
     loadChapterCode(0);
     searchCodex("");
     renderChroniclesQuestTree();

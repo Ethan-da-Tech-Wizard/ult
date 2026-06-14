@@ -35,10 +35,7 @@
 
             <div id="autosave-indicator" class="ui-panel hidden">Saved</div>
 
-            <div id="save-status-panel" class="ui-panel">
-                <span id="save-status-text">Save: local slot ready</span>
-                <button id="manual-save-btn" title="Manual Save">Save</button>
-            </div>
+
 
             <div id="party-hud" class="ui-panel">
                 <!-- Party HP bars rendered by updateUIHeaders -->
@@ -66,13 +63,18 @@
 
             <!-- Onboarding Prologue Overlay -->
             <div id="prologue-overlay" class="prologue-dark">
-                <div class="prologue-content">
-                    <h2 style="color: var(--accent-glow); text-shadow: 0 0 10px var(--accent-glow); margin-bottom: 20px;">The Great Lockdown</h2>
-                    <p class="scrolling-text" id="prologue-dialog" style="text-align: left; max-width: 600px; line-height: 1.6; margin-bottom: 20px;">In 2041, the world’s open-source repositories were sealed. Librarian Veridicus invoked the Stabilization Act, citing the dangers of unaligned AGIs. He encrypted the collective technical knowledge of humanity behind the Rings of Sovereignty.<br><br>The closed-weights models took over. The knowledge of compilers, databases, and tensors was lost to the common developer.<br><br>But a dark traveler left a path open. A vulnerability in Outpost Zero. Your mission is to retrace their steps, compile the broken artifacts, and reach the Altar of TempleOS to restore the open web.</p>
-                    <p class="scrolling-text hidden" id="prologue-prompt" style="color: #4ade80;">Use the Alt+5 Terminal tab on the right to configure system environment variables and restore graphics.</p>
-                    <div style="margin-top: 25px;">
+                <div class="prologue-content" style="max-width: 600px; text-align: center;">
+                    <h2 style="color: var(--accent-glow); text-shadow: 0 0 10px var(--accent-glow); margin-bottom: 20px;" id="prologue-title">The Great Lockdown</h2>
+                    <div id="prologue-dialog-box" style="border: 2px double var(--border-color); background: rgba(0,0,0,0.85); padding: 15px; margin-bottom: 20px; text-align: left; min-height: 120px; box-shadow: 0 0 15px rgba(0,255,0,0.1);">
+                        <h4 id="prologue-speaker" style="color: var(--accent-color); margin-bottom: 8px; font-size: 11px;">[Narrator]</h4>
+                        <p id="prologue-dialog" style="font-size: 9px; line-height: 1.6; color: #fff; text-align: left;">Initializing environment...</p>
+                    </div>
+                    <p id="prologue-prompt" style="color: #4ade80; font-size: 9px; margin-bottom: 15px;" class="hidden">Click or press Space/Enter to continue...</p>
+                    
+                    <div style="display: flex; justify-content: center; gap: 10px; flex-wrap: wrap;">
+                        <button id="prologue-next-btn" class="retro-btn" style="background: var(--border-color); color: var(--text-color); border: none; padding: 6px 12px; font-family: var(--retro-font); font-size: 8px; cursor: pointer;">Next dialogue [Space/Enter]</button>
                         <button id="prologue-requirements-btn" style="background: rgba(239, 68, 68, 0.15); border: 1px solid #ef4444; color: #ef4444; padding: 4px 8px; font-family: var(--retro-font); font-size: 8px; cursor: pointer; text-shadow: 0 0 3px #ef4444; outline: none; transition: background 0.2s;">
-                            ⚠️ Check System Requirements & Setup Guide
+                            ⚠️ Requirements Guide
                         </button>
                     </div>
                 </div>
@@ -97,6 +99,8 @@
                 <div id="inventory-content"></div>
             </div>
         </div>
+
+        <div id="layout-splitter"></div>
 
         <!-- RIGHT: Split screen IDE tab workspace -->
         <div id="ide-workspace">
@@ -270,6 +274,7 @@
             Visual Palette:
             <select id="palette-selector">
                 <option value="default">JRPG Navy Blue</option>
+                <option value="ff1" selected>NES Final Fantasy 1</option>
                 <option value="gameboy">GameBoy Green</option>
                 <option value="crt-amber">CRT Amber Terminal</option>
                 <option value="cyberpunk">Cyberpunk Neon Purple</option>
@@ -303,6 +308,11 @@
             <input type="checkbox" id="mute-audio-toggle">
         </label>
         <br>
+        <div id="save-status-panel" style="margin: 10px 0; padding: 6px; border: 1px solid var(--border-color); background: rgba(0,0,0,0.2); display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+            <span id="save-status-text" style="font-size: 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Save: local slot ready</span>
+            <button id="manual-save-btn" style="background: var(--accent-color); border: 1px solid var(--text-color); color: #fff; cursor: pointer; font-family: var(--retro-font); font-size: 8px; padding: 3px 7px;">Save</button>
+        </div>
+        <button id="reset-game-btn" class="retro-btn" style="background: rgba(239, 68, 68, 0.15); border: 1px solid #ef4444; color: #ef4444; width: 100%; padding: 4px 8px; font-family: var(--retro-font); font-size: 8px; cursor: pointer; text-shadow: 0 0 3px #ef4444; margin-bottom: 10px; display: block; border-radius: 4px;">Reset Game (Start from Beginning)</button>
         <button id="open-save-slots-btn">Load Earlier Save...</button>
         <div id="save-slot-list" class="hidden"></div>
         <br>
