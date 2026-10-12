@@ -25,7 +25,7 @@ The owner selected MIT for previously unlicensed original code. Existing license
 
 ## Project-specific considerations
 
-Optional container and terminal integrations have a larger trust boundary than the basic browser game. Read the documented tiers before enabling them.
+Optional container and terminal integrations have a larger trust boundary than the basic browser game. Read the documented tiers before enabling them. The root checkout is the standalone application. A historical nested checkout is retained separately and is excluded from the tracked application.
 
 ## Remaining work before binary distribution
 

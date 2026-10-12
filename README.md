@@ -31,7 +31,7 @@ An educational browser JRPG that uses programming challenges, shell commands, SQ
 
 ## Scope and current limits
 
-Optional container and terminal integrations have a larger trust boundary than the basic browser game. Read the documented tiers before enabling them.
+Optional container and terminal integrations have a larger trust boundary than the basic browser game. Read the documented tiers before enabling them. The root checkout is the standalone application. A historical nested checkout is retained separately and is excluded from the tracked application.
 
 ## License
 
