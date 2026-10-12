@@ -72,3 +72,6 @@ target/
 *.p12
 id_rsa*
 id_ed25519*
+
+# Keep the historical nested checkout as a separate local backup.
+/ult/
