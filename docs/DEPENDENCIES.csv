@@ -1,0 +1,9 @@
+ecosystem,name,requirement,version,scope,manifest,license,metadata_version,evidence,evidence_kind,resolution_note
+crates.io,tauri,1.5,,dependencies,client/src-tauri/Cargo.toml,Apache-2.0 OR MIT,2.12.3,https://crates.io/api/v1/crates/tauri,,
+crates.io,serde,1.0,,dependencies,client/src-tauri/Cargo.toml,MIT OR Apache-2.0,1.0.229,https://crates.io/api/v1/crates/serde,,
+crates.io,serde_json,1.0,,dependencies,client/src-tauri/Cargo.toml,MIT OR Apache-2.0,1.0.154,https://crates.io/api/v1/crates/serde_json,,
+crates.io,tauri-build,1.5,,build-dependencies,client/src-tauri/Cargo.toml,Apache-2.0 OR MIT,2.7.2,https://crates.io/api/v1/crates/tauri-build,,
+PyPI,fastapi,>=0.111.0,,direct,requirements.txt,MIT,0.143.0,https://pypi.org/pypi/fastapi/json,,
+PyPI,uvicorn,>=0.30.0,,direct,requirements.txt,BSD-3-Clause,0.54.0,https://pypi.org/pypi/uvicorn/json,,
+PyPI,pydantic,>=2.7.0,,direct,requirements.txt,MIT,2.14.1,https://pypi.org/pypi/pydantic/json,,
+PyPI,numpy,>=1.26.0,,direct,requirements.txt,BSD-3-Clause AND 0BSD AND MIT AND Zlib AND CC0-1.0,2.5.4,https://pypi.org/pypi/numpy/json,,
