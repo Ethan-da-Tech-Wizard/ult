@@ -7,7 +7,6 @@
 | [.github/workflows/ci.yml](../../.github/workflows/ci.yml) | GitHub Actions workflow for ci; defines automation triggers, jobs, and build/check steps. |
 | [.github/workflows/release.yml](../../.github/workflows/release.yml) | GitHub Actions workflow for release; defines automation triggers, jobs, and build/check steps. |
 | [.gitignore](../../.gitignore) | Defines local data, credentials, dependencies, and generated outputs that Git should leave untracked. |
-| [.gitmodules](../../.gitmodules) | Records nested Git repositories and their source URLs. |
 | [LICENSE](../../LICENSE) | Preserved license, copyright, or attribution terms; read the full text before reusing the covered component. |
 | [PROJECT_NOTES.md](../../PROJECT_NOTES.md) | Preserved detailed setup, usage, architecture, and development notes from the earlier README. |
 | [README.md](../../README.md) | Project overview, current status, entry points, setup navigation, and documentation links. |
@@ -78,4 +77,3 @@
 | [setup/install_all.ps1](../../setup/install_all.ps1) | Command-line automation for install all; review prerequisites and side effects before executing. |
 | [setup/install_all.py](../../setup/install_all.py) | Python implementation of install all. Defines `ask_yes_no`, `check_command`, `main`. |
 | [setup/install_all.sh](../../setup/install_all.sh) | Command-line automation for install all; review prerequisites and side effects before executing. |
-| [ult](../../ult) | Git submodule or directory entry; its contents are maintained in a separate repository. |
