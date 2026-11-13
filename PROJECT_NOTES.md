@@ -72,7 +72,7 @@ What it does, in order:
    `setup/build_templeos_img.sh`).
 4. Prints a summary of which tiers are active and how to launch.
 
-Re-running it is safe — every step checks what already exists.
+The setup script is intended to check for existing components, but repeat-run behavior has not been independently verified; inspect the script and back up any important state before running it.
 
 ---
 
