@@ -1,4 +1,11 @@
 #!/usr/bin/env bash
+
+# ==============================================================================
+# Program: install_all.sh
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Shell automation script bootstrapping local dependencies, virtualenvs, and sandbox containers.
+# ==============================================================================
 # ─────────────────────────────────────────────────────────────────────────────
 # install_all.sh — The Sacred Tech setup wrapper for macOS and Linux
 #

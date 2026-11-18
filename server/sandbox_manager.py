@@ -1,3 +1,9 @@
+# ==============================================================================
+# Program: sandbox_manager.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Docker container runtime manager executing user code submissions in isolated secure sandboxes.
+# ==============================================================================
 import os
 import sys
 import subprocess

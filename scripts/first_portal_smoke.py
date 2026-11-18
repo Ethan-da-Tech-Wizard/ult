@@ -1,4 +1,11 @@
 #!/usr/bin/env python3
+
+# ==============================================================================
+# Program: first_portal_smoke.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: End-to-end smoke test validating the first game portal, API endpoints, and challenge runner.
+# ==============================================================================
 import json
 import os
 import subprocess

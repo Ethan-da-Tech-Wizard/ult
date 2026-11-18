@@ -1,4 +1,11 @@
 #!/usr/bin/env python3
+
+# ==============================================================================
+# Program: simulate_gameplay.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Automated player simulation script executing chapters sequentially to verify difficulty progression.
+# ==============================================================================
 # ─────────────────────────────────────────────────────────────────────────────
 # simulate_gameplay.py — Simulated Gameplay Loop for The Sacred Tech
 # ─────────────────────────────────────────────────────────────────────────────

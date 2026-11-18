@@ -1,4 +1,11 @@
 #!/usr/bin/env python3
+
+# ==============================================================================
+# Program: install_all.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Comprehensive multi-platform setup installer verifying dependencies and preparing runtime.
+# ==============================================================================
 # ─────────────────────────────────────────────────────────────────────────────
 # install_all.py — The Sacred Tech unified cross-platform setup installer
 #

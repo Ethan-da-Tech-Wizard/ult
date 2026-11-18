@@ -1,4 +1,11 @@
 #!/usr/bin/env bash
+
+# ==============================================================================
+# Program: run_dev.sh
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Development server startup script launching backend API daemon and hot-reloading client.
+# ==============================================================================
 # Launches The Sacred Tech. Self-bootstrapping: if the Python dependencies
 # are missing, they are installed into a local .venv automatically, so a
 # fresh download plays with this one command.

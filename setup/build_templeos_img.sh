@@ -1,4 +1,11 @@
 #!/usr/bin/env bash
+
+# ==============================================================================
+# Program: build_templeos_img.sh
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Automated QEMU disk image builder for TempleOS virtualization integration.
+# ==============================================================================
 # ─────────────────────────────────────────────────────────────────────────────
 # build_templeos_img.sh
 # Downloads TempleOS 5.03 ISO and converts it into a QEMU-bootable disk image

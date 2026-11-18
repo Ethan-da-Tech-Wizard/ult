@@ -1,3 +1,9 @@
+// ==============================================================================
+// Program: app.js
+// Programmer: Ethan-da-Tech-Wizard
+// Last Modified: November 18, 2026
+// Purpose: Client-side game engine managing 2D tilemap rendering, player movement, combat, and dialogue.
+// ==============================================================================
 // The Sacred Tech - Client Engine Logic
 
 // Game Configuration & State
