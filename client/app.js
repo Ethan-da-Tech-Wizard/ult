@@ -1,6 +1,11 @@
+// Program: ult - app.js
+// Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+// Last Modified: 2026-11-18
+// Purpose: Client engine for the browser game: map and sprite rendering, movement, NPC dialogue, turn-based combat, inventory and shop, save/load through the server API, the in-game code editor, library and codex, terminal and VM WebSocket bridges, and startup.
 // The Sacred Tech - Client Engine Logic
 
 // Game Configuration & State
+// ==== Game configuration and state ====
 const TILE_SIZE = 32;
 const VIEW_COLS = 16;
 const VIEW_ROWS = 14;
@@ -41,6 +46,7 @@ const TUTORIAL_FIRST_PORTAL_FLAG = "tutorial_first_portal_reward_seen";
 const ITEM_PREFIX = "item:";
 const CONTRACT_PREFIX = "contract:";
 
+// Items the shop sells (id, name, price, description).
 const SHOP_ITEMS = [
     { id: "patch_potion", name: "Patch Potion", price: 30, desc: "Restore 45 HP to the full party." },
     { id: "cache_tonic", name: "Cache Tonic", price: 45, desc: "Restore 35 Compute Tokens." },
@@ -50,6 +56,7 @@ const SHOP_ITEMS = [
 
 // Patrol routes are loops of tiles; unwalkable points are skipped at runtime
 // (getPatrolPosition filters against the map grid), so routes degrade safely.
+// Filled in from PATROL_TEMPLATES: routes NPCs walk on each map.
 const NPC_PATROLS = {};
 const PATROL_TEMPLATES = {
     "7,7": { route: [[7, 7], [8, 7], [8, 6]], interval: 1700 },
@@ -82,6 +89,8 @@ const playerVisual = { x: 8, y: 7 };
 const TWEEN_TILES_PER_SEC = 9;
 
 // Retro 8-bit pixel art character sprites
+// ==== Sprites ====
+// Each sprite is eight strings of eight characters; each letter maps to a colour in drawPixelSprite.
 const SPRITE_PLAYER = [
     "..PPPP..",
     ".PPPPPP.",
@@ -226,6 +235,12 @@ const SPRITE_SNAIL = [
 ];
 
 // Custom 8-bit sprite renderer function
+/**
+ * Draw an 8x8 pixel-art sprite (array of colour-code rows) onto the canvas at a tile position.
+ * @param {string[]} spriteArray Rows of single-letter colour codes.
+ * @param {number} tileX Tile column.
+ * @param {number} tileY Tile row.
+ */
 function drawPixelSprite(spriteArray, tileX, tileY) {
     const startX = tileX * TILE_SIZE;
     const startY = tileY * TILE_SIZE;
@@ -259,6 +274,7 @@ function drawPixelSprite(spriteArray, tileX, tileY) {
 }
 
 // Map Grid definition (Tile IDs: 0=Grass, 1=Brick wall, 2=NPC, 3=Chest, 4=Altar, 5=Water, 6=Portal)
+// ==== Maps ====
 const MAP_GRIDS = {
     0: [ // Outpost Zero (Starting Fort)
         [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
@@ -614,11 +630,17 @@ const MAP_GRIDS = {
     ]
 };
 
+/**
+ * Cheap deterministic pseudo-random value in [0, 1) for a map tile, so generated terrain is the same every time.
+ */
 function terrainNoise(mapId, x, y) {
     const raw = Math.sin((x + 1) * 12.9898 + (y + 1) * 78.233 + mapId * 37.719) * 43758.5453;
     return raw - Math.floor(raw);
 }
 
+/**
+ * Pick the filler tile (grass, wall or water) for an open field cell, based on the map's biome and the terrain noise.
+ */
 function getBiomeFieldTile(mapId, x, y) {
     const noise = terrainNoise(mapId, x, y);
     const ridge = (x + y + mapId) % 11 === 0;
@@ -630,6 +652,9 @@ function getBiomeFieldTile(mapId, x, y) {
     return 0;
 }
 
+/**
+ * Force the given [x, y] points to grass (a road), skipping the outer border and portal tiles.
+ */
 function carveRoad(grid, points) {
     points.forEach(([x, y]) => {
         if (x > 0 && x < MAP_COLS - 1 && y > 0 && y < MAP_ROWS - 1) {
@@ -638,6 +663,9 @@ function carveRoad(grid, points) {
     });
 }
 
+/**
+ * Enlarge a hand-drawn base map to the full map size, surrounding it with a wall border and generated terrain.
+ */
 function expandMapGrid(mapId, baseGrid) {
     const grid = Array.from({ length: MAP_ROWS }, (_, y) =>
         Array.from({ length: MAP_COLS }, (_, x) => {
@@ -749,6 +777,7 @@ Object.keys(MAP_GRIDS).forEach(mapId => {
 });
 
 // NPCs database structured by chapter ID and coordinate keys
+// ==== NPC data (dialogue and behaviour, keyed by map then by position) ====
 const NPCS = {
     0: {
         "7,7": {
@@ -2890,6 +2919,7 @@ const canvas = document.getElementById("jrpg-canvas");
 const ctx = canvas.getContext("2d");
 
 // System parameters
+// ==== Runtime state and audio ====
 let screenMode = 'dark'; // dark, monochrome, color
 let isCombat = false;
 
@@ -2924,6 +2954,7 @@ let bassOsc = null;
 let trebleGainNode = null;
 let bassGainNode = null;
 
+// Background music tracks: tempo and note sequences per theme.
 const BGM_MELODIES = {
     'default': {
         tempo: 125,
@@ -2976,6 +3007,7 @@ const BGM_MELODIES = {
     }
 };
 
+// Note name to frequency (Hz) table used by the music synthesizer.
 const NOTE_FREQS = {
     "F1": 43.65, "G1": 49.00, "A1": 55.00, "Bb1": 58.27, "B1": 61.74,
     "C2": 65.41, "C#2": 69.30, "D2": 73.42, "F2": 87.31, "G2": 98.00, "A2": 110.00, "C3": 130.81, "D3": 146.83,
@@ -2995,6 +3027,9 @@ let gameSettings = {
     muted: false
 };
 
+/**
+ * Load saved settings from localStorage and merge them over the defaults (failures are logged, not fatal).
+ */
 function loadGameSettings() {
     try {
         const raw = localStorage.getItem(SETTINGS_STORAGE_KEY);
@@ -3004,6 +3039,9 @@ function loadGameSettings() {
     }
 }
 
+/**
+ * Write the current settings to localStorage (failures are logged, not fatal).
+ */
 function saveGameSettings() {
     try {
         localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(gameSettings));
@@ -3012,6 +3050,9 @@ function saveGameSettings() {
     }
 }
 
+/**
+ * Switch the colour theme by setting the matching palette class on the page body.
+ */
 function applyPalette(palette) {
     document.body.className = "retro-crt";
     if (palette !== "default") {
@@ -3020,10 +3061,16 @@ function applyPalette(palette) {
 }
 
 // Slider value of DEFAULT_BGM_VOLUME plays themes at their authored gain
+/**
+ * Return the volume multiplier from the settings (0 when muted).
+ */
 function getMasterVolumeFactor() {
     return gameSettings.muted ? 0 : gameSettings.bgmVolume / DEFAULT_BGM_VOLUME;
 }
 
+/**
+ * Apply the current volume setting to the music that is playing.
+ */
 function applyBgmVolume() {
     if (currentBgmGainNode && audioCtx) {
         currentBgmGainNode.gain.setValueAtTime(currentBgmBaseGain * getMasterVolumeFactor(), audioCtx.currentTime);
@@ -3031,12 +3078,19 @@ function applyBgmVolume() {
 }
 
 // Initialize Web Audio Synth
+/**
+ * Create the Web Audio context on first use (browsers require a user gesture first).
+ */
 function initAudio() {
     if (!audioCtx) {
         audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     }
 }
 
+/**
+ * Play a short synthesized sound effect such as step, menu, hit, coin or heal.
+ * @param {string} type Sound effect name.
+ */
 function playSfx(type) {
     if (!audioCtx || gameSettings.muted) return;
     try {
@@ -3061,6 +3115,10 @@ function playSfx(type) {
     }
 }
 
+/**
+ * Start looping background music for a theme using two oscillators (treble and bass), replacing any current track.
+ * @param {string} theme Key into BGM_MELODIES; unknown themes use the default track.
+ */
 function playBgm(theme) {
     if (!audioCtx) return;
     stopBgm();
@@ -3144,6 +3202,9 @@ function playBgm(theme) {
     }
 }
 
+/**
+ * Stop the music loop and its oscillators.
+ */
 function stopBgm() {
     if (bgmSequenceInterval) {
         clearInterval(bgmSequenceInterval);
@@ -3172,6 +3233,10 @@ function stopBgm() {
 
 
 // REST Client calls
+/**
+ * Merge saved party stats with the defaults by index, filling any missing or invalid numbers.
+ * @returns {object[]} A full party array.
+ */
 function normalizePartyStats(savedParty = []) {
     return DEFAULT_PARTY_STATS.map((defaults, index) => {
         const saved = savedParty[index] || {};
@@ -3192,10 +3257,17 @@ function normalizePartyStats(savedParty = []) {
     });
 }
 
+/**
+ * Experience needed for the next level (100 times 1.35 to the power level-1, rounded).
+ */
 function getNextExpForLevel(level) {
     return Math.round(100 * Math.pow(1.35, level - 1));
 }
 
+/**
+ * Give experience to every party member and handle level-ups.
+ * @returns {object[]} Description of the level-ups that occurred.
+ */
 function awardPartyExp(expAmount) {
     const levelUps = [];
 
@@ -3220,6 +3292,9 @@ function awardPartyExp(expAmount) {
     return levelUps;
 }
 
+/**
+ * Pay the bonfire's gold cost to rest the party, or explain that the player cannot afford it.
+ */
 function restPartyAtBonfire() {
     if (player.gold < BONFIRE_REST_COST) {
         showDialogue("Bonfire of the First Flame", `The bonfire waits, but the innkeeper's lockbox is stern. Resting costs ${BONFIRE_REST_COST} Gold.`);
@@ -3235,33 +3310,55 @@ function restPartyAtBonfire() {
     showDialogue("Bonfire of the First Flame", `You rest beside the coiled sword. HP restored for the whole party. ${BONFIRE_REST_COST} Gold paid to keep the fire linked.`);
 }
 
+/**
+ * Build the inventory string for an item id (adds the item prefix).
+ */
 function getItemKey(itemId) {
     return `${ITEM_PREFIX}${itemId}`;
 }
 
+/**
+ * List the ids of all items in the inventory, ignoring flags and contracts.
+ */
 function getInventoryItemIds() {
     return player.inventory
         .filter(entry => typeof entry === "string" && entry.startsWith(ITEM_PREFIX))
         .map(entry => entry.slice(ITEM_PREFIX.length));
 }
 
+/**
+ * Add one copy of an item to the inventory.
+ */
 function addInventoryItem(itemId) {
     player.inventory.push(getItemKey(itemId));
 }
 
+/**
+ * Remove one copy of an item from the inventory if present.
+ */
 function removeInventoryItem(itemId) {
     const index = player.inventory.indexOf(getItemKey(itemId));
     if (index >= 0) player.inventory.splice(index, 1);
 }
 
+/**
+ * Count how many copies of an item the player holds.
+ */
 function countInventoryItem(itemId) {
     return getInventoryItemIds().filter(id => id === itemId).length;
 }
 
+/**
+ * Look up a shop item definition by id.
+ */
 function findShopItem(itemId) {
     return SHOP_ITEMS.find(item => item.id === itemId);
 }
 
+/**
+ * Show the shop in the inventory overlay.
+ * @param {string} shopName Title to display.
+ */
 function openShop(shopName = "Outpost Supply") {
     const overlay = document.getElementById("inventory-overlay");
     const title = document.getElementById("inventory-title");
@@ -3282,6 +3379,9 @@ function openShop(shopName = "Outpost Supply") {
     overlay.classList.remove("hidden");
 }
 
+/**
+ * Show the player's items in the inventory overlay.
+ */
 function openInventory() {
     const overlay = document.getElementById("inventory-overlay");
     const title = document.getElementById("inventory-title");
@@ -3306,6 +3406,9 @@ function openInventory() {
     overlay.classList.remove("hidden");
 }
 
+/**
+ * Buy one shop item if the player has enough gold.
+ */
 function buyShopItem(itemId) {
     const item = findShopItem(itemId);
     if (!item) return;
@@ -3323,6 +3426,9 @@ function buyShopItem(itemId) {
     openShop("Outpost Supply");
 }
 
+/**
+ * Consume an inventory item and apply its effect.
+ */
 function useInventoryItem(itemId) {
     const item = findShopItem(itemId);
     if (!item || countInventoryItem(itemId) <= 0) return;
@@ -3346,11 +3452,17 @@ function useInventoryItem(itemId) {
     openInventory();
 }
 
+/**
+ * True when the inventory/shop overlay is visible.
+ */
 function isInventoryOpen() {
     const overlay = document.getElementById("inventory-overlay");
     return Boolean(overlay && !overlay.classList.contains("hidden"));
 }
 
+/**
+ * Briefly show a status message in the save indicator.
+ */
 function showAutosaveIndicator(text = "Saved") {
     const indicator = document.getElementById("autosave-indicator");
     if (!indicator) return;
@@ -3361,6 +3473,9 @@ function showAutosaveIndicator(text = "Saved") {
     autosaveTimer = setTimeout(() => indicator.classList.add("hidden"), 1800);
 }
 
+/**
+ * Format an ISO timestamp as a short local time, or 'never' / 'unknown'.
+ */
 function formatSaveTime(isoValue) {
     if (!isoValue) return "never";
     const date = new Date(isoValue);
@@ -3368,20 +3483,32 @@ function formatSaveTime(isoValue) {
     return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
+/**
+ * Update the save status line with chapter, gold, tokens and last save time.
+ */
 function renderSaveStatus() {
     const text = document.getElementById("save-status-text");
     if (!text) return;
     text.innerText = `Save: Ch ${player.currentChapter} | ${player.gold}G ${player.tokens}T | ${formatSaveTime(player.lastSavedAt)}`;
 }
 
+/**
+ * Save the game immediately on the player's request.
+ */
 function manualSave() {
     uploadSaveState("Manual Save");
 }
 
+/**
+ * True when a chapter's gate is open (its contract is complete or the next chapter is unlocked).
+ */
 function isChapterGateOpen(chapterId) {
     return isContractComplete(chapterId) || player.unlockedChapters.includes(chapterId + 1);
 }
 
+/**
+ * Return the tutorial objective text for Chapter 0 based on how far the player has progressed.
+ */
 function getChapter0TutorialObjective() {
     if (screenMode === "dark") return "Objective: use Alt+5 Terminal, then compile Chapter 0 to restore color.";
     if (!isManualPageRead("python-field-manual", 0)) return "Objective: read Python Field Manual page 1 in Alt+9 Library.";
@@ -3391,6 +3518,9 @@ function getChapter0TutorialObjective() {
     return "Objective: enter the purple portal to reach Alexandria Library.";
 }
 
+/**
+ * Return the objective text shown in the tracker for the player's current progress.
+ */
 function getCurrentObjective() {
     if (player.currentChapter === 0) return getChapter0TutorialObjective();
     if (screenMode === "dark") return "Objective: use Alt+5 Terminal to restore the environment.";
@@ -3402,11 +3532,19 @@ function getCurrentObjective() {
     return "Objective: use Alt+7 TempleOS and finish the HolyC checksum.";
 }
 
+/**
+ * Refresh the objective tracker text on screen.
+ */
 function updateObjectiveTracker() {
     const objective = document.getElementById("objective-text");
     if (objective) objective.innerText = getCurrentObjective();
 }
 
+/**
+ * Return an NPC's current tile, following its patrol route if it has one, else its home tile.
+ * @param {number} mapId Map the NPC is on.
+ * @param {string} key Home position key of the form 'x,y'.
+ */
 function getPatrolPosition(mapId, key) {
     const patrol = NPC_PATROLS[mapId]?.[key];
     const [homeX, homeY] = key.split(",").map(Number);
@@ -3427,6 +3565,9 @@ function getPatrolPosition(mapId, key) {
     return { x, y };
 }
 
+/**
+ * Find the NPC (if any) standing on a tile of the current map, accounting for patrol movement.
+ */
 function getNPCAtPosition(x, y) {
     const mapId = player.currentMapId;
     const chapterNPCs = NPCS[mapId] || {};
@@ -3440,6 +3581,9 @@ function getNPCAtPosition(x, y) {
     return null;
 }
 
+/**
+ * Look at the four neighbouring tiles and return what the player could interact with (null when interaction is blocked).
+ */
 function getAdjacentInteraction() {
     if (dialogueActive || isCombat || focusMode === "code" || screenMode === "dark") return null;
 
@@ -3472,6 +3616,9 @@ function getAdjacentInteraction() {
     return null;
 }
 
+/**
+ * Show or hide the on-screen interact prompt based on what is adjacent to the player.
+ */
 function updateInteractPrompt() {
     const prompt = document.getElementById("interact-prompt");
     if (!prompt) return;
@@ -3487,6 +3634,9 @@ function updateInteractPrompt() {
 }
 
 // Where should the player head next? Used to pulse a marker on the minimap.
+/**
+ * Return the tile the minimap should highlight as the next objective, or null.
+ */
 function getObjectiveMarker() {
     if (screenMode === "dark") {
         if (player.currentChapter === 0) return { x: 6, y: 4 }; // glowing rock in dark Cabin
@@ -3513,6 +3663,9 @@ function getObjectiveMarker() {
     return null;
 }
 
+/**
+ * Draw the whole map in small form on the minimap canvas with the player and objective marker.
+ */
 function drawMinimap() {
     const minimap = document.getElementById("minimap-canvas");
     if (!minimap) return;
@@ -3554,6 +3707,9 @@ function drawMinimap() {
     }
 }
 
+/**
+ * Chance of a random encounter on a step, lower on early maps, near interactions and along the map edges.
+ */
 function getEncounterRate(x, y) {
     const mapId = player.currentMapId;
     let rate = 0.08;
@@ -3563,24 +3719,39 @@ function getEncounterRate(x, y) {
     return rate;
 }
 
+/**
+ * True if a progress flag string is in the inventory.
+ */
 function hasInventoryFlag(flag) {
     return player.inventory.includes(flag);
 }
 
+/**
+ * Add a progress flag to the inventory if it is not already there.
+ */
 function addInventoryFlag(flag) {
     if (!hasInventoryFlag(flag)) {
         player.inventory.push(flag);
     }
 }
 
+/**
+ * Build the unique key for a chest from map id and coordinates.
+ */
 function getChestKey(mapId, x, y) {
     return `${mapId}:${x},${y}`;
 }
 
+/**
+ * True if the chest at this position has been opened.
+ */
 function isChestOpened(mapId, x, y) {
     return player.openedChests.includes(getChestKey(mapId, x, y));
 }
 
+/**
+ * Record that a chest has been opened.
+ */
 function markChestOpened(mapId, x, y) {
     const key = getChestKey(mapId, x, y);
     if (!player.openedChests.includes(key)) {
@@ -3588,6 +3759,9 @@ function markChestOpened(mapId, x, y) {
     }
 }
 
+/**
+ * Return the gold, tokens and description rewarded by the chest on a given map.
+ */
 function getChestReward(mapId) {
     const rewards = {
         0: { gold: 20, tokens: 10, note: "Onboarding Supplies" },
@@ -3603,14 +3777,23 @@ function getChestReward(mapId) {
     return rewards[mapId] || { gold: 20, tokens: 10, note: "Relic Supplies" };
 }
 
+/**
+ * Build the key used to record that a manual page was read.
+ */
 function getManualPageKey(bookId, pageIndex) {
     return `${bookId}:${pageIndex}`;
 }
 
+/**
+ * True if the player has read this manual page.
+ */
 function isManualPageRead(bookId, pageIndex) {
     return player.readManualPages.includes(getManualPageKey(bookId, pageIndex));
 }
 
+/**
+ * Record that a manual page has been read.
+ */
 function markManualPageRead(bookId, pageIndex) {
     const key = getManualPageKey(bookId, pageIndex);
     if (!player.readManualPages.includes(key)) {
@@ -3620,6 +3803,9 @@ function markManualPageRead(bookId, pageIndex) {
     return false;
 }
 
+/**
+ * List the chapters before the final one that are not yet unlocked.
+ */
 function getMissingRequiredChapters() {
     const missing = [];
     for (let chapter = 0; chapter < FINAL_CHAPTER; chapter++) {
@@ -3628,6 +3814,9 @@ function getMissingRequiredChapters() {
     return missing;
 }
 
+/**
+ * Return the title and text for the story scene shown when moving to a chapter.
+ */
 function getChapterTransitionScene(nextChapter) {
     const scenes = {
         1: {
@@ -3665,6 +3854,9 @@ function getChapterTransitionScene(nextChapter) {
     };
 }
 
+/**
+ * Return the display name of the location for a chapter.
+ */
 function getLocationNameForChapter(chapterId) {
     const locationNames = {
         0: "Outpost Zero",
@@ -3693,10 +3885,16 @@ function getLocationNameForChapter(chapterId) {
     return locationNames[getMapForChapter(chapterId)] || "The Sacred Tech";
 }
 
+/**
+ * Return the party member currently leading (the first member if none matches).
+ */
 function getActivePartyMember() {
     return player.party.find(char => char.class === player.activeLead || char.name === player.activeLead) || player.party[0];
 }
 
+/**
+ * Map a race name to its affinity group (Silicon, Carbon or other), 'Neutral' when absent.
+ */
 function getRaceAffinity(raceName) {
     if (!raceName) return "Neutral";
     if (raceName.includes("Silicon")) return "Silicon";
@@ -3706,6 +3904,10 @@ function getRaceAffinity(raceName) {
     return "Neutral";
 }
 
+/**
+ * Adjust outgoing damage for the attacker's race affinity.
+ * @returns The adjusted damage along with notes describing what applied.
+ */
 function applyPlayerRaceEffects(baseDamage, actor, enemy, actionType) {
     const affinity = getRaceAffinity(actor.race);
     let damage = baseDamage;
@@ -3740,6 +3942,10 @@ function applyPlayerRaceEffects(baseDamage, actor, enemy, actionType) {
     return { damage: Math.max(1, Math.round(damage)), notes };
 }
 
+/**
+ * Adjust incoming damage for the defender's race affinity.
+ * @returns The adjusted damage along with notes describing what applied.
+ */
 function applyDefensiveRaceEffects(baseDamage, target) {
     const affinity = getRaceAffinity(target.race);
     let damage = baseDamage;
@@ -3762,16 +3968,25 @@ function applyDefensiveRaceEffects(baseDamage, target) {
     return { damage: Math.max(0, Math.round(damage)), notes };
 }
 
+/**
+ * Return the enemy templates for a map (the final map excludes the Veridicus boss from random encounters).
+ */
 function getEncounterTemplates(mapId) {
     const templates = MAP_ENEMIES[mapId] || MAP_ENEMIES[0];
     if (mapId !== FINAL_CHAPTER) return templates;
     return templates.filter(enemy => enemy.name !== "Librarian Veridicus");
 }
 
+/**
+ * Return the special combat abilities earned by completing chapter contracts.
+ */
 function getUnlockedCombatAbilities() {
     return CHAPTER_COMBAT_ABILITIES.filter(ability => isContractComplete(ability.chapter));
 }
 
+/**
+ * Add a status effect to the current enemy or extend its duration.
+ */
 function applyEnemyStatus(statusName, turns = 1) {
     if (!currentEnemy.statuses) currentEnemy.statuses = [];
     const existing = currentEnemy.statuses.find(status => status.name === statusName);
@@ -3782,6 +3997,9 @@ function applyEnemyStatus(statusName, turns = 1) {
     }
 }
 
+/**
+ * Use up one turn of a status on the current enemy; returns whether it was active.
+ */
 function consumeEnemyStatus(statusName) {
     if (!currentEnemy.statuses) return false;
     const existing = currentEnemy.statuses.find(status => status.name === statusName && status.turns > 0);
@@ -3791,10 +4009,16 @@ function consumeEnemyStatus(statusName) {
     return true;
 }
 
+/**
+ * Return the Librarian Veridicus boss definition.
+ */
 function getVeridicusTemplate() {
     return (MAP_ENEMIES[FINAL_CHAPTER] || []).find(enemy => enemy.name === "Librarian Veridicus");
 }
 
+/**
+ * Begin the Veridicus boss fight, or show a dialogue if he was already defeated.
+ */
 function startVeridicusEncounter() {
     if (hasInventoryFlag(VERIDICUS_DEFEATED_FLAG)) {
         showDialogue("Librarian Veridicus", "The battle is over. Veridicus stands aside, watching the altar with tired, careful hope.");
@@ -3821,6 +4045,9 @@ function startVeridicusEncounter() {
     });
 }
 
+/**
+ * Handle interacting with the final altar; shows a different message when the player is not yet on the final chapter.
+ */
 function inspectFinalAltar() {
     if (player.currentChapter !== FINAL_CHAPTER) {
         showDialogue("Relic Altar", "System booted. Load Chapter Editor targets on the right to compile Relic modules.");
@@ -3860,6 +4087,9 @@ const CHAPTER_HINTS = {
     ]
 };
 
+/**
+ * Show the opening hints once; an inventory flag records that they were seen.
+ */
 function showOpeningHints() {
     if (hasInventoryFlag(OPENING_HINTS_FLAG)) return;
 
@@ -3872,6 +4102,9 @@ function showOpeningHints() {
     updateObjectiveTracker();
 }
 
+/**
+ * Fill the specialist hint panel with the hints for a chapter.
+ */
 function renderSpecialistHints(chapterId = player.currentChapter, forceOpen = false) {
     const panel = document.getElementById("specialist-panel");
     const hintsContainer = document.getElementById("specialist-hints");
@@ -3894,6 +4127,10 @@ function renderSpecialistHints(chapterId = player.currentChapter, forceOpen = fa
     }
 }
 
+/**
+ * Apply a save row from the server to the in-memory game state and refresh the UI.
+ * @returns {boolean} False if the data is not a valid save.
+ */
 function applySaveData(data) {
     if (typeof data.gold !== "number") return false;
     player.gold = data.gold;
@@ -3944,6 +4181,9 @@ function applySaveData(data) {
     return true;
 }
 
+/**
+ * Request the latest save from the server and apply it.
+ */
 async function fetchSaveState() {
     try {
         const res = await fetch("http://127.0.0.1:8000/api/save");
@@ -3957,6 +4197,9 @@ async function fetchSaveState() {
 }
 
 // Save history browser (Settings > Load Earlier Save)
+/**
+ * Toggle and fill the list of earlier saves fetched from the server.
+ */
 async function renderSaveSlotList() {
     const list = document.getElementById("save-slot-list");
     if (!list) return;
@@ -4001,6 +4244,9 @@ async function renderSaveSlotList() {
     }
 }
 
+/**
+ * Load a specific earlier save from the server and apply it.
+ */
 async function loadSaveById(saveId) {
     try {
         const res = await fetch(`http://127.0.0.1:8000/api/save/${saveId}`);
@@ -4015,6 +4261,10 @@ async function loadSaveById(saveId) {
     }
 }
 
+/**
+ * Send the current game state to the server as a new save, showing the result in the indicator.
+ * @param {string} label Text to show on success.
+ */
 async function uploadSaveState(label = "Saved") {
     showAutosaveIndicator("Saving...");
     const savedAt = new Date().toISOString();
@@ -4054,11 +4304,17 @@ async function uploadSaveState(label = "Saved") {
     }
 }
 
+/**
+ * Return the map id for a chapter (chapters 0 and 1 share the first town map, others use chapter + 1).
+ */
 function getMapForChapter(chapterId) {
     if (chapterId <= 1) return 1;
     return chapterId + 1;
 }
 
+/**
+ * Refresh the gold, tokens and level display and related headers.
+ */
 function updateUIHeaders() {
     const highestLevel = Math.max(...player.party.map(char => char.level || 1));
     document.getElementById("currency-text").innerText = `Gold: ${player.gold} | Tokens: ${player.tokens} | Lv ${highestLevel}`;
@@ -4069,6 +4325,9 @@ function updateUIHeaders() {
     renderPartyHud();
 }
 
+/**
+ * Redraw the party status panel.
+ */
 function renderPartyHud() {
     const hud = document.getElementById("party-hud");
     if (!hud) return;
@@ -4084,6 +4343,9 @@ function renderPartyHud() {
     }).join("");
 }
 
+/**
+ * Top-left tile of the visible area, centred on the player's tile and clamped to the map.
+ */
 function getCameraOrigin() {
     const maxX = Math.max(0, MAP_COLS - VIEW_COLS);
     const maxY = Math.max(0, MAP_ROWS - VIEW_ROWS);
@@ -4094,6 +4356,9 @@ function getCameraOrigin() {
 }
 
 // Fractional camera that follows the tweened visual position for smooth scrolling
+/**
+ * Like getCameraOrigin but follows the smoothly moving visual player position.
+ */
 function getVisualCameraOrigin() {
     const maxX = Math.max(0, MAP_COLS - VIEW_COLS);
     const maxY = Math.max(0, MAP_ROWS - VIEW_ROWS);
@@ -4103,6 +4368,9 @@ function getVisualCameraOrigin() {
     };
 }
 
+/**
+ * Return the display colour for a tile type on a given map.
+ */
 function getTileColor(tile, mapId) {
     const palettes = {
         0: { floor: "#10b981", wall: "#4b5563", water: "#2563eb" },
@@ -4137,6 +4405,9 @@ function getTileColor(tile, mapId) {
 }
 
 // JRPG Overworld Canvas Renderer
+/**
+ * Render the visible portion of the map, NPCs, chests and player to the canvas for the current screen mode.
+ */
 function drawMap() {
     updateUnlockedTabs();
     ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -4218,6 +4489,9 @@ function drawMap() {
     updateInteractPrompt();
 }
 
+/**
+ * Draw the NPC and object sprites on the current map relative to the camera.
+ */
 function drawNPCs(camera = getCameraOrigin()) {
     const activeGrid = MAP_GRIDS[player.currentMapId] || MAP_GRIDS[0];
     const chapterNPCs = NPCS[player.currentMapId] || {};
@@ -4314,6 +4588,9 @@ function drawNPCs(camera = getCameraOrigin()) {
 }
 
 // Warp Engine Portal Transitions
+/**
+ * Handle stepping on a portal tile, moving the player to the destination map and showing the transition.
+ */
 function handlePortalTransition(worldX, worldY) {
     if (player.currentMapId === 0) {
         // From Cabin (Map 0) at portal (7, 10) -> Alexandria City (Map 1) at (7, 10)
@@ -4450,6 +4727,9 @@ function handlePortalTransition(worldX, worldY) {
 }
 
 // Collisions and Movements checks
+/**
+ * Try to move the player by (dx, dy), checking blockers, portals, chests and random encounters.
+ */
 function movePlayer(dx, dy) {
     if (dialogueActive || isCombat || isInventoryOpen() || focusMode === 'code' || screenMode === 'dark') return;
     
@@ -4486,6 +4766,7 @@ function movePlayer(dx, dy) {
 }
 
 // Dynamic JRPG enemies per map area
+// ==== Combat data (enemies, spells, weaknesses and abilities) ====
 const MAP_ENEMIES = {
     0: [
         { name: "Syntax Goblin", sprite: "👿", hp: 80, maxHp: 80, atk: 12, exp: 50, race: "Silicon",
@@ -4766,6 +5047,9 @@ const CHAPTER_COMBAT_ABILITIES = [
 let currentEnemy = null;
 let combatTurn = 'player'; // 'player' or 'enemy'
 
+/**
+ * Return the NPC unchanged, except that Compiler Smith on the first map gets tutorial dialogue once colour is restored.
+ */
 function getContextualNpcDialogue(npc, mapId) {
     if (mapId === 0 && npc.name === "Compiler Smith" && screenMode === "color") {
         if (!hasInventoryFlag(TUTORIAL_SMITH_TALKED_FLAG)) {
@@ -4802,6 +5086,9 @@ function getContextualNpcDialogue(npc, mapId) {
 }
 
 // Trigger Interactions (chests, terminals, NPCs)
+/**
+ * Interact with whatever is next to the player (NPC, chest, terminal, altar and so on).
+ */
 function checkInteraction() {
     if (focusMode === 'code' || screenMode === 'dark' || isInventoryOpen()) return;
     
@@ -4943,6 +5230,9 @@ function checkInteraction() {
 let dialogueTypingTimer = null;
 let dialogueFullText = "";
 
+/**
+ * Show dialogue text using the typewriter effect according to the speed setting.
+ */
 function renderDialogueText(text) {
     const textEl = document.getElementById("dialogue-text");
     if (dialogueTypingTimer) {
@@ -4966,10 +5256,16 @@ function renderDialogueText(text) {
     }, 16);
 }
 
+/**
+ * True while dialogue text is still being typed out.
+ */
 function isDialogueTyping() {
     return dialogueTypingTimer !== null;
 }
 
+/**
+ * Skip the typing effect and show the full line.
+ */
 function completeDialogueText() {
     if (dialogueTypingTimer) {
         clearInterval(dialogueTypingTimer);
@@ -4979,6 +5275,13 @@ function completeDialogueText() {
     if (textEl) textEl.innerText = dialogueFullText;
 }
 
+/**
+ * Open the dialogue box for a speaker, optionally with choice buttons.
+ * @param {string} speaker Name shown above the text.
+ * @param {string} text The line to show.
+ * @param {Array|null} options Optional choices.
+ * @param {boolean} isBackOption Whether the options include a back choice.
+ */
 function showDialogue(speaker, text, options = null, isBackOption = false) {
     if (!dialogueActive) playSfx("menu");
     dialogueActive = true;
@@ -5028,6 +5331,9 @@ function showDialogue(speaker, text, options = null, isBackOption = false) {
     document.getElementById("dialogue-box").classList.remove("hidden");
 }
 
+/**
+ * Close the dialogue box and stop any typing effect.
+ */
 function hideDialogue() {
     if (dialogueTypingTimer) {
         clearInterval(dialogueTypingTimer);
@@ -5040,10 +5346,16 @@ function hideDialogue() {
 
 // Turn-based Combat logic
 // 30% chance the enemy winds up its special — shown to the player a turn early
+/**
+ * Decide whether the enemy will use its special ability (30% chance) or a normal attack next turn.
+ */
 function rollEnemyIntent() {
     return currentEnemy && currentEnemy.ability && Math.random() < 0.30 ? "ability" : "attack";
 }
 
+/**
+ * Start a combat encounter and open the combat screen.
+ */
 function triggerCombat(options = {}) {
     isCombat = true;
     combatTurn = 'player';
@@ -5076,6 +5388,9 @@ function triggerCombat(options = {}) {
     initCombatScreen();
 }
 
+/**
+ * Fill the combat overlay with the enemy and party information and menu.
+ */
 function initCombatScreen() {
     const enemyList = document.getElementById("enemies-list");
     const activeMember = getActivePartyMember();
@@ -5140,6 +5455,9 @@ function initCombatScreen() {
     }
 }
 
+/**
+ * Show buttons for choosing which party member leads.
+ */
 function showLeadSubmenu() {
     const menu = document.getElementById("combat-menu-options");
     menu.innerHTML = player.party.map((char, index) => `
@@ -5147,6 +5465,9 @@ function showLeadSubmenu() {
     `).join('') + `<button class="combat-menu-btn combat-back-btn">[Back]</button>`;
 }
 
+/**
+ * Swap the active lead in combat to the party member at the given index.
+ */
 function setActiveLead(index) {
     const char = player.party[index];
     if (!char || char.hp <= 0) {
@@ -5162,6 +5483,9 @@ function setActiveLead(index) {
 }
 
 
+/**
+ * Carry out a chosen combat action for the player's turn.
+ */
 function executeCombatAction(action, spellName = null) {
     const log = document.getElementById("combat-log-text");
     const menu = document.getElementById("combat-menu-options");
@@ -5235,6 +5559,9 @@ function executeCombatAction(action, spellName = null) {
     }
 }
 
+/**
+ * Show the active class's spells as menu buttons.
+ */
 function showSpellSubmenu() {
     const menu = document.getElementById("combat-menu-options");
     const activeClass = getActivePartyMember().class;
@@ -5245,6 +5572,9 @@ function showSpellSubmenu() {
     `).join('') + `<button class="combat-menu-btn combat-back-btn">[Back]</button>`;
 }
 
+/**
+ * Show the unlocked chapter abilities as menu buttons.
+ */
 function showChapterAbilitySubmenu() {
     const menu = document.getElementById("combat-menu-options");
     const abilities = getUnlockedCombatAbilities();
@@ -5258,6 +5588,9 @@ function showChapterAbilitySubmenu() {
     `).join('') + `<button class="combat-menu-btn combat-back-btn">[Back]</button>`;
 }
 
+/**
+ * Use an unlocked chapter ability against the current enemy.
+ */
 function useChapterAbility(abilityName) {
     const log = document.getElementById("combat-log-text");
     const menu = document.getElementById("combat-menu-options");
@@ -5298,6 +5631,9 @@ function useChapterAbility(abilityName) {
     }, 1200);
 }
 
+/**
+ * Cast a spell of the active class against the current enemy.
+ */
 function castSpell(spellName) {
     const log = document.getElementById("combat-log-text");
     const menu = document.getElementById("combat-menu-options");
@@ -5359,6 +5695,9 @@ function castSpell(spellName) {
     }, 1200);
 }
 
+/**
+ * Resolve the enemy's turn (attack or special) and update the log.
+ */
 function enemyTurn() {
     const log = document.getElementById("combat-log-text");
     
@@ -5415,6 +5754,9 @@ function enemyTurn() {
     }, 1400);
 }
 
+/**
+ * Handle victory: award experience (and the same amount of gold), show level-ups, play a jingle, save, then end combat after a short delay.
+ */
 function winCombat() {
     const log = document.getElementById("combat-log-text");
     const levelUps = awardPartyExp(currentEnemy.exp);
@@ -5450,6 +5792,9 @@ function winCombat() {
     }
 }
 
+/**
+ * Handle defeat: take up to 50 gold, restore every member's HP, then warp the player back to the respawn point.
+ */
 function loseCombat() {
     const log = document.getElementById("combat-log-text");
     log.innerText = `Your party was wiped out! Warping back to the nearest Shrine of Terry...`;
@@ -5478,6 +5823,9 @@ function loseCombat() {
 
 // Shrine of Terry is at (2,7) on map 0, but generated maps don't guarantee
 // that tile is open — fall back to the nearest walkable, NPC-free tile.
+/**
+ * Find the shrine spot on the chapter's map, or the nearest open tile if blocked.
+ */
 function getRespawnPoint() {
     const grid = MAP_GRIDS[getMapForChapter(player.currentChapter)] || MAP_GRIDS[0];
     const isOpen = (x, y) => {
@@ -5501,6 +5849,9 @@ function getRespawnPoint() {
     return best || { x: 2, y: 7 };
 }
 
+/**
+ * Close the combat screen and give a short grace period without encounters.
+ */
 function endCombat() {
     isCombat = false;
     encounterGraceSteps = 6;
@@ -5513,6 +5864,9 @@ function endCombat() {
 const tabButtons = document.querySelectorAll(".tab-btn");
 const tabPanes = document.querySelectorAll(".tab-pane");
 
+/**
+ * Switch the visible workspace tab and its pane.
+ */
 function activateWorkspaceTab(tabId) {
     const btn = document.querySelector(`.tab-btn[data-tab="${tabId}"]`);
     const pane = document.getElementById(`pane-${tabId}`);
@@ -5695,6 +6049,7 @@ runBtn.addEventListener("click", async () => {
 });
 
 // Chapters data structured by ID
+// ==== Chapter, contract and library data ====
 const CHAPTERS = [
     { id: 0, title: "Chapter 0: Outpost Zero", desc: "Configure system path environment variables.", parent: null },
     { id: 1, title: "Chapter 1: Alexandria Library", desc: "Implement matrix binarization filters for OCR.", parent: 0 },
@@ -5720,6 +6075,7 @@ const CHAPTERS = [
     { id: 21, title: "Chapter 21: Altar of TempleOS", desc: "Boot bare-metal serial VM and run HolyC compilation checksums.", parent: 20 }
 ];
 
+// Per-chapter goals and rewards that unlock progress.
 const CHAPTER_CONTRACTS = {
     0: {
         title: "Restore the local toolchain",
@@ -5855,18 +6211,30 @@ const CHAPTER_CONTRACTS = {
     }
 };
 
+/**
+ * Return the contract definition for a chapter, or null.
+ */
 function getChapterContract(chapterId) {
     return CHAPTER_CONTRACTS[chapterId] || null;
 }
 
+/**
+ * Return the inventory flag name that marks a chapter contract as complete.
+ */
 function getContractFlag(chapterId) {
     return `${CONTRACT_PREFIX}${chapterId}`;
 }
 
+/**
+ * True if the chapter's contract has been completed.
+ */
 function isContractComplete(chapterId) {
     return player.inventory.includes(getContractFlag(chapterId));
 }
 
+/**
+ * Mark a chapter's contract complete and grant its rewards; returns null if it is missing or already done.
+ */
 function completeChapterContract(chapterId) {
     const contract = getChapterContract(chapterId);
     if (!contract || isContractComplete(chapterId)) return null;
@@ -5902,6 +6270,7 @@ const GLOSSARY_TERMS = {
     "serial bridge": "A connection that routes typed bytes to a VM or device over a serial-like stream."
 };
 
+// In-game manuals: books made of pages with lesson text and example code.
 const LIBRARY_BOOKS = [
     {
         id: "python-field-manual",
@@ -6275,6 +6644,7 @@ const LIBRARY_BOOKS = [
     }
 ];
 
+// Hints shown (in rotation) when a chapter's check fails.
 const VALIDATOR_HINTS = {
     0: ["Make sure PATH includes /usr/local/bin.", "Print a clear boot line so stdout is visible."],
     1: ["Return a matrix with the same row/column shape.", "Use 255 above threshold and 0 at or below threshold."],
@@ -6393,6 +6763,9 @@ const VALIDATOR_EXPECTATIONS = {
 
 let validatorHintCursor = {};
 
+/**
+ * Return the next hint for a chapter, cycling through the list on each call.
+ */
 function getNextValidatorHint(chapterId) {
     const hints = VALIDATOR_HINTS[chapterId] || ["Read the field contract in Alt+3.", "Open Alt+9 Library for examples tied to this chapter."];
     const index = validatorHintCursor[chapterId] || 0;
@@ -6400,6 +6773,9 @@ function getNextValidatorHint(chapterId) {
     return { text: hints[index], index: index + 1, total: hints.length };
 }
 
+/**
+ * Turn a failed validator output into a short summary with the expected behaviour for the chapter.
+ */
 function summarizeValidatorFailure(chapterId, output) {
     const expectation = VALIDATOR_EXPECTATIONS[chapterId] || {
         expected: "The submitted code should satisfy the active chapter validator contract."
@@ -6425,6 +6801,9 @@ function summarizeValidatorFailure(chapterId, output) {
     };
 }
 
+/**
+ * Show a coaching panel with the failure summary and a hint.
+ */
 function renderValidatorFailureCoach(chapterId, output) {
     const summary = summarizeValidatorFailure(chapterId, output);
     const hint = getNextValidatorHint(chapterId);
@@ -6445,6 +6824,7 @@ ${summary.got ? `<div><strong>Got:</strong> ${escapeDiagnosticText(summary.got)}
 }
 
 // Offline Codex Articles database
+// ==== Codex ====
 const CODEX_ARTICLES = [
     { title: "CLI Navigation & Pipes", tags: ["ch0", "cli", "path", "terminal", "bash"], content: "Use standard Unix commands to navigate and configure paths: \n- 'pwd': Print working directory\n- 'ls': List files\n- 'export PATH=$PATH:/dir': Append directories to the system PATH so programs can be run globally.\n- 'echo': Print strings to stdout." },
     { title: "Matrix Binarization & OCR Filters", tags: ["ch1", "ocr", "matrix", "image", "filter"], content: "OCR processing pipelines prepare pixel arrays by removing noise: \n- Monochrome filter converts RGB pixels into simple light intensities (Grayscale).\n- Threshold filter binarizes pixels into black (0) or white (255) based on a numeric threshold to isolate character shapes." },
@@ -6473,10 +6853,16 @@ const CODEX_ARTICLES = [
 let activeLibraryBookId = LIBRARY_BOOKS[0].id;
 let activeLibraryPage = 0;
 
+/**
+ * True if a library book is unlocked by the player's chapter progress.
+ */
 function isManualUnlocked(book) {
     return player.unlockedChapters.includes(book.unlockChapter) || player.currentChapter >= book.unlockChapter;
 }
 
+/**
+ * Record that a library book has been read; returns true if this was new.
+ */
 function markManualRead(bookId) {
     if (!player.readManuals.includes(bookId)) {
         player.readManuals.push(bookId);
@@ -6485,10 +6871,16 @@ function markManualRead(bookId) {
     return false;
 }
 
+/**
+ * Return the library book that is currently open.
+ */
 function getActiveLibraryBook() {
     return LIBRARY_BOOKS.find(book => book.id === activeLibraryBookId) || LIBRARY_BOOKS[0];
 }
 
+/**
+ * Find the library page that teaches a given chapter.
+ */
 function getLibraryLessonForChapter(chapterId) {
     for (let book of LIBRARY_BOOKS) {
         const pageIndex = book.pages.findIndex(page => page.applyChapter === chapterId);
@@ -6504,6 +6896,10 @@ function getLibraryLessonForChapter(chapterId) {
     return null;
 }
 
+/**
+ * Redraw the library: book list, the open page and glossary.
+ * @param {boolean} trackRead When true, record the viewed page as read.
+ */
 function renderLibrary(trackRead = false) {
     const list = document.getElementById("library-book-list");
     const title = document.getElementById("library-book-title");
@@ -6592,12 +6988,18 @@ function renderLibrary(trackRead = false) {
     showGlossaryTerm(page.terms[0]);
 }
 
+/**
+ * Open a library book at its first page.
+ */
 function openLibraryBook(bookId) {
     activeLibraryBookId = bookId;
     activeLibraryPage = 0;
     renderLibrary(true);
 }
 
+/**
+ * Open a library book at a specific page and switch to the library tab.
+ */
 function openLibraryBookAtPage(bookId, pageIndex = 0) {
     activeLibraryBookId = bookId;
     activeLibraryPage = pageIndex;
@@ -6605,12 +7007,18 @@ function openLibraryBookAtPage(bookId, pageIndex = 0) {
     renderLibrary(true);
 }
 
+/**
+ * Return one page of a library book, or null.
+ */
 function getLibraryPage(bookId, pageIndex) {
     const book = LIBRARY_BOOKS.find(item => item.id === bookId);
     if (!book) return null;
     return book.pages[pageIndex] || null;
 }
 
+/**
+ * Copy a lesson page's example code into the code editor.
+ */
 function insertLessonExample(bookId, pageIndex) {
     const page = getLibraryPage(bookId, pageIndex);
     if (!page || !codeEditor) return;
@@ -6620,6 +7028,9 @@ function insertLessonExample(bookId, pageIndex) {
     codeEditor.focus();
 }
 
+/**
+ * Load the chapter a lesson applies to into the editor when it is available.
+ */
 function applyLessonChapter(chapterId, bookId, pageIndex) {
     const page = getLibraryPage(bookId, pageIndex);
     const chapterAvailable = player.unlockedChapters.includes(chapterId) || player.currentChapter >= chapterId;
@@ -6639,6 +7050,9 @@ function applyLessonChapter(chapterId, bookId, pageIndex) {
     });
 }
 
+/**
+ * Show a glossary term's definition in the library panel.
+ */
 function showGlossaryTerm(term) {
     const panel = document.getElementById("library-glossary-panel");
     if (!panel) return;
@@ -6649,6 +7063,9 @@ function showGlossaryTerm(term) {
 }
 
 // Active Chapter select dropdown updates
+/**
+ * Rebuild the editor's chapter dropdown.
+ */
 function updateEditorChapterSelect() {
     const select = document.getElementById("editor-chapter-select");
     if (!select) return;
@@ -6668,6 +7085,9 @@ function updateEditorChapterSelect() {
 }
 
 // REST Client: Load Chapter Code
+/**
+ * Fetch a chapter's code from the server and put it in the editor.
+ */
 async function loadChapterCode(chapterId) {
     const codeEditor = document.getElementById("code-editor");
     const lineNumbers = document.getElementById("editor-line-numbers");
@@ -6730,6 +7150,9 @@ async function loadChapterCode(chapterId) {
 }
 
 // Whitelisted Search Browser Tab Updates
+/**
+ * Update the in-game mock browser page for a chapter.
+ */
 function updateBrowserTab(chapterId) {
     const mockBrowserView = document.getElementById("mock-browser-view");
     const browserAddress = document.getElementById("browser-address");
@@ -6872,6 +7295,9 @@ function updateBrowserTab(chapterId) {
 }
 
 // Chronicles Quest Dependency Tree Renderer
+/**
+ * Draw the quest tree of chapters and their status.
+ */
 function renderChroniclesQuestTree() {
     const tree = document.getElementById("quest-tree");
     if (!tree) return;
@@ -6946,6 +7372,9 @@ function renderChroniclesQuestTree() {
     });
 }
 
+/**
+ * Escape HTML special characters so text can be shown safely.
+ */
 function escapeDiagnosticText(value) {
     return String(value)
         .replace(/&/g, "&amp;")
@@ -6954,15 +7383,24 @@ function escapeDiagnosticText(value) {
         .replace(/"/g, "&quot;");
 }
 
+/**
+ * Return a grid cell's tile id, or null if out of range.
+ */
 function getTileAt(grid, x, y) {
     if (!grid || !grid[y] || typeof grid[y][x] === "undefined") return null;
     return grid[y][x];
 }
 
+/**
+ * True if a tile can be walked on (not wall, NPC or water).
+ */
 function isWalkableForDiagnostics(tile) {
     return tile !== 1 && tile !== 2 && tile !== 5 && tile !== null;
 }
 
+/**
+ * True if any neighbouring cell can be walked on.
+ */
 function hasAdjacentWalkableTile(grid, x, y) {
     return [
         { x: x + 1, y },
@@ -6975,6 +7413,9 @@ function hasAdjacentWalkableTile(grid, x, y) {
     });
 }
 
+/**
+ * Find every position of a given tile id in a grid.
+ */
 function findTiles(grid, tileId) {
     const found = [];
     if (!grid) return found;
@@ -6986,6 +7427,9 @@ function findTiles(grid, tileId) {
     return found;
 }
 
+/**
+ * Check whether a target tile can be reached by walking from the spawn point.
+ */
 function isReachableFromSpawn(grid, target) {
     const spawn = { x: 1, y: 7 };
     if (!grid || !isWalkableForDiagnostics(getTileAt(grid, spawn.x, spawn.y))) return false;
@@ -7012,10 +7456,16 @@ function isReachableFromSpawn(grid, target) {
     return false;
 }
 
+/**
+ * Append an issue record (severity, title, detail) to the diagnostics list.
+ */
 function addDiagnosticIssue(items, severity, title, detail) {
     items.push({ severity, title, detail });
 }
 
+/**
+ * Display the diagnostics summary, statistics and issues.
+ */
 function renderDiagnosticsReport(items, stats) {
     const summary = document.getElementById("diagnostics-summary");
     const statsPanel = document.getElementById("diagnostics-stats");
@@ -7049,6 +7499,9 @@ function renderDiagnosticsReport(items, stats) {
         `).join("");
 }
 
+/**
+ * Check the game's data (maps, chapters, NPCs and server) for wiring problems and show a report.
+ */
 async function runWiringDiagnostics() {
     const items = [];
     const expectedChapters = Array.from({ length: FINAL_CHAPTER + 1 }, (_, index) => index);
@@ -7267,6 +7720,9 @@ async function runWiringDiagnostics() {
 
 // Local PTY Terminal WebSocket Integration
 let shellSocket = null;
+/**
+ * Ask the server whether the Docker sandbox is available and update the status badge.
+ */
 async function refreshSandboxStatusBadge() {
     const badge = document.getElementById("sandbox-status-badge");
     if (!badge) return;
@@ -7289,6 +7745,9 @@ async function refreshSandboxStatusBadge() {
     }
 }
 
+/**
+ * Open the WebSocket that connects the terminal tab to the server's shell.
+ */
 function initShellWebSocket() {
     refreshSandboxStatusBadge();
     if (shellSocket) return;
@@ -7322,6 +7781,9 @@ function initShellWebSocket() {
 
 // local TempleOS Serial VM Websocket Bridge
 let templeosSocket = null;
+/**
+ * Open the WebSocket that connects the TempleOS tab to the server's VM bridge.
+ */
 function initTempleOSWebSocket() {
     if (templeosSocket) return;
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -7352,6 +7814,9 @@ function initTempleOSWebSocket() {
 }
 
 // Local search and filter engine for Codex articles
+/**
+ * Filter the codex articles by a search query and show the matches.
+ */
 function searchCodex(query) {
     const results = document.getElementById("codex-search-results");
     if (!results) return;
@@ -7523,6 +7988,9 @@ document.getElementById("editor-chapter-select").addEventListener("change", (e) 
     loadChapterCode(chId);
 });
 
+/**
+ * Show or hide the settings menu (forceHide always hides it).
+ */
 function toggleSettingsMenu(forceHide = false) {
     const menu = document.getElementById("settings-menu");
     if (!menu) return;
@@ -7530,6 +7998,9 @@ function toggleSettingsMenu(forceHide = false) {
     else menu.classList.toggle("hidden");
 }
 
+/**
+ * Show or hide the requirements modal (forceHide always hides it).
+ */
 function toggleRequirementsModal(forceHide = false) {
     const modal = document.getElementById("requirements-modal");
     if (!modal) return;
@@ -7550,6 +8021,9 @@ const heldDirections = [];
 let lastHeldMoveAt = 0;
 
 // Slide the visual position toward the logical tile; snap on warps (dist > 2)
+/**
+ * Move the visual player position toward the logical tile by one animation step; returns false when already there.
+ */
 function tickPlayerTween(dt) {
     const dx = player.x - playerVisual.x;
     const dy = player.y - playerVisual.y;
@@ -7566,6 +8040,9 @@ function tickPlayerTween(dt) {
 }
 
 let lastFrameAt = 0;
+/**
+ * Animation-frame loop that repeats movement while a direction key is held and advances the tween.
+ */
 function heldMovementLoop(now) {
     const dt = lastFrameAt ? (now - lastFrameAt) / 1000 : 0;
     lastFrameAt = now;
@@ -7691,6 +8168,9 @@ window.addEventListener("keydown", (e) => {
 });
 
 // Settings handlers
+/**
+ * Set the settings controls to match the current settings.
+ */
 function syncSettingsUI() {
     const palette = document.getElementById("palette-selector");
     if (palette) palette.value = gameSettings.palette;
@@ -7759,6 +8239,9 @@ if (manualSaveBtn) {
     manualSaveBtn.addEventListener("click", () => manualSave());
 }
 
+/**
+ * After confirmation, reset the player to the starting state (gold, tokens, chapter, party, inventory, dark screen), save it and refresh the UI.
+ */
 function resetFullGame() {
     if (!confirm("Are you sure you want to completely reset the game? This will erase all your progress, gold, and levels, and return you to the beginning of Chapter 0.")) {
         return;
@@ -7831,6 +8314,9 @@ if (terminalReqBtn) {
 }
 
 // Dynamic Event Delegation Binder
+/**
+ * Attach delegated click handlers for dynamically created buttons (inventory, shop, dialogue and others).
+ */
 function initEventDelegation() {
     // 1. Inventory & Shop Clicks
     const inventoryContent = document.getElementById("inventory-content");
@@ -7972,6 +8458,9 @@ function initEventDelegation() {
 }
 
 // Development Auto-Reload Websocket Connection
+/**
+ * On localhost only, connect to the server's live-reload socket, reload the page when told to, and retry every 2 seconds if the connection closes.
+ */
 function initDevReloadWebSocket() {
     if (window.location.hostname !== "127.0.0.1" && window.location.hostname !== "localhost") {
         return;
@@ -8001,6 +8490,7 @@ function initDevReloadWebSocket() {
 let prologueIndex = 0;
 let postBootIndex = -1;
 
+// Lines of the opening prologue.
 const PROLOGUE_DIALOGUES = [
     { speaker: "System Broadcast", text: "WARNING: Outpost Zero is operating on emergency power. Graphics engine OFFLINE." },
     { speaker: "Veridicus", text: "The Great Lockdown of 2041 was necessary. Standard inputs are dangerous. Unaligned code cannot run." },
@@ -8008,12 +8498,16 @@ const PROLOGUE_DIALOGUES = [
     { speaker: "System Prompt", text: "Use the Alt+5 Terminal tab on the right to configure system environment variables and restore graphics." }
 ];
 
+// Lines shown after the first successful boot.
 const POST_BOOT_DIALOGUES = [
     { speaker: "Gitpus", text: "Holy registers! You did it! The graphics subsystem is compiling, and colors are flooding back!" },
     { speaker: "Sentinel Guard", text: "Halt! Outpost Zero has restored standard output. Be careful of the Relic Gate. It is open now." },
     { speaker: "Deity Terry Shrine", text: "The Altar of TempleOS hums. Pilgrims must pass the 22 chapters of compilation to unlock the source weights." }
 ];
 
+/**
+ * Set up the opening prologue overlay.
+ */
 function initPrologue() {
     const overlay = document.getElementById("prologue-overlay");
     if (!overlay) return;
@@ -8033,6 +8527,9 @@ function initPrologue() {
     updateUnlockedTabs();
 }
 
+/**
+ * Display the current prologue line.
+ */
 function showPrologueStep() {
     const step = PROLOGUE_DIALOGUES[prologueIndex];
     if (!step) return;
@@ -8051,6 +8548,9 @@ function showPrologueStep() {
     }
 }
 
+/**
+ * Move to the next prologue line or finish the prologue.
+ */
 function advancePrologue() {
     if (prologueIndex < PROLOGUE_DIALOGUES.length - 1) {
         prologueIndex++;
@@ -8060,6 +8560,9 @@ function advancePrologue() {
     }
 }
 
+/**
+ * Step through the dialogue shown after the first successful boot.
+ */
 function advancePostBootDialogue() {
     postBootIndex++;
     if (postBootIndex < POST_BOOT_DIALOGUES.length) {
@@ -8072,6 +8575,9 @@ function advancePostBootDialogue() {
     }
 }
 
+/**
+ * Lock or unlock workspace tabs according to the player's progress.
+ */
 function updateUnlockedTabs() {
     const tabs = document.querySelectorAll(".tab-btn");
     tabs.forEach(tab => {
@@ -8118,6 +8624,9 @@ function updateUnlockedTabs() {
 }
 
 // Draggable Panel Splitter
+/**
+ * Enable dragging the divider between the game viewport and the workspace to resize them.
+ */
 function initSplitter() {
     const splitter = document.getElementById("layout-splitter");
     const viewport = document.getElementById("jrpg-viewport");

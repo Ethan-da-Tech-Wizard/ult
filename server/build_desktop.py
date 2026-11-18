@@ -1,13 +1,22 @@
+# Program: ult - build_desktop.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Packages the game server, client and sandbox files into a single desktop executable with PyInstaller (optionally through uv) and moves it to save_data/export.
+
+"""Build script that packages the game into a desktop executable."""
+# ---- Imports ----
 import os
 import sys
 import subprocess
 import shutil
 
 def main():
+    """Build the desktop executable; exits with status 1 if the build fails."""
     print("====================================================")
     print("Building The Sacred Tech JRPG Desktop Assistant...")
     print("====================================================")
     
+    # Paths are derived from this file's location so the script works from any directory.
     # 1. Paths configuration
     server_dir = os.path.dirname(os.path.abspath(__file__))
     project_root = os.path.abspath(os.path.join(server_dir, ".."))
@@ -16,6 +25,7 @@ def main():
     os.makedirs(export_dir, exist_ok=True)
     
     # 2. Add-data separator based on OS
+    # PyInstaller separates source and destination with ';' on Windows and ':' elsewhere.
     sep = ";" if sys.platform.startswith("win") else ":"
     
     # Define files/directories to bundle
@@ -27,12 +37,14 @@ def main():
     exe_name = "Zeus_Assistant"
     
     # Try to find pyinstaller binary in the same directory as the current python interpreter (e.g. in virtualenv)
+    # Default to the pyinstaller on PATH; the next lines prefer the one next to the running interpreter.
     pyinstaller_bin = "pyinstaller"
     python_dir = os.path.dirname(sys.executable)
     candidate = os.path.join(python_dir, "pyinstaller" + (".exe" if sys.platform.startswith("win") else ""))
     if os.path.exists(candidate):
         pyinstaller_bin = candidate
         
+    # Command line: one-file build named after exe_name, bundling the client and sandbox folders, entry point server/main.py.
     pyinstaller_args = [
         pyinstaller_bin,
         "--onefile",
@@ -51,6 +63,7 @@ def main():
     # We run it using uv run to ensure dependencies are automatically resolved
     try:
         # Check if uv is available
+        # Prefer uv (when installed) so PyInstaller and the app requirements are resolved automatically.
         use_uv = False
         try:
             uv_check = subprocess.run(["uv", "--version"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -73,6 +86,7 @@ def main():
             subprocess.run(pyinstaller_args, check=True)
             
         # 5. Move output to save_data/export/
+        # PyInstaller writes its output to dist/; move the finished binary into save_data/export.
         dist_dir = os.path.join(project_root, "dist")
         built_file = os.path.join(dist_dir, exe_name + (".exe" if sys.platform.startswith("win") else ""))
         target_file = os.path.join(export_dir, exe_name + (".exe" if sys.platform.startswith("win") else ""))
@@ -90,5 +104,6 @@ def main():
         print(f"\nError occurred during package run: {e}")
         sys.exit(1)
 
+# Run the build only when executed directly.
 if __name__ == "__main__":
     main()

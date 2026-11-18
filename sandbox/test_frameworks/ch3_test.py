@@ -1,11 +1,19 @@
+# Program: ult - ch3_test.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Automated check for chapter 3 (Document Dunes Caching & Polymorphism): inspects the player's saved solution and exits 0 on pass or 1 on failure.
+
 import os
 import sys
 import time
 
 def test_chapter_3():
+    """Locate the chapter 3 solution (sandbox workspace first, local save folder as fallback), run the checks, print the result and exit with a status code."""
     print("Testing Chapter 3: Document Dunes Caching & Polymorphism...")
+    # Inside the sandbox the player's file lives under /workspace.
     solution_path = "/workspace/ch3_nosql.py"
     if not os.path.exists(solution_path):
+        # Not found there, so fall back to the local save folder (running outside the sandbox).
         solution_path = "save_data/relic_save/ch3_nosql.py"
         if not os.path.exists(solution_path):
             print("Error: Solution file 'ch3_nosql.py' not found.")
@@ -66,5 +74,6 @@ def test_chapter_3():
     print("\n>>> All Chapter 3 tests passed! Document store database configured.")
     sys.exit(0)
 
+# Run the check only when executed as a script, not when imported.
 if __name__ == "__main__":
     test_chapter_3()

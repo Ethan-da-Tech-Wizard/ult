@@ -1,4 +1,10 @@
 <!DOCTYPE html>
+<!--
+  Program: ult - index.html
+  Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+  Last Modified: 2026-11-18
+  Purpose: Single-page markup for the game client: the game canvas and overlays on the left, the tabbed workspace (editor, console, quests, codex, terminal, browser, TempleOS, diagnostics, library) on the right, the settings menu and requirements modal, loading style.css and app.js.
+-->
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -8,8 +14,10 @@
 </head>
 <body class="retro-crt">
     <!-- CRT Overlay lines -->
+    <!-- Decorative scanline overlay; styled in style.css -->
     <div class="crt-overlay"></div>
 
+    <!-- Main layout: game viewport on the left, workspace on the right -->
     <div id="game-container">
         <!-- LEFT: JRPG Canvas viewport -->
         <div id="jrpg-viewport">
@@ -104,6 +112,7 @@
 
         <!-- RIGHT: Split screen IDE tab workspace -->
         <div id="ide-workspace">
+            <!-- Tab buttons; app.js switches panes using the data-tab value -->
             <div class="workspace-tabs">
                 <button class="tab-btn active" data-tab="editor">Alt+1 Editor</button>
                 <button class="tab-btn" data-tab="console">Alt+2 Console</button>
@@ -116,6 +125,7 @@
                 <button class="tab-btn" data-tab="library">Alt+9 Library</button>
             </div>
 
+            <!-- Tab panes: one per tab button above -->
             <div class="workspace-content">
                 <!-- Editor Tab -->
                 <div class="tab-pane active" id="pane-editor">
@@ -382,6 +392,7 @@
         <button id="close-requirements-btn" style="margin-top: 10px;">Close Guide</button>
     </div>
 
+    <!-- All game logic lives in app.js; it runs after the page markup above exists -->
     <script src="app.js"></script>
 </body>
 </html>

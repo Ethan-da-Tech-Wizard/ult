@@ -1,4 +1,10 @@
 #!/usr/bin/env python3
+# Program: ult - full_stack_smoke.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Full-stack smoke test: launches the server on a temporary save database, then checks diagnostics, save/load persistence and that every chapter's code compiles successfully.
+"""Full-stack smoke test for the game server."""
+# ---- Imports ----
 import json
 import os
 import subprocess
@@ -9,11 +15,14 @@ import urllib.error
 import urllib.request
 
 
+# Repository root (one level above scripts/).
 ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+# Address the server listens on.
 BASE_URL = "http://127.0.0.1:8000"
 
 
 def request_json(path, method="GET", payload=None, timeout=10):
+    """Send an HTTP request to the server and return the decoded JSON body ({} when empty)."""
     data = None
     headers = {}
     if payload is not None:
@@ -26,6 +35,7 @@ def request_json(path, method="GET", payload=None, timeout=10):
 
 
 def wait_for_server(proc, timeout=20):
+    """Poll /api/health until it reports ok; raise RuntimeError if the server exits early or never becomes healthy."""
     deadline = time.time() + timeout
     last_error = None
     while time.time() < deadline:
@@ -42,6 +52,7 @@ def wait_for_server(proc, timeout=20):
 
 
 def main():
+    """Run all smoke checks; returns 0 on success and 2 when server dependencies are missing."""
     try:
         import fastapi  # noqa: F401
         import uvicorn  # noqa: F401
@@ -50,10 +61,13 @@ def main():
         print("Run: python3 -m pip install -r requirements.txt")
         return 2
 
+    # Use a throwaway folder so the real save database is never touched.
     with tempfile.TemporaryDirectory(prefix="sacred-tech-smoke-") as tmp_dir:
         env = os.environ.copy()
         env["PYTHONPATH"] = ROOT_DIR
+        # Point the server at the temporary save database.
         env["ZEUS_SAVE_DB_PATH"] = os.path.join(tmp_dir, "save_state.db")
+        # Launch the real server as a child process, merging its error output into stdout.
         proc = subprocess.Popen(
             [sys.executable, os.path.join(ROOT_DIR, "server", "main.py")],
             cwd=ROOT_DIR,
@@ -67,12 +81,14 @@ def main():
             wait_for_server(proc)
             print("[PASS] server health")
 
+            # The server reports any chapter validators it could not find.
             diagnostics = request_json("/api/diagnostics")
             missing = diagnostics.get("missing_validators", [])
             if missing:
                 raise AssertionError(f"missing validators: {missing}")
             print(f"[PASS] validators present: {len(diagnostics.get('validators_found', []))}")
 
+            # Write a sample save, then read it back and compare the fields.
             save_payload = {
                 "gold": 321,
                 "compute_tokens": 123,
@@ -119,6 +135,7 @@ def main():
             assert not skeleton_result.get("success"), "Chapter 0 skeleton should not pass untouched"
             print("[PASS] chapter 0 skeleton correctly rejected")
 
+            # Compile every chapter's starter code and collect any failures.
             failures = []
             for chapter_id in range(22):
                 if chapter_id == 0:
@@ -144,6 +161,7 @@ def main():
 
             print("[PASS] full-stack smoke complete")
             return 0
+        # Always stop the server, killing it if it does not exit within 5 seconds.
         finally:
             proc.terminate()
             try:
@@ -152,5 +170,6 @@ def main():
                 proc.kill()
 
 
+# Exit with main()'s return code.
 if __name__ == "__main__":
     raise SystemExit(main())

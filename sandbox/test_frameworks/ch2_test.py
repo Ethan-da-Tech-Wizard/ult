@@ -1,8 +1,14 @@
+# Program: ult - ch2_test.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Automated check for chapter 2 (Relational Meadows Security Auditing): inspects the player's saved solution and exits 0 on pass or 1 on failure.
+
 import os
 import sys
 import sqlite3
 
 def init_mock_db():
+    """Build an in-memory SQLite database with a small users table to run queries against."""
     conn = sqlite3.connect(":memory:")
     cursor = conn.cursor()
     cursor.execute("CREATE TABLE users (id INTEGER, username TEXT, secret_key TEXT)")
@@ -12,6 +18,7 @@ def init_mock_db():
     return conn
 
 def vulnerable_query(conn, username):
+    """Run a deliberately injectable lookup (the username is pasted straight into the SQL) and return the rows, or the error text."""
     cursor = conn.cursor()
     query = f"SELECT secret_key FROM users WHERE username = '{username}'"
     try:
@@ -22,9 +29,12 @@ def vulnerable_query(conn, username):
         return str(e)
 
 def test_chapter_2():
+    """Locate the chapter 2 solution (sandbox workspace first, local save folder as fallback), run the checks, print the result and exit with a status code."""
     print("Testing Chapter 2: Relational Meadows Security Auditing...")
+    # Inside the sandbox the player's file lives under /workspace.
     solution_path = "/workspace/ch2_sql.py"
     if not os.path.exists(solution_path):
+        # Not found there, so fall back to the local save folder (running outside the sandbox).
         solution_path = "save_data/relic_save/ch2_sql.py"
         if not os.path.exists(solution_path):
             print("Error: Solution file 'ch2_sql.py' not found.")
@@ -71,5 +81,6 @@ def test_chapter_2():
     print("\n>>> All Chapter 2 tests passed! Database secured.")
     sys.exit(0)
 
+# Run the check only when executed as a script, not when imported.
 if __name__ == "__main__":
     test_chapter_2()

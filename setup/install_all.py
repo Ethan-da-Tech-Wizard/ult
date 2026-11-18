@@ -1,4 +1,9 @@
 #!/usr/bin/env python3
+# Program: ult - install_all.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Unified installer: creates the .venv and installs requirements, optionally builds the Docker sandbox image and container and the TempleOS VM image, then prints a summary.
+"""Unified setup installer for the game."""
 # ─────────────────────────────────────────────────────────────────────────────
 # install_all.py — The Sacred Tech unified cross-platform setup installer
 #
@@ -12,6 +17,7 @@
 #   python setup/install_all.py --minimal (Tier 1 only, no prompts)
 #   python setup/install_all.py --full    (All tiers supported, no prompts)
 # ─────────────────────────────────────────────────────────────────────────────
+# ---- Imports ----
 import os
 import sys
 import subprocess
@@ -19,6 +25,7 @@ import shutil
 import argparse
 
 def ask_yes_no(question, default="y", mode="interactive"):
+    """Ask a yes/no question; minimal mode always answers no, full mode always yes, otherwise prompt (Enter picks the default; Ctrl-C or end of input means no)."""
     if mode == "minimal":
         return False
     if mode == "full":
@@ -39,15 +46,18 @@ def ask_yes_no(question, default="y", mode="interactive"):
             return False
 
 def check_command(cmd):
+    """Return True if the named program is found on PATH."""
     return shutil.which(cmd) is not None
 
 def main():
+    """Parse options, run the tiered setup and print a summary; exits with status 1 on fatal errors."""
     parser = argparse.ArgumentParser(description="The Sacred Tech Setup Tool")
     group = parser.add_mutually_exclusive_group()
     group.add_argument("--minimal", action="store_true", help="Tier 1 only, no prompts")
     group.add_argument("--full", action="store_true", help="All tiers the machine supports, no prompts")
     args = parser.parse_args()
 
+    # Choose how questions are answered based on the command-line flags.
     mode = "interactive"
     if args.minimal:
         mode = "minimal"
@@ -76,16 +86,19 @@ def main():
 
 
     # 1. Verify Python version
+    # Verify Python is 3.10 or newer.
     major, minor = sys.version_info.major, sys.version_info.minor
     print(f"✅  Python {major}.{minor} detected.")
     if major < 3 or (major == 3 and minor < 10):
         print(f"❌  Python 3.10+ is required (found {major}.{minor}).")
         sys.exit(1)
 
+    # Repository root, the virtual environment folder and the requirements file.
     project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
     venv_dir = os.path.join(project_root, ".venv")
     requirements_path = os.path.join(project_root, "requirements.txt")
 
+    # Track what happened to each tier for the final summary.
     tier1_status = "not installed"
     tier2_status = "skipped"
     tier3_status = "skipped"
@@ -108,6 +121,7 @@ def main():
         sys.exit(1)
 
     print("📦  Upgrading pip and installing requirements.txt ...")
+    # Upgrade pip first, then install the requirements into the venv.
     subprocess.run([venv_python, "-m", "pip", "install", "--quiet", "--upgrade", "pip"], check=True)
     subprocess.run([venv_python, "-m", "pip", "install", "--quiet", "-r", requirements_path], check=True)
     print("✅  Core game dependencies installed successfully.")
@@ -115,6 +129,7 @@ def main():
 
     # -- Tier 2: Arch Linux Sandbox (Docker) --
     print("\n── Tier 2: Arch Linux sandbox (Docker) ──")
+    # Tier 2 requires both the Docker CLI and a reachable daemon.
     docker_bin = "docker"
     has_docker = check_command(docker_bin)
 
@@ -141,6 +156,7 @@ def main():
                 print("       sudo usermod -aG docker $USER (then log out and log back in)")
             tier2_status = "skipped (Docker daemon unreachable)"
         elif ask_yes_no("Build the Arch Linux sandbox image (~1 GB download)?", mode=mode):
+            # Skip the (large) image build if it already exists.
             image_exists = False
             try:
                 res = subprocess.run([docker_bin, "image", "inspect", "zeus-arch:latest"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -156,6 +172,7 @@ def main():
                 sandbox_path = os.path.join(project_root, "sandbox")
                 subprocess.run([docker_bin, "build", "--tag", "zeus-arch:latest", "--file", dockerfile_path, sandbox_path], check=True)
 
+            # Folder mounted into the container as the workspace.
             relic_save_dir = os.path.join(project_root, "save_data", "relic_save")
             os.makedirs(relic_save_dir, exist_ok=True)
 
@@ -194,6 +211,7 @@ def main():
 
     # -- Tier 3: TempleOS Altar VM (QEMU) --
     print("\n── Tier 3: TempleOS Altar VM (QEMU) ──")
+    # Tier 3 needs QEMU and the prebuilt disk image.
     has_qemu = check_command("qemu-system-x86_64")
     image_path = os.path.join(project_root, "save_data", "templeos_core.img")
 
@@ -235,5 +253,6 @@ def main():
         print("      ./scripts/run_dev.sh")
     print("      Then open http://127.0.0.1:8000 in your browser.\n")
 
+# Run the installer when executed directly.
 if __name__ == "__main__":
     main()

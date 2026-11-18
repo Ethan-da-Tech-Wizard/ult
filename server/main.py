@@ -1,3 +1,10 @@
+# Program: ult - main.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: FastAPI game server: save/load API backed by SQLite, chapter code load and compile endpoints, WebSocket bridges to the sandbox shell and TempleOS VM, a client live-reload socket, and static serving of the web client on loopback.
+
+"""Zeus RPG core server: HTTP API, WebSocket bridges and static client hosting."""
+# ---- Imports ----
 import os
 import sys
 import sqlite3
@@ -11,9 +18,11 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 # Initialize logger
+# Log at info level to the console.
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("ZeusServer")
 
+# Browser sockets currently listening for live-reload messages.
 dev_reload_sockets = set()
 
 async def watch_client_files():
@@ -26,8 +35,10 @@ async def watch_client_files():
         logger.warning(f"Client directory not found at {client_dir} for dev reloader.")
         return
         
+    # Remember file modification times between polls to detect changes.
     last_mtimes = {}
     def scan_files():
+        """Return a map of client file path to modification time for html, css and js files."""
         mtimes = {}
         for root, _, files in os.walk(client_dir):
             for file in files:
@@ -45,6 +56,7 @@ async def watch_client_files():
         logger.error(f"Error initializing dev reload file scan: {e}")
 
     while True:
+        # Poll once per second; skip the work when no browser is listening.
         await asyncio.sleep(1.0)
         if not dev_reload_sockets:
             continue
@@ -74,6 +86,7 @@ async def watch_client_files():
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
+    """Startup/shutdown hook: starts the TempleOS VM or mock server and the file watcher, then cancels the watcher on shutdown."""
     logger.info("FastAPI startup. Booting QEMU launcher/mock server...")
     try:
         from server import qemu_launcher
@@ -89,10 +102,12 @@ async def lifespan(_app: FastAPI):
 
     # Start dev reload file watcher as a background task
     watcher_task = asyncio.create_task(watch_client_files())
+    # Server runs while paused here.
     yield
     # Clean up watcher
     watcher_task.cancel()
 
+# Create the application and attach the lifespan hook.
 app = FastAPI(title="Zeus RPG Core Server", lifespan=lifespan)
 
 # Bind strictly to local loopback interface for safety
@@ -104,8 +119,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# SQLite file location; can be overridden with the ZEUS_SAVE_DB_PATH environment variable (the smoke tests use this).
 DB_PATH = os.environ.get("ZEUS_SAVE_DB_PATH", os.path.join("save_data", "save_state.db"))
+# Chapters 0 through 21 are expected to have validators.
 EXPECTED_CHAPTER_IDS = list(range(22))
+# Which file each chapter's solution is saved as in the player's workspace.
 CHAPTER_FILENAME_MAP = {
     0: "ch0_cli.sh",
     1: "ch1_ocr.py",
@@ -133,6 +151,7 @@ CHAPTER_FILENAME_MAP = {
 
 # Initialize database schemas
 def init_db():
+    """Create the save table if needed, add the state_json column to older databases, and insert a default starting save when the table is empty."""
     db_dir = os.path.dirname(DB_PATH)
     if db_dir:
         os.makedirs(db_dir, exist_ok=True)
@@ -150,6 +169,7 @@ def init_db():
             state_json TEXT DEFAULT '{}'
         )
     """)
+    # Older databases may lack the state_json column; add it when missing.
     cursor.execute("PRAGMA table_info(player_state)")
     existing_columns = {row[1] for row in cursor.fetchall()}
     if "state_json" not in existing_columns:
@@ -174,10 +194,12 @@ def init_db():
     conn.commit()
     conn.close()
 
+# Prepare the database as soon as the module loads.
 init_db()
 
 
 class SaveStateModel(BaseModel):
+    """Request body for saving progress; the *_json fields hold JSON text."""
     gold: int
     compute_tokens: int
     unlocked_chapters: str
@@ -186,8 +208,10 @@ class SaveStateModel(BaseModel):
     stats_json: str
     state_json: str = "{}"
 
+# ---- Health and diagnostics endpoints ----
 @app.get("/api/health")
 def health():
+    """Simple liveness probe used by the smoke tests and launcher."""
     return {"status": "ok", "host": "127.0.0.1"}
 
 @app.get("/api/sandbox-status")
@@ -212,8 +236,10 @@ def sandbox_status():
 
 @app.get("/api/diagnostics")
 def diagnostics():
+    """Report which chapter validators exist and which are missing."""
     try:
         try:
+            # Import works whether run as a package or as a plain script.
             from server import sandbox_manager
         except ImportError:
             import sandbox_manager
@@ -247,8 +273,10 @@ def diagnostics():
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+# ---- Save/load endpoints ----
 @app.get("/api/save")
 def get_save():
+    """Return the most recent save row, or {} when there is none."""
     try:
         conn = sqlite3.connect(DB_PATH)
         conn.row_factory = sqlite3.Row
@@ -264,6 +292,7 @@ def get_save():
 
 @app.get("/api/saves")
 def list_saves(limit: int = 10):
+    """Return recent saves (limit clamped to 1-50), newest first."""
     try:
         limit = max(1, min(limit, 50))
         conn = sqlite3.connect(DB_PATH)
@@ -281,6 +310,7 @@ def list_saves(limit: int = 10):
 
 @app.get("/api/save/{save_id}")
 def get_save_by_id(save_id: int):
+    """Return one save by id, or a 404 error when it does not exist."""
     try:
         conn = sqlite3.connect(DB_PATH)
         conn.row_factory = sqlite3.Row
@@ -298,6 +328,7 @@ def get_save_by_id(save_id: int):
 
 @app.post("/api/save")
 def save_state(state: SaveStateModel):
+    """Insert a new save row and prune the table to the 50 newest rows."""
     try:
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
@@ -320,6 +351,8 @@ def save_state(state: SaveStateModel):
         raise HTTPException(status_code=500, detail=str(e))
 
 def get_default_skeleton(chapter_id: int) -> str:
+    # Starter code text for each chapter, keyed by chapter id.
+    """Return the starter code for a chapter as a string (a placeholder comment for unknown chapters)."""
     skeletons = {
         0: '# Outpost Zero: Environment config\n# The citadel gates read your $PATH. Restore the toolchain by APPENDING\n# /usr/local/bin to the existing PATH. Keep $PATH in your export so the\n# old entries are not lost.\n#\n# Write your export statement below this line:\n\necho "Booting environment..."\n',
         1: '# Alexandria Library: OCR Filters\ndef monochrome_filter(rgb_matrix):\n    # Convert 3D RGB matrix to 2D Grayscale matrix\n    # rgb_matrix is a list of lists of (R, G, B) tuples\n    # Return a list of lists of numbers (0-255)\n    gray_matrix = []\n    for row in rgb_matrix:\n        gray_row = []\n        for r, g, b in row:\n            gray_val = int(0.299 * r + 0.587 * g + 0.114 * b)\n            gray_row.append(gray_val)\n        gray_matrix.append(gray_row)\n    return gray_matrix\n\ndef threshold_filter(gray_matrix, threshold):\n    # Values > threshold -> 255, <= threshold -> 0\n    binary_matrix = []\n    for row in gray_matrix:\n        binary_row = []\n        for val in row:\n            binary_row.append(255 if val > threshold else 0)\n        binary_matrix.append(binary_row)\n    return binary_matrix\n',
@@ -346,8 +379,10 @@ def get_default_skeleton(chapter_id: int) -> str:
     }
     return skeletons.get(chapter_id, f"# Chapter {chapter_id} Solution\n")
 
+# ---- Chapter code endpoints ----
 @app.get("/api/code")
 def load_code(chapter_id: int, skeleton: bool = False):
+    """Return the player's saved solution for a chapter, or the starter skeleton when none is saved or skeleton=true."""
     try:
         filename = CHAPTER_FILENAME_MAP.get(chapter_id, f"ch{chapter_id}_solution.py")
         try:
@@ -367,11 +402,13 @@ def load_code(chapter_id: int, skeleton: bool = False):
         raise HTTPException(status_code=500, detail=str(e))
 
 class CompileRequest(BaseModel):
+    """Request body for compiling: the chapter id and the player's code."""
     chapter_id: int
     code: str
 
 @app.post("/api/compile")
 def compile_code(req: CompileRequest):
+    """Save the submitted code to the workspace, run the chapter's test, and return its success flag and output."""
     try:
         try:
             from server import sandbox_manager
@@ -398,6 +435,7 @@ def compile_code(req: CompileRequest):
 # WebSocket proxy routing for local Docker container bash terminal
 @app.websocket("/ws/shell")
 async def ws_shell(websocket: WebSocket):
+    """Bridge a browser terminal to a bash shell in the Docker sandbox, or to the host shell when the container is offline."""
     await websocket.accept()
     # Spawns a shell inside the Arch container via Docker
     # Fallback to local bash shell if Docker container isn't online yet
@@ -415,6 +453,7 @@ async def ws_shell(websocket: WebSocket):
             )
 
         # Run process with pseudo-terminal binding
+        # Run the shell on a pseudo-terminal so interactive programs behave normally.
         import pty
         master_fd, slave_fd = pty.openpty()
         proc = await asyncio.create_subprocess_exec(
@@ -427,6 +466,7 @@ async def ws_shell(websocket: WebSocket):
         os.close(slave_fd)
 
         async def read_from_pty():
+            """Forward shell output to the browser."""
             try:
                 loop = asyncio.get_running_loop()
                 while True:
@@ -439,6 +479,7 @@ async def ws_shell(websocket: WebSocket):
                 logger.error(f"Read PTY error: {e}")
 
         async def write_to_pty():
+            """Forward browser keystrokes to the shell."""
             try:
                 while True:
                     msg = await websocket.receive_text()
@@ -449,6 +490,7 @@ async def ws_shell(websocket: WebSocket):
                 logger.error(f"Write PTY error: {e}")
 
         try:
+            # Run until either direction ends, then cancel the other.
             done, pending = await asyncio.wait(
                 {asyncio.create_task(read_from_pty()), asyncio.create_task(write_to_pty())},
                 return_when=asyncio.FIRST_COMPLETED,
@@ -471,6 +513,7 @@ async def ws_shell(websocket: WebSocket):
 # WebSocket proxy routing for TempleOS serial console (QEMU)
 @app.websocket("/ws/templeos")
 async def ws_templeos(websocket: WebSocket):
+    """Bridge a browser terminal to the TempleOS serial socket (real VM or mock server) on loopback."""
     await websocket.accept()
     # Bridging websocket data streams directly to the running QEMU TempleOS instance
     try:
@@ -480,6 +523,7 @@ async def ws_templeos(websocket: WebSocket):
         reader, writer = await asyncio.open_connection("127.0.0.1", 4444)
         
         async def read_qemu():
+            """Forward VM output to the browser."""
             try:
                 while True:
                     data = await reader.read(1024)
@@ -490,6 +534,7 @@ async def ws_templeos(websocket: WebSocket):
                 logger.error(f"QEMU Read error: {e}")
                 
         async def write_qemu():
+            """Forward browser input to the VM."""
             try:
                 while True:
                     msg = await websocket.receive_text()
@@ -512,6 +557,7 @@ async def ws_templeos(websocket: WebSocket):
 # WebSocket endpoint for automatic client development reloading
 @app.websocket("/ws/dev-reload")
 async def ws_dev_reload(websocket: WebSocket):
+    """Register a browser for live-reload messages and keep the socket open until it disconnects."""
     await websocket.accept()
     dev_reload_sockets.add(websocket)
     try:
@@ -530,6 +576,7 @@ if hasattr(sys, '_MEIPASS'):
 else:
     client_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "client"))
 
+# Serve a built client from dist/ if present, otherwise the source client folder.
 dist_dir = os.path.join(client_dir, "dist")
 if os.path.exists(dist_dir):
     app.mount("/", StaticFiles(directory=dist_dir, html=True), name="static")
@@ -538,4 +585,5 @@ elif os.path.exists(client_dir):
 
 if __name__ == "__main__":
     # Force strict local loopback binding
+    # Start the server on port 8000.
     uvicorn.run(app, host="127.0.0.1", port=8000)

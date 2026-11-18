@@ -1,10 +1,18 @@
+# Program: ult - ch1_test.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Automated check for chapter 1 (Alexandria Library OCR Prep): inspects the player's saved solution and exits 0 on pass or 1 on failure.
+
 import os
 import sys
 
 def test_chapter_1():
+    """Locate the chapter 1 solution (sandbox workspace first, local save folder as fallback), run the checks, print the result and exit with a status code."""
     print("Testing Chapter 1: Alexandria Library OCR Prep...")
+    # Inside the sandbox the player's file lives under /workspace.
     solution_path = "/workspace/ch1_ocr.py"
     if not os.path.exists(solution_path):
+        # Not found there, so fall back to the local save folder (running outside the sandbox).
         solution_path = "save_data/relic_save/ch1_ocr.py"
         if not os.path.exists(solution_path):
             print("Error: Solution file 'ch1_ocr.py' not found.")
@@ -63,5 +71,6 @@ def test_chapter_1():
     print("\n>>> All Chapter 1 tests passed! Library OCR parser active.")
     sys.exit(0)
 
+# Run the check only when executed as a script, not when imported.
 if __name__ == "__main__":
     test_chapter_1()

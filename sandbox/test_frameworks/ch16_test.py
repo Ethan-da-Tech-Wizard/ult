@@ -1,11 +1,19 @@
+# Program: ult - ch16_test.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Automated check for chapter 16 (Deployment Cliffs (Model Quantization)): inspects the player's saved solution and exits 0 on pass or 1 on failure.
+
 import os
 import sys
 import numpy as np
 
 def test_chapter_16():
+    """Locate the chapter 16 solution (sandbox workspace first, local save folder as fallback), run the checks, print the result and exit with a status code."""
     print("Testing Chapter 16: Deployment Cliffs (Model Quantization)...")
+    # Inside the sandbox the player's file lives under /workspace.
     solution_path = "/workspace/ch16_quant.py"
     if not os.path.exists(solution_path):
+        # Not found there, so fall back to the local save folder (running outside the sandbox).
         solution_path = "save_data/relic_save/ch16_quant.py"
         if not os.path.exists(solution_path):
             print("Error: Solution file 'ch16_quant.py' not found.")
@@ -72,5 +80,6 @@ def test_chapter_16():
     print("\n>>> All Chapter 16 tests passed! INT8 quantization operations validated.")
     sys.exit(0)
 
+# Run the check only when executed as a script, not when imported.
 if __name__ == "__main__":
     test_chapter_16()

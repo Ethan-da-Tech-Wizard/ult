@@ -1,11 +1,19 @@
+# Program: ult - ch9_test.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Automated check for chapter 9 (Forge of Zeus LayerNorm & Residual Skips): inspects the player's saved solution and exits 0 on pass or 1 on failure.
+
 import os
 import sys
 import numpy as np
 
 def test_chapter_9():
+    """Locate the chapter 9 solution (sandbox workspace first, local save folder as fallback), run the checks, print the result and exit with a status code."""
     print("Testing Chapter 9: Forge of Zeus LayerNorm & Residual Skips...")
+    # Inside the sandbox the player's file lives under /workspace.
     solution_path = "/workspace/ch9_forge.py"
     if not os.path.exists(solution_path):
+        # Not found there, so fall back to the local save folder (running outside the sandbox).
         solution_path = "save_data/relic_save/ch9_forge.py"
         if not os.path.exists(solution_path):
             print("Error: Solution file 'ch9_forge.py' not found.")
@@ -70,5 +78,6 @@ def test_chapter_9():
     print("\n>>> All Chapter 9 tests passed! Forge of Zeus compiler online.")
     sys.exit(0)
 
+# Run the check only when executed as a script, not when imported.
 if __name__ == "__main__":
     test_chapter_9()

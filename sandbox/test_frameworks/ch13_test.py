@@ -1,8 +1,14 @@
+# Program: ult - ch13_test.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Automated check for chapter 13 (Testing Tundra Model Evaluations): inspects the player's saved solution and exits 0 on pass or 1 on failure.
+
 import os
 import sys
 import math
 
 def calculate_lcs(x, y):
+    """Return the length of the longest common subsequence of x and y using dynamic programming."""
     m = len(x)
     n = len(y)
     L = [[0] * (n + 1) for _ in range(m + 1)]
@@ -17,9 +23,12 @@ def calculate_lcs(x, y):
     return L[m][n]
 
 def test_chapter_13():
+    """Locate the chapter 13 solution (sandbox workspace first, local save folder as fallback), run the checks, print the result and exit with a status code."""
     print("Testing Chapter 13: Testing Tundra Model Evaluations...")
+    # Inside the sandbox the player's file lives under /workspace.
     solution_path = "/workspace/ch13_eval.py"
     if not os.path.exists(solution_path):
+        # Not found there, so fall back to the local save folder (running outside the sandbox).
         solution_path = "save_data/relic_save/ch13_eval.py"
         if not os.path.exists(solution_path):
             print("Error: Solution file 'ch13_eval.py' not found.")
@@ -88,5 +97,6 @@ def test_chapter_13():
     print("\n>>> All Chapter 13 tests passed! Model evaluation suite active.")
     sys.exit(0)
 
+# Run the check only when executed as a script, not when imported.
 if __name__ == "__main__":
     test_chapter_13()

@@ -1,10 +1,18 @@
+# Program: ult - ch15_test.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Automated check for chapter 15 (Security Caves (Prompt Security & Guardrails)): inspects the player's saved solution and exits 0 on pass or 1 on failure.
+
 import os
 import sys
 
 def test_chapter_15():
+    """Locate the chapter 15 solution (sandbox workspace first, local save folder as fallback), run the checks, print the result and exit with a status code."""
     print("Testing Chapter 15: Security Caves (Prompt Security & Guardrails)...")
+    # Inside the sandbox the player's file lives under /workspace.
     solution_path = "/workspace/ch15_guard.py"
     if not os.path.exists(solution_path):
+        # Not found there, so fall back to the local save folder (running outside the sandbox).
         solution_path = "save_data/relic_save/ch15_guard.py"
         if not os.path.exists(solution_path):
             print("Error: Solution file 'ch15_guard.py' not found.")
@@ -86,5 +94,6 @@ def test_chapter_15():
     print("\n>>> All Chapter 15 tests passed! Prompt guardrails and sanitizers online.")
     sys.exit(0)
 
+# Run the check only when executed as a script, not when imported.
 if __name__ == "__main__":
     test_chapter_15()
