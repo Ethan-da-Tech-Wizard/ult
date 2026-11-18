@@ -1,12 +1,20 @@
+# Program: ult - ch0_test.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Automated check for chapter 0 (Outpost Boot Setup): inspects the player's saved solution and exits 0 on pass or 1 on failure.
+
 import os
 import re
 import sys
 
 def test_chapter_0():
+    """Locate the chapter 0 solution (sandbox workspace first, local save folder as fallback), run the checks, print the result and exit with a status code."""
     print("Testing Chapter 0 Outpost Boot Setup...")
+    # Inside the sandbox the player's file lives under /workspace.
     solution_path = "/workspace/ch0_cli.sh"
     if not os.path.exists(solution_path):
         # Local fallback path check
+        # Not found there, so fall back to the local save folder (running outside the sandbox).
         solution_path = "save_data/relic_save/ch0_cli.sh"
         if not os.path.exists(solution_path):
             print("Error: Solution file 'ch0_cli.sh' not found in workspace.")
@@ -46,5 +54,6 @@ def test_chapter_0():
     print("Citadel Core Gates: ACCESS GRANTED.")
     sys.exit(0)
 
+# Run the check only when executed as a script, not when imported.
 if __name__ == "__main__":
     test_chapter_0()

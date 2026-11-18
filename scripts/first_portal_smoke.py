@@ -1,4 +1,10 @@
 #!/usr/bin/env python3
+# Program: ult - first_portal_smoke.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: End-to-end smoke test for the first portal: starts the server with a temporary save database, checks a fresh save, the Chapter 0 compile gate, and save/reload of route progress.
+"""First-portal smoke test."""
+# ---- Imports ----
 import json
 import os
 import subprocess
@@ -9,6 +15,7 @@ from full_stack_smoke import ROOT_DIR, request_json, wait_for_server
 
 
 def main():
+    """Run the first-portal checks; returns 0 on success and 2 when server dependencies are missing."""
     try:
         import fastapi  # noqa: F401
         import uvicorn  # noqa: F401
@@ -17,10 +24,13 @@ def main():
         print("Run: python3 -m pip install -r requirements.txt")
         return 2
 
+    # Use a throwaway folder so the real save database is never touched.
     with tempfile.TemporaryDirectory(prefix="sacred-tech-first-portal-") as tmp_dir:
         env = os.environ.copy()
         env["PYTHONPATH"] = ROOT_DIR
+        # Point the server at the temporary save database.
         env["ZEUS_SAVE_DB_PATH"] = os.path.join(tmp_dir, "save_state.db")
+        # Launch the real server as a child process, merging its error output into stdout.
         proc = subprocess.Popen(
             [sys.executable, os.path.join(ROOT_DIR, "server", "main.py")],
             cwd=ROOT_DIR,
@@ -34,6 +44,7 @@ def main():
             wait_for_server(proc)
             print("[PASS] server health")
 
+            # A brand-new save should start in dark mode on Chapter 0.
             initial = request_json("/api/save")
             initial_state = json.loads(initial.get("state_json", "{}"))
             assert initial_state.get("screenMode") == "dark"
@@ -42,6 +53,7 @@ def main():
 
             # The untouched skeleton must fail (tutorial teaches the export),
             # then a player-written solution must pass.
+            # Fetch the Chapter 0 starter code and confirm it fails when submitted unchanged.
             skeleton_data = request_json("/api/code?chapter_id=0&skeleton=1")
             skeleton_result = request_json(
                 "/api/compile",
@@ -52,6 +64,7 @@ def main():
             assert not skeleton_result.get("success"), "Chapter 0 skeleton should not pass untouched"
             print("[PASS] Chapter 0 skeleton correctly rejected")
 
+            # A working PATH export must pass the Chapter 0 check.
             compile_result = request_json(
                 "/api/compile",
                 method="POST",
@@ -61,6 +74,7 @@ def main():
             assert compile_result.get("success"), compile_result.get("output", "")
             print("[PASS] Chapter 0 compile restores the gate")
 
+            # Simulate finishing the tutorial: items and flags the player would hold at the first portal.
             inventory = [
                 "contract:0",
                 "opening_hints_seen",
@@ -86,6 +100,7 @@ def main():
                     "lastSavedAt": "2026-06-09T00:00:00.000Z",
                 }),
             }
+            # Save the progress, then read it back to confirm it persisted.
             request_json("/api/save", method="POST", payload=save_payload)
             reloaded = request_json("/api/save")
             reloaded_state = json.loads(reloaded.get("state_json", "{}"))
@@ -99,6 +114,7 @@ def main():
             assert "python-field-manual:0" in reloaded_state.get("readManualPages", [])
             print("[PASS] first portal save/reload preserves route progress")
             return 0
+        # Always stop the server, killing it if it does not exit within 5 seconds.
         finally:
             proc.terminate()
             try:
@@ -107,5 +123,6 @@ def main():
                 proc.kill()
 
 
+# Exit with main()'s return code.
 if __name__ == "__main__":
     raise SystemExit(main())

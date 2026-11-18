@@ -1,13 +1,20 @@
 #!/usr/bin/env python3
+# Program: ult - check_requirements.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Prints a colored readiness report for the three tiers (Python packages, Docker sandbox, QEMU VM) and recommends how to start the game.
+"""System requirements checker for the game."""
 # ─────────────────────────────────────────────────────────────────────────────
 # check_requirements.py — System Requirements Checker for The Sacred Tech
 # ─────────────────────────────────────────────────────────────────────────────
+# ---- Imports ----
 import os
 import sys
 import shutil
 import subprocess
 
 # Terminal colors
+# ANSI escape codes used to color terminal output.
 RESET = "\033[0m"
 BOLD = "\033[1m"
 RED = "\033[31m"
@@ -18,17 +25,21 @@ MAGENTA = "\033[35m"
 CYAN = "\033[36m"
 
 def print_header(title):
+    """Print a bold cyan section title."""
     print(f"\n{BOLD}{CYAN}=== {title} ==={RESET}")
 
 def print_status(name, status, details="", is_ok=True):
+    """Print one aligned status row with a green check or red cross."""
     color = GREEN if is_ok else RED
     symbol = "✅" if is_ok else "❌"
     print(f" {symbol}  {BOLD}{name:<30}{RESET} : {color}{status:<15}{RESET} {details}")
 
 def check_command(cmd):
+    """Return True if the named program is found on PATH."""
     return shutil.which(cmd) is not None
 
 def main():
+    """Run every check and print the summary."""
     print(f"\n{BOLD}{YELLOW}=========================================================={RESET}")
     print(f"{BOLD}{YELLOW}      The Sacred Tech — System Requirements Checker       {RESET}")
     print(f"{BOLD}{YELLOW}=========================================================={RESET}")
@@ -37,6 +48,7 @@ def main():
     print_header("Tier 1: Core JRPG Game (Required)")
     
     # Python Version Check
+    # Tier 1 needs Python 3.10 or newer.
     major, minor = sys.version_info.major, sys.version_info.minor
     py_ok = major == 3 and minor >= 10
     py_ver_str = f"{major}.{minor}.{sys.version_info.micro}"
@@ -46,6 +58,7 @@ def main():
         print_status("Python 3.10+ Version", "FAILED", f"(Found {py_ver_str} - Upgrade to Python 3.10+)", is_ok=False)
 
     # Virtual Environment check
+    # The .venv folder is expected at the repository root.
     project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
     venv_dir = os.path.join(project_root, ".venv")
     venv_exists = os.path.exists(venv_dir)
@@ -56,6 +69,7 @@ def main():
         print_status("Virtual Env (.venv)", "MISSING", f"(Run python setup/install_all.py)", is_ok=False)
 
     # Python packages check
+    # Try importing each required package; collect those that are missing.
     packages = ["fastapi", "uvicorn", "numpy", "pydantic"]
     missing_packages = []
     for pkg in packages:
@@ -71,6 +85,7 @@ def main():
 
     # ── TIER 2: Docker / Sandbox ──
     print_header("Tier 2: Arch Linux Sandbox (Optional)")
+    # Tier 2 needs the Docker CLI and a running daemon.
     has_docker = check_command("docker")
     
     if has_docker:
@@ -93,6 +108,7 @@ def main():
 
     # ── TIER 3: QEMU / TempleOS VM ──
     print_header("Tier 3: TempleOS VM Altar (Optional)")
+    # Tier 3 needs the QEMU x86-64 emulator; show a platform-specific install hint if absent.
     has_qemu = check_command("qemu-system-x86_64")
     
     if has_qemu:
@@ -111,6 +127,7 @@ def main():
     print(f"{BOLD}{YELLOW}                  Readiness Summary                       {RESET}")
     print(f"{BOLD}{YELLOW}=========================================================={RESET}")
     
+    # Only Tier 1 is required; Tiers 2 and 3 have built-in fallbacks.
     t1_ready = py_ok and venv_exists and not missing_packages
     t2_ready = has_docker
     t3_ready = has_qemu
@@ -135,5 +152,6 @@ def main():
             
     print(f"{BOLD}{YELLOW}=========================================================={RESET}\n")
 
+# Run the checker when executed directly.
 if __name__ == "__main__":
     main()

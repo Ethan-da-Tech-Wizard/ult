@@ -1,11 +1,19 @@
+# Program: ult - ch17_test.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Automated check for chapter 17 (Agentic Skyway (Tool-Calling Schema & Loops)): inspects the player's saved solution and exits 0 on pass or 1 on failure.
+
 import os
 import sys
 import json
 
 def test_chapter_17():
+    """Locate the chapter 17 solution (sandbox workspace first, local save folder as fallback), run the checks, print the result and exit with a status code."""
     print("Testing Chapter 17: Agentic Skyway (Tool-Calling Schema & Loops)...")
+    # Inside the sandbox the player's file lives under /workspace.
     solution_path = "/workspace/ch17_agent.py"
     if not os.path.exists(solution_path):
+        # Not found there, so fall back to the local save folder (running outside the sandbox).
         solution_path = "save_data/relic_save/ch17_agent.py"
         if not os.path.exists(solution_path):
             print("Error: Solution file 'ch17_agent.py' not found.")
@@ -84,5 +92,6 @@ def test_chapter_17():
     print("\n>>> All Chapter 17 tests passed! Tool-calling agents operational.")
     sys.exit(0)
 
+# Run the check only when executed as a script, not when imported.
 if __name__ == "__main__":
     test_chapter_17()

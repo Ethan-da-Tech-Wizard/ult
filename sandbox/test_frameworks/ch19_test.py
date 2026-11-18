@@ -1,3 +1,8 @@
+# Program: ult - ch19_test.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Automated check for chapter 19 (Kubernetes Citadel Cluster Layouts): inspects the player's saved solution and exits 0 on pass or 1 on failure.
+
 import os
 import sys
 import re
@@ -18,9 +23,12 @@ def parse_simple_yaml(yaml_content):
     return data
 
 def test_chapter_19():
+    """Locate the chapter 19 solution (sandbox workspace first, local save folder as fallback), run the checks, print the result and exit with a status code."""
     print("Testing Chapter 19: Kubernetes Citadel Cluster Layouts...")
+    # Inside the sandbox the player's file lives under /workspace.
     solution_path = "/workspace/ch19_k8s.py"
     if not os.path.exists(solution_path):
+        # Not found there, so fall back to the local save folder (running outside the sandbox).
         solution_path = "save_data/relic_save/ch19_k8s.py"
         if not os.path.exists(solution_path):
             print("Error: Solution file 'ch19_k8s.py' not found.")
@@ -96,5 +104,6 @@ def test_chapter_19():
     print("\n>>> All Chapter 19 tests passed! Kubernetes configs deployed to Citadel scheduler.")
     sys.exit(0)
 
+# Run the check only when executed as a script, not when imported.
 if __name__ == "__main__":
     test_chapter_19()

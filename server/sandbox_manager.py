@@ -1,10 +1,19 @@
+# Program: ult - sandbox_manager.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Starts (or reuses) the Docker sandbox container and runs a chapter's test script inside it, falling back to running the test locally when Docker is unavailable.
+
+"""Docker sandbox management and test execution for the game's chapters."""
+# ---- Imports ----
 import os
 import sys
 import subprocess
 import logging
 
+# Module-level logger.
 logger = logging.getLogger("ZeusSandbox")
 
+# Fixed container name so the same sandbox is reused across runs.
 SANDBOX_CONTAINER_NAME = "zeus-sandbox"
 
 # Resolve directories dynamically (supports PyInstaller bundle assets)
@@ -15,12 +24,14 @@ else:
     WORKSPACE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
     BUNDLED_SANDBOX_DIR = os.path.join(WORKSPACE_DIR, "sandbox")
 
+# Folder holding the player's saved solution files; mounted into the container as /workspace.
 RELIC_SAVE_DIR = os.path.join(WORKSPACE_DIR, "save_data", "relic_save")
 
 def ensure_sandbox_running():
     """Checks if the Docker sandbox is running. If not, attempts to start it."""
     try:
         # Check if container is running
+        # Ask Docker whether the container is already running.
         check_run = subprocess.run(
             ["docker", "inspect", "-f", "{{.State.Running}}", SANDBOX_CONTAINER_NAME],
             stdout=subprocess.PIPE,
@@ -31,6 +42,7 @@ def ensure_sandbox_running():
             return True
             
         # Check if container exists but is stopped
+        # The container may exist but be stopped; list all containers matching the name.
         check_exist = subprocess.run(
             ["docker", "ps", "-a", "--filter", f"name={SANDBOX_CONTAINER_NAME}", "-q"],
             stdout=subprocess.PIPE,
@@ -44,6 +56,7 @@ def ensure_sandbox_running():
         # Container does not exist, run a new instance
         # Mount relic_save to /workspace inside container
         logger.info("Launching new sandbox container...")
+        # Create a detached container with the save folder and sandbox scripts mounted, kept alive by a no-op tail.
         run_cmd = [
             "docker", "run", "-d",
             "--name", SANDBOX_CONTAINER_NAME,
@@ -67,6 +80,7 @@ def execute_test(chapter_id: int):
     if not ensure_sandbox_running():
         # Fallback to local execution if Docker is not installed or running
         logger.warning("Docker sandbox not running. Executing tests locally as fallback.")
+        # Local fallback: run the bundled test script with the current Python interpreter.
         local_test_path = os.path.join(BUNDLED_SANDBOX_DIR, "test_frameworks", f"ch{chapter_id}_test.py")
         if not os.path.exists(local_test_path):
             return {"success": False, "output": f"Test suite ch{chapter_id}_test.py not found."}
@@ -88,6 +102,7 @@ def execute_test(chapter_id: int):
             return {"success": False, "output": f"Local execution failed: {e}"}
 
     # Run test inside container
+    # Inside the container the scripts live under /sandbox; each run is limited to 15 seconds.
     test_script = f"/sandbox/test_frameworks/ch{chapter_id}_test.py"
     exec_cmd = ["docker", "exec", SANDBOX_CONTAINER_NAME, "python", test_script]
     try:

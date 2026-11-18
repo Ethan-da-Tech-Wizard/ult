@@ -1,14 +1,21 @@
 #!/usr/bin/env bash
+# Program: ult - build_sandbox.sh
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Builds the zeus-arch Docker image from sandbox/Dockerfile, checking Docker first and asking before rebuilding an existing image.
 # ─────────────────────────────────────────────────────────────────────────────
 # build_sandbox.sh
 # Builds the Arch Linux zeus-arch Docker image for the Sacred Tech sandbox.
 # Run once before starting the game server.
 # ─────────────────────────────────────────────────────────────────────────────
+# Stop on errors, unset variables and failed pipes.
 set -euo pipefail
 
+# Locate this script and derive the project and sandbox folders from it.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 SANDBOX_DIR="$PROJECT_ROOT/sandbox"
+# Tag given to the built image (the game server expects this name).
 IMAGE_NAME="zeus-arch:latest"
 
 echo ""
@@ -47,6 +54,7 @@ fi
 echo "🏗️   Building $IMAGE_NAME from $SANDBOX_DIR/Dockerfile ..."
 echo ""
 
+# Build the image using the sandbox folder as the build context.
 docker build \
     --tag "$IMAGE_NAME" \
     --file "$SANDBOX_DIR/Dockerfile" \

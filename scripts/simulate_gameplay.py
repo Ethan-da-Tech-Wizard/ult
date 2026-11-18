@@ -1,7 +1,13 @@
 #!/usr/bin/env python3
+# Program: ult - simulate_gameplay.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Simulates a full playthrough: starts the server, solves all 22 chapters through the API while saving progress, and writes a Markdown progression log to save_data.
+"""Simulated gameplay loop for the game server."""
 # ─────────────────────────────────────────────────────────────────────────────
 # simulate_gameplay.py — Simulated Gameplay Loop for The Sacred Tech
 # ─────────────────────────────────────────────────────────────────────────────
+# ---- Imports ----
 import os
 import sys
 import json
@@ -11,7 +17,9 @@ import subprocess
 import urllib.request
 import urllib.error
 
+# Repository root (one level above scripts/).
 ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+# Address the server listens on.
 BASE_URL = "http://127.0.0.1:8000"
 
 # List of chapter titles from game data
@@ -41,6 +49,7 @@ CHAPTER_NAMES = {
 }
 
 def request_json(path, method="GET", payload=None, timeout=10):
+    """Send an HTTP request and return the decoded JSON body; prints and re-raises HTTP errors."""
     data = None
     headers = {}
     if payload is not None:
@@ -56,6 +65,7 @@ def request_json(path, method="GET", payload=None, timeout=10):
         raise e
 
 def wait_for_server(proc, timeout=15):
+    """Poll /api/health until ok; raise RuntimeError if the server exits early or times out."""
     deadline = time.time() + timeout
     while time.time() < deadline:
         if proc.poll() is not None:
@@ -69,6 +79,7 @@ def wait_for_server(proc, timeout=15):
     raise RuntimeError("Server did not become healthy in time.")
 
 def main():
+    """Play every chapter in order and write the log; returns 0 on success, 1 if a chapter fails."""
     print("🚀 Starting game server for progression playthrough...")
     env = os.environ.copy()
     env["PYTHONPATH"] = ROOT_DIR
@@ -83,6 +94,7 @@ def main():
         text=True
     )
     
+    # Collect the Markdown lines for the playthrough log.
     log_content = []
     log_content.append("# 🎮 The Sacred Tech: Complete Gameplay Playthrough Log")
     log_content.append(f"\n*Simulated Playthrough Date: {time.strftime('%Y-%m-%d %H:%M:%S')}*\n")
@@ -97,6 +109,7 @@ def main():
         gold = 200
         tokens = 100
 
+        # Solve each of the 22 chapters in turn.
         for ch_id in range(22):
             ch_name = CHAPTER_NAMES.get(ch_id, f"Chapter {ch_id}")
             print(f"🎮 Playing: {ch_name}...")
@@ -109,6 +122,7 @@ def main():
                 code = code_data.get("code", "")
                 
             # Compile and validate
+            # Time the validation call for the log.
             start_time = time.time()
             result = request_json(
                 "/api/compile",
@@ -125,11 +139,13 @@ def main():
                 return 1
 
             # Update progression state
+            # Update simulated progression: unlock the chapter and award gold and tokens.
             unlocked.append(str(ch_id))
             gold += 100
             tokens += 50
             
             # Save state
+            # Persist the simulated state through the save API.
             save_payload = {
                 "gold": gold,
                 "compute_tokens": tokens,
@@ -161,6 +177,7 @@ def main():
         print("🎉 Simulated play completed successfully!")
         
         # Save gameplay log as artifact
+        # Write the finished log to save_data/gameplay_progression.md.
         artifact_path = os.path.join(ROOT_DIR, "save_data", "gameplay_progression.md")
         os.makedirs(os.path.dirname(artifact_path), exist_ok=True)
         with open(artifact_path, "w", encoding="utf-8") as f:
@@ -168,6 +185,7 @@ def main():
             
         print(f"📝 Gameplay progression log saved to: {artifact_path}")
         
+    # Always stop the server, killing it if it does not exit within 5 seconds.
     finally:
         proc.terminate()
         try:

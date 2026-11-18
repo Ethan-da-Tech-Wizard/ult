@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+# Program: ult - build_templeos_img.sh
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Downloads a TempleOS ISO, creates a QEMU disk image, walks the user through the installer, and test-boots it with a serial socket for the Chapter 21 altar.
 # ─────────────────────────────────────────────────────────────────────────────
 # build_templeos_img.sh
 # Downloads TempleOS 5.03 ISO and converts it into a QEMU-bootable disk image
@@ -15,8 +19,10 @@
 #   serial shell), or run the server with ZEUS_TEMPLEOS_VNC=1 and connect
 #   a VNC viewer to 127.0.0.1:5900 to use the real TempleOS display.
 # ─────────────────────────────────────────────────────────────────────────────
+# Stop on errors, unset variables and failed pipes.
 set -euo pipefail
 
+# Locate this script and derive the project and save_data folders from it.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 SAVE_DIR="$PROJECT_ROOT/save_data"
@@ -25,6 +31,7 @@ IMG_PATH="$SAVE_DIR/templeos_core.img"
 #   TEMPLEOS_ISO_URL=https://example.org/TempleOS-serial.ISO ./build_templeos_img.sh
 ISO_URL="${TEMPLEOS_ISO_URL:-https://templeos.org/Downloads/TempleOS.ISO}"
 ISO_PATH="$SAVE_DIR/TempleOS.ISO"
+# Size of the virtual disk to create.
 DISK_SIZE="256M"
 
 echo ""
@@ -48,6 +55,7 @@ if [[ -z "${TEMPLEOS_ISO_URL:-}" ]]; then
 fi
 
 # Check prerequisites
+# Report whether a command exists; arguments are the command, an install-hint type, and the package name.
 check_cmd() {
     if ! command -v "$1" &>/dev/null; then
         echo "❌  '$1' not found."
@@ -59,6 +67,7 @@ check_cmd() {
     return 0
 }
 
+# Check both QEMU tools and stop with install hints if either is missing.
 MISSING=0
 check_cmd qemu-img brew qemu || MISSING=1
 check_cmd qemu-system-x86_64 brew qemu || MISSING=1
@@ -107,6 +116,7 @@ fi
 
 echo ""
 echo "🔨  Creating $DISK_SIZE QEMU disk image..."
+# Create an empty qcow2 disk that the TempleOS installer will write to.
 qemu-img create -f qcow2 "$IMG_PATH" "$DISK_SIZE"
 echo "✅  Disk image created: $IMG_PATH"
 
@@ -134,6 +144,7 @@ echo "✅  Installation complete (if you followed the steps above)."
 echo ""
 echo "Now verifying headless serial boot..."
 echo "Starting QEMU with serial redirect to port 4444 for 5 seconds..."
+# Boot headless for 5 seconds with the serial port exposed, then stop, as a quick check.
 QEMU_PID=""
 qemu-system-x86_64 \
     -m 512M \

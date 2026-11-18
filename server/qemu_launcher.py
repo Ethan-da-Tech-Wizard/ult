@@ -1,3 +1,10 @@
+# Program: ult - qemu_launcher.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Starts a QEMU TempleOS virtual machine (serial over a local socket) or, when no disk image exists, an offline mock HolyC compiler server that validates syntax and returns checksums.
+
+"""TempleOS VM launcher with an offline mock HolyC server fallback."""
+# ---- Imports ----
 import os
 import subprocess
 import socket
@@ -5,9 +12,12 @@ import threading
 import time
 import logging
 
+# Module-level logger for launcher messages.
 logger = logging.getLogger("QemuLauncher")
 
+# Where the TempleOS disk image is expected (relative to the working directory).
 IMAGE_PATH = os.path.join("save_data", "templeos_core.img")
+# Local TCP port used for the serial bridge and the mock server.
 PORT = 4444
 
 def start_qemu():
@@ -24,12 +34,14 @@ def start_qemu():
         start_mock_holyc_server()
         return
 
+    # QEMU command: 512 MB RAM, the disk image, and serial exposed as a listening telnet socket on loopback.
     cmd = [
         "qemu-system-x86_64",
         "-m", "512M",
         "-hda", IMAGE_PATH,
         "-serial", f"telnet:127.0.0.1:{PORT},server,nowait"
     ]
+    # Optionally show the real display over VNC; otherwise run without a window.
     if os.environ.get("ZEUS_TEMPLEOS_VNC") == "1":
         cmd += ["-vnc", "127.0.0.1:0"]
         logger.info("TempleOS real display exposed on VNC 127.0.0.1:5900")
@@ -37,6 +49,7 @@ def start_qemu():
         cmd += ["-nographic"]
     try:
         logger.info(f"Launching QEMU TempleOS: {' '.join(cmd)}")
+        # Run QEMU in the background with its output discarded and hand the process back to the caller.
         proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         return proc
     except Exception as e:
@@ -46,16 +59,20 @@ def start_qemu():
 def looks_like_holyc(code):
     """Mirrors the Chapter 21 validator: reject interpreted-language syntax,
     require actual HolyC type/function markers before 'compiling'."""
+    # Reject code containing obvious Python/JavaScript constructs.
     if "def " in code or "print(" in code or "import " in code or "console.log" in code:
         return False
+    # Accept only code that mentions a HolyC type or the Print function.
     return any(marker in code for marker in ("U0", "I64", "U8", "F64", "Print"))
 
 
 def holyc_checksum(code):
     """Deterministic 16-bit checksum so the Altar's output is verifiable."""
+    # Add up the bytes and keep the low 16 bits.
     return sum(code.encode("utf-8", errors="replace")) & 0xFFFF
 
 
+# Help text shown by the mock server (CRLF line endings for terminal clients).
 MOCK_HELP_TEXT = (
     b"Divine Compiler commands:\r\n"
     b"  HELP            show this text\r\n"
@@ -70,6 +87,8 @@ def start_mock_holyc_server():
     prompt. Unlike a stub, it actually validates HolyC syntax: Python or JS
     syntax is rejected, and accepted snippets get a deterministic checksum."""
     def client_thread(conn, addr):
+        # Greeting banner.
+        """Handle one connected client: greet, then loop reading commands until it disconnects."""
         conn.sendall(b"\r\n--- Terry's Sanctuary: Headless TempleOS Altar (Mock) ---\r\n")
         conn.sendall(b"TempleOS V5.03 Divine Compiler bridge\r\n")
         conn.sendall(b"Write HolyC scripts (.HC) and compile them natively. Type HELP for syntax.\r\n")
@@ -91,7 +110,9 @@ def start_mock_holyc_server():
                     conn.sendall(MOCK_HELP_TEXT)
                     continue
                 conn.sendall(f"Compiling '{text[:60]}'...\r\n".encode("utf-8"))
+                # Short pause so the compile feels like real work.
                 time.sleep(0.4)
+                # Valid-looking HolyC gets a success line with its checksum; anything else is rejected with a hint.
                 if looks_like_holyc(text):
                     checksum = holyc_checksum(text)
                     conn.sendall(
@@ -107,7 +128,9 @@ def start_mock_holyc_server():
         conn.close()
 
     def server_loop():
+        """Listen on loopback only and start one daemon thread per client."""
         server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        # Allow quick restarts without waiting for the old socket to time out.
         server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         # Bind strictly to local loopback interface
         try:
@@ -121,10 +144,13 @@ def start_mock_holyc_server():
         except Exception as e:
             logger.error(f"Mock server socket error: {e}")
 
+    # Run the accept loop in the background so the caller is not blocked.
     t = threading.Thread(target=server_loop, daemon=True)
     t.start()
 
+# Standalone mode: start the launcher and keep the process alive.
 if __name__ == "__main__":
+    # Show info-level log messages when run directly.
     logging.basicConfig(level=logging.INFO)
     start_qemu()
     # Keep main thread alive

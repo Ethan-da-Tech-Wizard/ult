@@ -1,6 +1,14 @@
+/*
+ * Program: ult - style.css
+ * Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+ * Last Modified: 2026-11-18
+ * Purpose: Stylesheet for the game client: retro CRT theme variables and palettes, the game canvas and overlays, combat and dialogue boxes, and the tabbed workspace (editor, console, terminal, codex, library, diagnostics).
+ */
+/* Web fonts (pixel, code and UI typefaces) loaded from Google Fonts; the font stacks below fall back to monospace/sans-serif */
 @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Fira+Code:wght@400;600&family=Outfit:wght@400;600&display=swap');
 
 :root {
+    /* Theme variables: every colour and font below can be overridden by a palette class on the body */
     /* Theme Palette: Default JRPG Navy */
     --bg-primary: #0a0e1c;
     --bg-secondary: #12192c;

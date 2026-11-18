@@ -1,11 +1,19 @@
+# Program: ult - ch14_test.py
+# Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+# Last Modified: 2026-11-18
+# Purpose: Automated check for chapter 14 (Fine-Tuning Fiord (LoRA Adapter)): inspects the player's saved solution and exits 0 on pass or 1 on failure.
+
 import os
 import sys
 import numpy as np
 
 def test_chapter_14():
+    """Locate the chapter 14 solution (sandbox workspace first, local save folder as fallback), run the checks, print the result and exit with a status code."""
     print("Testing Chapter 14: Fine-Tuning Fiord (LoRA Adapter)...")
+    # Inside the sandbox the player's file lives under /workspace.
     solution_path = "/workspace/ch14_lora.py"
     if not os.path.exists(solution_path):
+        # Not found there, so fall back to the local save folder (running outside the sandbox).
         solution_path = "save_data/relic_save/ch14_lora.py"
         if not os.path.exists(solution_path):
             print("Error: Solution file 'ch14_lora.py' not found.")
@@ -72,5 +80,6 @@ def test_chapter_14():
     print("\n>>> All Chapter 14 tests passed! LoRA parameter fine-tuning operational.")
     sys.exit(0)
 
+# Run the check only when executed as a script, not when imported.
 if __name__ == "__main__":
     test_chapter_14()
