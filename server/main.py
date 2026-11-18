@@ -1,3 +1,9 @@
+# ==============================================================================
+# Program: main.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Core FastAPI server handling challenge submissions, save states, terminal web sockets, and scoring.
+# ==============================================================================
 import os
 import sys
 import sqlite3

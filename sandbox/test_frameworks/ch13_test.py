@@ -1,3 +1,9 @@
+# ==============================================================================
+# Program: ch13_test.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Automated grading test suite validating student solution submissions for Chapter 13 curriculum.
+# ==============================================================================
 import os
 import sys
 import math

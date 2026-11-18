@@ -1,4 +1,11 @@
 #!/usr/bin/env python3
+
+# ==============================================================================
+# Program: full_stack_smoke.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Comprehensive stack integration test verifying API server, sandbox execution, and asset delivery.
+# ==============================================================================
 import json
 import os
 import subprocess

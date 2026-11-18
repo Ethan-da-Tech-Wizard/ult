@@ -1,4 +1,11 @@
 #!/usr/bin/env bash
+
+# ==============================================================================
+# Program: build_sandbox.sh
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Docker container build script compiling the isolated execution sandbox for game challenges.
+# ==============================================================================
 # ─────────────────────────────────────────────────────────────────────────────
 # build_sandbox.sh
 # Builds the Arch Linux zeus-arch Docker image for the Sacred Tech sandbox.

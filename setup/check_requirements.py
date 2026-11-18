@@ -1,4 +1,11 @@
 #!/usr/bin/env python3
+
+# ==============================================================================
+# Program: check_requirements.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Pre-flight system requirements checker validating Python, Docker, QEMU, and virtualization.
+# ==============================================================================
 # ─────────────────────────────────────────────────────────────────────────────
 # check_requirements.py — System Requirements Checker for The Sacred Tech
 # ─────────────────────────────────────────────────────────────────────────────

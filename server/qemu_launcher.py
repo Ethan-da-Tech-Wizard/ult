@@ -1,3 +1,9 @@
+# ==============================================================================
+# Program: qemu_launcher.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Virtual machine orchestrator managing headless QEMU instances and serial I/O pipelines.
+# ==============================================================================
 import os
 import subprocess
 import socket

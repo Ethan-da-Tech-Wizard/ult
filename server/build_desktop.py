@@ -1,3 +1,9 @@
+# ==============================================================================
+# Program: build_desktop.py
+# Programmer: Ethan-da-Tech-Wizard
+# Last Modified: November 18, 2026
+# Purpose: Desktop executable packaging script bundling FastAPI backend and web client assets.
+# ==============================================================================
 import os
 import sys
 import subprocess
