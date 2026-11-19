@@ -7,7 +7,34 @@
 //          turn-based party combat mechanics, NPC dialog state trees, local inventory persistence,
 //          and asynchronous REST communications with the backend evaluation and sandbox runtime.
 // ==============================================================================
+
+// How this file fits the app: the entire front end of "The Sacred Tech" in one classic script (no modules,
+// no build step), loaded by client/index.html after the HTML elements exist. It draws a 16x14-tile
+// viewport of a 64x64-tile map on a <canvas> (retro 8-bit look), moves the player with arrow keys/WASD,
+// runs NPC dialogue, shops, a turn-based party combat system, a library of lessons, a code editor per
+// chapter, and two terminals.
+// Backend contract (server/main.py, same origin or http://127.0.0.1:8000): GET/POST /api/save and
+// /api/save/{id} (progress), GET /api/code and POST /api/compile (chapter code and validators), GET
+// /api/sandbox-status and /api/diagnostics, and the WebSockets /ws/shell, /ws/templeos and /ws/dev-reload.
+// All progress also lives in the global `player` object below; the server is only the durable copy.
+// Reading guide (approximate line ranges): state and constants (1-100); pixel sprites (93-240); map grids
+// (271-760); NPC dialogue database (761-2900); audio and settings (2900-3180); party, inventory and shops
+// (3180-3380); objectives, patrols, interaction (3390-3560); chests, manuals, race effects, bosses
+// (3560-3860); chapter hints and save/load (3850-4070); rendering (4066-4500); enemies and spells
+// (4498-4780); dialogue and combat (4778-5525); workspace tabs, chapter contracts, library, validator
+// coaching (5525-6700); editor/code loading, diagnostics, terminals, search (6680-7540); input handling,
+// settings, reset, event delegation, prologue (7550-8190).
+// Conventions: tile ids are 0 grass, 1 wall, 2 NPC, 3 chest, 4 altar, 5 water, 6 portal. Maps are numbered
+// 0-22 (0 = starting cabin, 1 = Alexandria City, 2 = overworld hub, 3-22 = chapter regions after the
+// restructuring step). Chapter ids are 0-21 and each unlocks the next through a "contract" (a passed
+// validator).
+// Known limits: everything is global mutable state, saves are whole-object overwrites (the last writer
+// wins), and the code assumes the DOM ids of client/index.html exist (most lookups are guarded, not all).
 // The Sacred Tech - Client Engine Logic
+
+// Game configuration. TILE_SIZE is the on-canvas size of one tile in pixels; the viewport shows VIEW_COLS
+// x VIEW_ROWS tiles (16x14 = a 512x448 canvas) while maps are MAP_COLS x MAP_ROWS (64x64) so the camera
+// scrolls. Changing a size here requires changing the canvas size in index.html.
 
 // Game Configuration & State
 const TILE_SIZE = 32;
@@ -16,6 +43,17 @@ const VIEW_ROWS = 14;
 const MAP_COLS = 64;
 const MAP_ROWS = 64;
 
+// The player/save object. Fields: x,y = tile position; direction = facing for the sprite; gold and tokens
+// = currency (tokens are "Compute Tokens" used for spells); activeLead = class name of the party member
+// who acts in the field; party = the four characters with combat stats (hp/max_hp, atk, def, spd, luc,
+// level, exp, next_exp, race, class); inventory = strings: consumables as "item:<id>", quest flags as
+// plain flags (for example "veridicus_defeated") and chapter contracts as "contract:<n>"; unlockedChapters
+// = chapter ids whose gate has been solved; currentChapter/currentMapId = where the player is;
+// openedChests = "map:x,y" keys; readManuals/readManualPages = lesson reading progress; lastSavedAt = ISO
+// time of the last successful server save.
+// This shape is mirrored by the server's save payload (stats_json = party, inventory_json = inventory,
+// state_json = the rest), by applySaveData() below, and by the default row in init_db() in server/main.py;
+// keep them in step.
 let player = {
     x: 8,
     y: 7,
@@ -39,9 +77,17 @@ let player = {
     lastSavedAt: null
 };
 
+// Pristine copy of the starting party; normalizePartyStats() fills gaps in old or partial saves from it.
 const DEFAULT_PARTY_STATS = player.party.map(char => ({ ...char }));
+
+// Gold cost to rest at a bonfire and full-heal the party. FINAL_CHAPTER = the last chapter id (the
+// TempleOS altar).
 const BONFIRE_REST_COST = 25;
 const FINAL_CHAPTER = 21;
+
+// Inventory flag names (stored as plain strings in player.inventory). The tutorial flags make sure each
+// one-time onboarding step is shown once; the two prefixes namespace consumable items and
+// chapter-completion contracts.
 const VERIDICUS_DEFEATED_FLAG = "veridicus_defeated";
 const OPENING_HINTS_FLAG = "opening_hints_seen";
 const TUTORIAL_LIBRARY_UNLOCKED_FLAG = "tutorial_library_unlocked";
@@ -50,6 +96,9 @@ const TUTORIAL_FIRST_PORTAL_FLAG = "tutorial_first_portal_reward_seen";
 const ITEM_PREFIX = "item:";
 const CONTRACT_PREFIX = "contract:";
 
+// Shop catalogue. `id` is the key stored as "item:<id>" and switched on in useInventoryItem(); price is in
+// gold. Effects are implemented in code, not data: potion +45 HP, tonic +35 Compute Tokens, charm +1 ATK
+// permanently, spray = 40 steps without random encounters.
 const SHOP_ITEMS = [
     { id: "patch_potion", name: "Patch Potion", price: 30, desc: "Restore 45 HP to the full party." },
     { id: "cache_tonic", name: "Cache Tonic", price: 45, desc: "Restore 35 Compute Tokens." },
@@ -57,6 +106,9 @@ const SHOP_ITEMS = [
     { id: "debug_spray", name: "Debug Spray", price: 40, desc: "Repel random encounters for 40 steps." }
 ];
 
+// NPC walking: every NPC placed at the coordinate key "x,y" shuffles along a short loop of tiles. The same
+// six templates are applied to every map, with a per-map interval offset ((mapId*17) % 200 ms) so NPCs on
+// different maps do not move in lockstep.
 // Patrol routes are loops of tiles; unwalkable points are skipped at runtime
 // (getPatrolPosition filters against the map grid), so routes degrade safely.
 const NPC_PATROLS = {};
@@ -68,6 +120,9 @@ const PATROL_TEMPLATES = {
     "14,1": { route: [[14, 1], [13, 1], [12, 1]], interval: 1500 },
     "3,3": { route: [[3, 3], [4, 3], [5, 3]], interval: 1600 }
 };
+
+// Populate NPC_PATROLS for maps 0-21. Map 22 (the shifted last region) has no entry, so
+// getPatrolPosition() leaves its NPCs standing on their home tiles.
 for (let mapId = 0; mapId <= 21; mapId++) {
     NPC_PATROLS[mapId] = {};
     Object.entries(PATROL_TEMPLATES).forEach(([coord, config]) => {
@@ -79,17 +134,24 @@ for (let mapId = 0; mapId <= 21; mapId++) {
 }
 
 
+// Timers and counters: autosave indicator timeout, grace steps after a fight before another encounter can
+// start, steps of encounter repel left (debug spray), and a counter used by an Easter-egg interaction.
 let autosaveTimer = null;
 let encounterGraceSteps = 0;
 let repelSteps = 0;
 let secretInteractCount = 0;
 
 
+// Smooth movement: logical position (player.x/y) jumps one tile at once, but the drawn position
+// (playerVisual) glides toward it at TWEEN_TILES_PER_SEC tiles per second (see tickPlayerTween), so
+// animation never changes gameplay logic.
 // Visual (sub-tile) player position used for smooth tile-to-tile tweening.
 // Logical position stays in player.x/y; this lags behind by up to one tile.
 const playerVisual = { x: 8, y: 7 };
 const TWEEN_TILES_PER_SEC = 9;
 
+// Sprites are 8x8 strings; each character is a colour key (see the palette in drawPixelSprite) and '.'
+// means transparent. Each sprite is scaled by TILE_SIZE/8 when drawn.
 // Retro 8-bit pixel art character sprites
 const SPRITE_PLAYER = [
     "..PPPP..",
@@ -235,11 +297,18 @@ const SPRITE_SNAIL = [
 ];
 
 // Custom 8-bit sprite renderer function
+
+// Draws one 8x8 sprite at a tile position on the main canvas context.
+// @param {string[]} spriteArray Eight strings of eight palette keys.
+// @param {number} tileX,tileY Tile coordinates (not pixels) of the top-left corner.
+// Side effects: fillRect calls on the global `ctx` (the main game canvas).
 function drawPixelSprite(spriteArray, tileX, tileY) {
     const startX = tileX * TILE_SIZE;
     const startY = tileY * TILE_SIZE;
     const pixelSize = TILE_SIZE / 8; // 32 / 8 = 4 canvas pixels per sprite pixel
     
+    // Palette key -> CSS colour: K black, W white, R red, B blue, G green, Y yellow, P purple, O orange, S
+    // skin, D dark grey, L light grey, N brown. Unknown keys fall back to white.
     const colors = {
         'K': '#000000',
         'W': '#ffffff',
@@ -267,6 +336,9 @@ function drawPixelSprite(spriteArray, tileX, tileY) {
     }
 }
 
+// Hand-authored 14x16 base layouts for the story maps (tile ids as listed). They are expanded to 64x64 at
+// start-up by expandMapGrid(); portals (6) and NPC tiles (2) in these base grids are the anchors for
+// portal and NPC logic elsewhere.
 // Map Grid definition (Tile IDs: 0=Grass, 1=Brick wall, 2=NPC, 3=Chest, 4=Altar, 5=Water, 6=Portal)
 const MAP_GRIDS = {
     0: [ // Outpost Zero (Starting Fort)
@@ -623,11 +695,17 @@ const MAP_GRIDS = {
     ]
 };
 
+// Deterministic pseudo-random number in [0,1) for a tile: the classic sine-hash (the large constants are
+// arbitrary) keyed by map id and coordinates, so the same map always generates the same terrain on every
+// load and the world does not change between sessions.
 function terrainNoise(mapId, x, y) {
     const raw = Math.sin((x + 1) * 12.9898 + (y + 1) * 78.233 + mapId * 37.719) * 43758.5453;
     return raw - Math.floor(raw);
 }
 
+// Chooses the filler tile for the expanded area of a map: some biomes get scattered walls (mountain/forest
+// maps), some water (swamp/river maps), the rest open grass. `ridge` adds a diagonal wall pattern on rocky
+// maps. The id lists name the maps with each biome.
 function getBiomeFieldTile(mapId, x, y) {
     const noise = terrainNoise(mapId, x, y);
     const ridge = (x + y + mapId) % 11 === 0;
@@ -639,6 +717,8 @@ function getBiomeFieldTile(mapId, x, y) {
     return 0;
 }
 
+// Turns tiles at the given coordinates into grass (0) to carve a path, but never touches portals and never
+// touches the outer border.
 function carveRoad(grid, points) {
     points.forEach(([x, y]) => {
         if (x > 0 && x < MAP_COLS - 1 && y > 0 && y < MAP_ROWS - 1) {
@@ -647,6 +727,13 @@ function carveRoad(grid, points) {
     });
 }
 
+// Builds a full 64x64 grid from a 14x16 base layout: border of walls, procedural biome fill, the hand-made
+// layout pasted at the top-left, then roads, four fixed landmarks (altars and chests, each with its
+// neighbours cleared), biome-specific features (a pond or a small walled shrine) and up to three
+// deterministic bonus chests. Everything placed on tile 0 so it is always walkable.
+// @param {number} mapId Map index (also seeds the noise).
+// @param {number[][]} baseGrid The 14x16 hand-made layout.
+// @returns {number[][]} 64 rows of 64 tile ids.
 function expandMapGrid(mapId, baseGrid) {
     const grid = Array.from({ length: MAP_ROWS }, (_, y) =>
         Array.from({ length: MAP_COLS }, (_, x) => {
@@ -664,6 +751,8 @@ function expandMapGrid(mapId, baseGrid) {
         });
     });
 
+    // Road network crossing the map: horizontal/vertical lines that connect the base layout to the
+    // landmarks, so the large map is traversable.
     const roads = [];
     for (let x = 14; x <= 29; x++) roads.push([x, 11]);
     for (let y = 6; y <= 24; y++) roads.push([24, y]);
@@ -671,6 +760,8 @@ function expandMapGrid(mapId, baseGrid) {
     for (let y = 11; y <= 20; y++) roads.push([7, y]);
     carveRoad(grid, roads);
 
+    // [x, y, tile] landmarks (tile 4 = altar, 3 = chest); the four orthogonal neighbours are cleared so
+    // they can be reached.
     const landmarks = [
         [22, 6, 4],
         [27, 9, 3],
@@ -698,6 +789,9 @@ function expandMapGrid(mapId, baseGrid) {
         carveRoad(grid, [[21, 15]]);
     }
 
+    // Bonus chests: scan for floor tiles and convert one where the noise exceeds 0.987 (about 1.3% of
+    // tiles), at most three per map. Deterministic, so chest keys ("map:x,y") stay stable across sessions
+    // and saves remain valid.
     // Sprinkle a few deterministic bonus chests on open floor tiles so the
     // expanded regions reward exploring. Placing on tile 0 keeps them
     // walkable/reachable by construction.
@@ -715,6 +809,10 @@ function expandMapGrid(mapId, baseGrid) {
     return grid;
 }
 
+// One-time restructuring done at load: the originally authored maps 2-21 are shifted to ids 3-22 so a new
+// overworld hub (map 2) and a starting cabin (map 0) can be inserted. This is why map ids and chapter ids
+// differ by one for chapters 2 and later (see getMapForChapter). Immediately invoked so no helper stays in
+// global scope.
 // Restructure and shift Map Grids programmatically
 (function restructureMapGrids() {
     const originalGrids = { ...MAP_GRIDS };
@@ -726,6 +824,8 @@ function expandMapGrid(mapId, baseGrid) {
         }
     }
     
+    // Map 0: the dark starting cabin; the glowing rock (altar tile 4) at (6,4) starts the tutorial and the
+    // portal (6) at (7,10) is the exit.
     // 2. Define Map 0 (Starting Cabin Room)
     MAP_GRIDS[0] = [
         [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
@@ -744,6 +844,7 @@ function expandMapGrid(mapId, baseGrid) {
         [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]
     ];
     
+    // Map 2: an empty field used as the overworld hub; NPCs and portals are added by other tables.
     // 3. Define Map 2 (Overworld base grid of zeroes)
     MAP_GRIDS[2] = Array.from({ length: 14 }, () => Array(16).fill(0));
     
@@ -753,10 +854,15 @@ function expandMapGrid(mapId, baseGrid) {
     }
 })();
 
+// Finally expand every base grid to the full 64x64 size (this loop runs once at load; afterwards
+// MAP_GRIDS[map][y][x] is the live map).
 Object.keys(MAP_GRIDS).forEach(mapId => {
     MAP_GRIDS[mapId] = expandMapGrid(Number(mapId), MAP_GRIDS[mapId]);
 });
 
+// NPC database: NPCS[mapId]["x,y"] = {name, dialogue tree, ...}. Dialogue entries support branching
+// options handled by checkInteraction()/showDialogue(); this table is data only and is by far the largest
+// part of the file.
 // NPCs database structured by chapter ID and coordinate keys
 const NPCS = {
     0: {
@@ -3004,6 +3110,8 @@ let gameSettings = {
     muted: false
 };
 
+// Settings persistence uses localStorage under SETTINGS_STORAGE_KEY; storage can throw (private mode,
+// quota), so failures are logged and the defaults stay active.
 function loadGameSettings() {
     try {
         const raw = localStorage.getItem(SETTINGS_STORAGE_KEY);
@@ -3021,6 +3129,8 @@ function saveGameSettings() {
     }
 }
 
+// Colour-palette setting: resets the body class to the CRT look and adds `palette-<name>` (CSS in
+// style.css) unless the default is chosen.
 function applyPalette(palette) {
     document.body.className = "retro-crt";
     if (palette !== "default") {
@@ -3028,17 +3138,21 @@ function applyPalette(palette) {
     }
 }
 
+// Slider value DEFAULT_BGM_VOLUME corresponds to the authored loudness (factor 1.0); muting forces 0.
 // Slider value of DEFAULT_BGM_VOLUME plays themes at their authored gain
 function getMasterVolumeFactor() {
     return gameSettings.muted ? 0 : gameSettings.bgmVolume / DEFAULT_BGM_VOLUME;
 }
 
+// Applies the current volume to the music that is already playing, without restarting it.
 function applyBgmVolume() {
     if (currentBgmGainNode && audioCtx) {
         currentBgmGainNode.gain.setValueAtTime(currentBgmBaseGain * getMasterVolumeFactor(), audioCtx.currentTime);
     }
 }
 
+// Web Audio needs a user gesture before it may start, so the AudioContext is created lazily (after the
+// first key press or click) rather than at load.
 // Initialize Web Audio Synth
 function initAudio() {
     if (!audioCtx) {
@@ -3046,6 +3160,9 @@ function initAudio() {
     }
 }
 
+// Plays a short synthesized sound effect (no audio files). `type` selects pitch, length, loudness and
+// waveform: step, menu, hit, coin, heal; anything else gets the default beep. Each sound is an oscillator
+// whose gain decays exponentially to near zero, which avoids a click at the end.
 function playSfx(type) {
     if (!audioCtx || gameSettings.muted) return;
     try {
@@ -3070,6 +3187,9 @@ function playSfx(type) {
     }
 }
 
+// Starts the looping background music for a theme using two oscillators: a treble voice following
+// track.notes and a bass voice changing every fourth note. A timer (setInterval) steps through the melody
+// at half a beat per tick. Calls stopBgm() first, so only one track plays.
 function playBgm(theme) {
     if (!audioCtx) return;
     stopBgm();
@@ -3153,6 +3273,8 @@ function playBgm(theme) {
     }
 }
 
+// Stops the timer and disconnects every audio node; resets the module-level references so nothing leaks
+// between tracks.
 function stopBgm() {
     if (bgmSequenceInterval) {
         clearInterval(bgmSequenceInterval);
@@ -3181,6 +3303,9 @@ function stopBgm() {
 
 
 // REST Client calls
+
+// Merges a saved party array with the default party: missing numbers fall back to defaults, next_exp is
+// recomputed when absent, and hp can never exceed max_hp. Protects against old saves and hand-edited data.
 function normalizePartyStats(savedParty = []) {
     return DEFAULT_PARTY_STATS.map((defaults, index) => {
         const saved = savedParty[index] || {};
@@ -3201,10 +3326,14 @@ function normalizePartyStats(savedParty = []) {
     });
 }
 
+// Experience needed for the next level: 100 at level 1, growing 35% per level, rounded.
 function getNextExpForLevel(level) {
     return Math.round(100 * Math.pow(1.35, level - 1));
 }
 
+// Adds experience to every party member and applies level-ups (a loop, because one reward may cross
+// several levels): +10 max HP and full heal, +2 ATK, +1 DEF, +1 SPD on even levels. Returns messages like
+// "Name reached Lv 3" for the victory screen.
 function awardPartyExp(expAmount) {
     const levelUps = [];
 
@@ -3229,6 +3358,8 @@ function awardPartyExp(expAmount) {
     return levelUps;
 }
 
+// Bonfire rest: costs BONFIRE_REST_COST gold, fully heals the party and saves to the server; otherwise
+// explains why not.
 function restPartyAtBonfire() {
     if (player.gold < BONFIRE_REST_COST) {
         showDialogue("Bonfire of the First Flame", `The bonfire waits, but the innkeeper's lockbox is stern. Resting costs ${BONFIRE_REST_COST} Gold.`);
@@ -3244,6 +3375,8 @@ function restPartyAtBonfire() {
     showDialogue("Bonfire of the First Flame", `You rest beside the coiled sword. HP restored for the whole party. ${BONFIRE_REST_COST} Gold paid to keep the fire linked.`);
 }
 
+// Inventory helpers. Consumables are stored as repeated "item:<id>" strings (one entry per unit), so
+// counting means filtering the array.
 function getItemKey(itemId) {
     return `${ITEM_PREFIX}${itemId}`;
 }
@@ -3271,6 +3404,9 @@ function findShopItem(itemId) {
     return SHOP_ITEMS.find(item => item.id === itemId);
 }
 
+// Opens the shop overlay (#inventory-overlay) with one Buy button per catalogue item. The buttons carry
+// data-item-id and are handled by the delegated click listener in initEventDelegation(), so there are no
+// inline handlers.
 function openShop(shopName = "Outpost Supply") {
     const overlay = document.getElementById("inventory-overlay");
     const title = document.getElementById("inventory-title");
@@ -3291,6 +3427,7 @@ function openShop(shopName = "Outpost Supply") {
     overlay.classList.remove("hidden");
 }
 
+// Opens the inventory overlay listing owned consumables with a Use button each (or an empty message).
 function openInventory() {
     const overlay = document.getElementById("inventory-overlay");
     const title = document.getElementById("inventory-title");
@@ -3315,6 +3452,8 @@ function openInventory() {
     overlay.classList.remove("hidden");
 }
 
+// Buy flow: check gold, deduct, add the item, play the coin sound, refresh the HUD, save to the server and
+// redraw the shop.
 function buyShopItem(itemId) {
     const item = findShopItem(itemId);
     if (!item) return;
@@ -3332,6 +3471,9 @@ function buyShopItem(itemId) {
     openShop("Outpost Supply");
 }
 
+// Use flow: apply the effect, consume one unit, play a sound, refresh and save. The effects: patch potion
+// +45 HP to everyone, cache tonic +35 tokens, compiler charm +1 ATK to the active lead, debug spray sets
+// repelSteps = 40.
 function useInventoryItem(itemId) {
     const item = findShopItem(itemId);
     if (!item || countInventoryItem(itemId) <= 0) return;
@@ -3355,11 +3497,13 @@ function useInventoryItem(itemId) {
     openInventory();
 }
 
+// True while the inventory/shop overlay is visible; used to route keyboard input.
 function isInventoryOpen() {
     const overlay = document.getElementById("inventory-overlay");
     return Boolean(overlay && !overlay.classList.contains("hidden"));
 }
 
+// Shows a small toast ("Saved", "Need Gold", ...) for 1.8 s.
 function showAutosaveIndicator(text = "Saved") {
     const indicator = document.getElementById("autosave-indicator");
     if (!indicator) return;
@@ -3370,6 +3514,7 @@ function showAutosaveIndicator(text = "Saved") {
     autosaveTimer = setTimeout(() => indicator.classList.add("hidden"), 1800);
 }
 
+// Formats an ISO timestamp as a local HH:MM, with "never"/"unknown" for missing or invalid values.
 function formatSaveTime(isoValue) {
     if (!isoValue) return "never";
     const date = new Date(isoValue);
@@ -3387,10 +3532,15 @@ function manualSave() {
     uploadSaveState("Manual Save");
 }
 
+// A chapter's portal is open when its contract (validator pass) is complete or the next chapter is already
+// unlocked in the save.
 function isChapterGateOpen(chapterId) {
     return isContractComplete(chapterId) || player.unlockedChapters.includes(chapterId + 1);
 }
 
+// Objective text for the tutorial chapter: a strict sequence (restore colour in the terminal, read the
+// Python manual, talk to the smith, compile chapter 0, use the portal) so a new player always sees exactly
+// one next step.
 function getChapter0TutorialObjective() {
     if (screenMode === "dark") return "Objective: use Alt+5 Terminal, then compile Chapter 0 to restore color.";
     if (!isManualPageRead("python-field-manual", 0)) return "Objective: read Python Field Manual page 1 in Alt+9 Library.";
@@ -3400,6 +3550,8 @@ function getChapter0TutorialObjective() {
     return "Objective: enter the purple portal to reach Alexandria Library.";
 }
 
+// Returns the one-line objective shown in the HUD for the current game state; checks run from earliest to
+// latest requirement and the first unmet one wins.
 function getCurrentObjective() {
     if (player.currentChapter === 0) return getChapter0TutorialObjective();
     if (screenMode === "dark") return "Objective: use Alt+5 Terminal to restore the environment.";
@@ -3416,6 +3568,10 @@ function updateObjectiveTracker() {
     if (objective) objective.innerText = getCurrentObjective();
 }
 
+// Where an NPC currently stands. NPCs are keyed by their home tile ("x,y"); this picks the current tile of
+// their patrol loop from the clock (Date.now() / interval), skipping route tiles that are not walkable,
+// and returns the home tile when no patrol exists. Because it is clock-based, every call in the same
+// instant agrees without any stored state.
 function getPatrolPosition(mapId, key) {
     const patrol = NPC_PATROLS[mapId]?.[key];
     const [homeX, homeY] = key.split(",").map(Number);
@@ -3436,6 +3592,7 @@ function getPatrolPosition(mapId, key) {
     return { x, y };
 }
 
+// Finds the NPC (if any) standing on a tile right now by comparing every NPC's current patrol position.
 function getNPCAtPosition(x, y) {
     const mapId = player.currentMapId;
     const chapterNPCs = NPCS[mapId] || {};
@@ -3449,6 +3606,9 @@ function getNPCAtPosition(x, y) {
     return null;
 }
 
+// Looks at the four tiles around the player and returns the first thing the Enter key could act on: an
+// NPC, chest, altar or portal (with a label such as "Portal sealed" when the chapter gate is still
+// closed). Returns null in dialogue, combat, code focus or dark mode.
 function getAdjacentInteraction() {
     if (dialogueActive || isCombat || focusMode === "code" || screenMode === "dark") return null;
 
@@ -3481,6 +3641,7 @@ function getAdjacentInteraction() {
     return null;
 }
 
+// Shows or hides the "Enter: ..." prompt near the player according to getAdjacentInteraction().
 function updateInteractPrompt() {
     const prompt = document.getElementById("interact-prompt");
     if (!prompt) return;
@@ -3495,6 +3656,9 @@ function updateInteractPrompt() {
     prompt.classList.remove("hidden");
 }
 
+// Which tile the minimap should highlight as the next goal (the glowing rock in the dark cabin, the cabin
+// exit, Scribe Cassia in chapter 1, or the first portal once the gate is open); null when there is no
+// specific target.
 // Where should the player head next? Used to pulse a marker on the minimap.
 function getObjectiveMarker() {
     if (screenMode === "dark") {
@@ -3522,6 +3686,10 @@ function getObjectiveMarker() {
     return null;
 }
 
+// Draws the 64x64 map on the small canvas (#minimap-canvas), one coloured rectangle per tile (walls grey,
+// water blue, portal purple, altar yellow, chest orange, grass green), then NPCs in white, the player in
+// red and a pulsing outline on the objective marker. Called by the ambient redraw interval so the pulse
+// animates.
 function drawMinimap() {
     const minimap = document.getElementById("minimap-canvas");
     if (!minimap) return;
@@ -3563,6 +3731,9 @@ function drawMinimap() {
     }
 }
 
+// Random-encounter probability per step: 8% normally, 2.5% on the safe story maps (cabin, city, hub and
+// the last regions), reduced to 30% when standing next to an interaction and to 60% near the top/bottom
+// edges.
 function getEncounterRate(x, y) {
     const mapId = player.currentMapId;
     let rate = 0.08;
@@ -3572,6 +3743,7 @@ function getEncounterRate(x, y) {
     return rate;
 }
 
+// Flag helpers on player.inventory (plain strings): a flag is added at most once.
 function hasInventoryFlag(flag) {
     return player.inventory.includes(flag);
 }
@@ -3582,6 +3754,8 @@ function addInventoryFlag(flag) {
     }
 }
 
+// Chest bookkeeping: key "<map>:<x>,<y>" is saved in player.openedChests so a chest stays empty after
+// reload.
 function getChestKey(mapId, x, y) {
     return `${mapId}:${x},${y}`;
 }
@@ -3597,6 +3771,7 @@ function markChestOpened(mapId, x, y) {
     }
 }
 
+// Reward by map (gold, tokens and a flavour note); maps not listed give a default 20 gold and 10 tokens.
 function getChestReward(mapId) {
     const rewards = {
         0: { gold: 20, tokens: 10, note: "Onboarding Supplies" },
@@ -3612,6 +3787,8 @@ function getChestReward(mapId) {
     return rewards[mapId] || { gold: 20, tokens: 10, note: "Relic Supplies" };
 }
 
+// Lesson-page read tracking, keyed "<bookId>:<pageIndex>". markManualPageRead returns true only the first
+// time (used to give one-time rewards).
 function getManualPageKey(bookId, pageIndex) {
     return `${bookId}:${pageIndex}`;
 }
@@ -3629,6 +3806,7 @@ function markManualPageRead(bookId, pageIndex) {
     return false;
 }
 
+// Chapters 0-20 that are not yet unlocked; the final altar requires this list to be empty.
 function getMissingRequiredChapters() {
     const missing = [];
     for (let chapter = 0; chapter < FINAL_CHAPTER; chapter++) {
@@ -3637,6 +3815,8 @@ function getMissingRequiredChapters() {
     return missing;
 }
 
+// Cut-scene text shown when travelling to certain chapters (1, 5, 8, 12, 16, 18, 21 have bespoke scenes;
+// others get a generic warp message).
 function getChapterTransitionScene(nextChapter) {
     const scenes = {
         1: {
@@ -3674,6 +3854,7 @@ function getChapterTransitionScene(nextChapter) {
     };
 }
 
+// Display name of the region for a chapter (via its map id), for HUD text.
 function getLocationNameForChapter(chapterId) {
     const locationNames = {
         0: "Outpost Zero",
@@ -3702,10 +3883,13 @@ function getLocationNameForChapter(chapterId) {
     return locationNames[getMapForChapter(chapterId)] || "The Sacred Tech";
 }
 
+// The party member currently leading in the field: matched by class or name, falling back to the first
+// member.
 function getActivePartyMember() {
     return player.party.find(char => char.class === player.activeLead || char.name === player.activeLead) || player.party[0];
 }
 
+// Maps a race string to one of four combat affinities (Silicon, Carbon, Ether, Quantum, else Neutral).
 function getRaceAffinity(raceName) {
     if (!raceName) return "Neutral";
     if (raceName.includes("Silicon")) return "Silicon";
@@ -3715,6 +3899,10 @@ function getRaceAffinity(raceName) {
     return "Neutral";
 }
 
+// Attacker bonuses by affinity: Silicon deals +10% to Ether enemies; Carbon has a 12% (up to 32% with
+// luck) chance for a critical +20% that also heals; Ether spells do +20%; Quantum has a 25% chance of +35%
+// damage and refunds 5 tokens. Returns the damage (at least 1, rounded) and log notes. Uses Math.random,
+// so results vary.
 function applyPlayerRaceEffects(baseDamage, actor, enemy, actionType) {
     const affinity = getRaceAffinity(actor.race);
     let damage = baseDamage;
@@ -3749,6 +3937,9 @@ function applyPlayerRaceEffects(baseDamage, actor, enemy, actionType) {
     return { damage: Math.max(1, Math.round(damage)), notes };
 }
 
+// Defender bonuses: Silicon 18% chance to take 25% less; Carbon takes 15% less when below half HP; Ether
+// 15% chance to avoid the hit; Quantum 12% chance to convert the hit into 3 tokens. Returns damage (can be
+// 0) and notes.
 function applyDefensiveRaceEffects(baseDamage, target) {
     const affinity = getRaceAffinity(target.race);
     let damage = baseDamage;
@@ -3771,16 +3962,22 @@ function applyDefensiveRaceEffects(baseDamage, target) {
     return { damage: Math.max(0, Math.round(damage)), notes };
 }
 
+// Enemy pool for a map; the final map excludes the boss Veridicus from random encounters (he is only
+// fought on purpose).
 function getEncounterTemplates(mapId) {
     const templates = MAP_ENEMIES[mapId] || MAP_ENEMIES[0];
     if (mapId !== FINAL_CHAPTER) return templates;
     return templates.filter(enemy => enemy.name !== "Librarian Veridicus");
 }
 
+// Chapter special abilities the player has earned by completing that chapter's contract.
 function getUnlockedCombatAbilities() {
     return CHAPTER_COMBAT_ABILITIES.filter(ability => isContractComplete(ability.chapter));
 }
 
+// Enemy status effects (for example weakened) stored on currentEnemy.statuses as {name, turns}.
+// applyEnemyStatus refreshes to the longer duration instead of stacking; consumeEnemyStatus spends one
+// turn of a status and returns whether it was active.
 function applyEnemyStatus(statusName, turns = 1) {
     if (!currentEnemy.statuses) currentEnemy.statuses = [];
     const existing = currentEnemy.statuses.find(status => status.name === statusName);
@@ -3800,6 +3997,9 @@ function consumeEnemyStatus(statusName) {
     return true;
 }
 
+// Boss encounter: the final fight against Librarian Veridicus is allowed only when all earlier chapters
+// are unlocked and he has not already been defeated (flag veridicus_defeated); otherwise the NPC explains
+// what is missing.
 function getVeridicusTemplate() {
     return (MAP_ENEMIES[FINAL_CHAPTER] || []).find(enemy => enemy.name === "Librarian Veridicus");
 }
@@ -3830,6 +4030,8 @@ function startVeridicusEncounter() {
     });
 }
 
+// Interaction with the last altar: requires being on the final chapter, all earlier chapters unlocked, and
+// the boss defeated before the TempleOS terminal is offered.
 function inspectFinalAltar() {
     if (player.currentChapter !== FINAL_CHAPTER) {
         showDialogue("Relic Altar", "System booted. Load Chapter Editor targets on the right to compile Relic modules.");
@@ -3850,6 +4052,8 @@ function inspectFinalAltar() {
     showDialogue("Grand Altar", "The serial bridge is clear. Open Alt+7 TempleOS, transmit the HolyC checksum program, and finish the restoration.");
 }
 
+// Specialist hints per chapter: lines shown as dialogue by showOpeningHints() / renderSpecialistHints();
+// keyed by chapter id.
 const CHAPTER_HINTS = {
     0: [
         { speaker: "Compiler Smith", text: "Start in Alt+5 Terminal if the screen is dark. The first restore path is about shell basics: inspect, export PATH, and prove stdout works." },
@@ -3881,6 +4085,10 @@ function showOpeningHints() {
     updateObjectiveTracker();
 }
 
+// Fills the hint panel (#specialist-panel) with the speech bubbles for a chapter (or a default pair),
+// appended with a "Hide Hints" button handled by the delegated click listener. With forceOpen the panel is
+// shown even if it was hidden. Text is inserted as HTML, which is safe only because CHAPTER_HINTS is
+// hard-coded in this file.
 function renderSpecialistHints(chapterId = player.currentChapter, forceOpen = false) {
     const panel = document.getElementById("specialist-panel");
     const hintsContainer = document.getElementById("specialist-hints");
@@ -3903,6 +4111,13 @@ function renderSpecialistHints(chapterId = player.currentChapter, forceOpen = fa
     }
 }
 
+// Applies a save row from the server to the live game state. @param {Object} data A row of player_state
+// (gold, compute_tokens, unlocked_chapters "0,1,2", active_lead, inventory_json, stats_json, state_json).
+// @returns {boolean} false when the payload is not a save (no numeric gold), true after the UI has been
+// refreshed.
+// Defensive parsing: each JSON blob is parsed separately so one corrupt field does not discard the rest,
+// missing values fall back to the current values, and the screen mode (dark/monochrome/color) is restored
+// or inferred (chapter 0 complete means colour).
 function applySaveData(data) {
     if (typeof data.gold !== "number") return false;
     player.gold = data.gold;
@@ -3953,6 +4168,8 @@ function applySaveData(data) {
     return true;
 }
 
+// Start-up load of the newest save. When the backend is offline the game continues with the built-in
+// defaults ("local mock cache"), and progress is simply not persisted.
 async function fetchSaveState() {
     try {
         const res = await fetch("http://127.0.0.1:8000/api/save");
@@ -3965,6 +4182,8 @@ async function fetchSaveState() {
     }
 }
 
+// Settings > Load Earlier Save: toggles a list of the 10 newest checkpoints from GET /api/saves; each row
+// has a Load button that calls loadSaveById(). Shows loading/empty/offline messages instead of throwing.
 // Save history browser (Settings > Load Earlier Save)
 async function renderSaveSlotList() {
     const list = document.getElementById("save-slot-list");
@@ -4010,6 +4229,7 @@ async function renderSaveSlotList() {
     }
 }
 
+// Loads one historical checkpoint by id and applies it (also closes the settings menu).
 async function loadSaveById(saveId) {
     try {
         const res = await fetch(`http://127.0.0.1:8000/api/save/${saveId}`);
@@ -4024,6 +4244,11 @@ async function loadSaveById(saveId) {
     }
 }
 
+// Writes the whole progress to the server (POST /api/save): currency, unlocked chapters, inventory, party
+// stats and a state blob (position, chests, manuals, screen mode, timestamp). Every call creates a NEW
+// row, which the server trims to the newest 50. Called after almost every meaningful event (purchase,
+// chest, level-up, portal), so failures are swallowed and shown as "Offline" instead of interrupting play.
+// @param {string} [label] Text shown in the autosave toast.
 async function uploadSaveState(label = "Saved") {
     showAutosaveIndicator("Saving...");
     const savedAt = new Date().toISOString();
@@ -4063,11 +4288,15 @@ async function uploadSaveState(label = "Saved") {
     }
 }
 
+// Chapter id -> map id: chapters 0 and 1 both live in map 1 (Alexandria City); chapter N >= 2 lives in map
+// N+1 (map 2 is the overworld hub).
 function getMapForChapter(chapterId) {
     if (chapterId <= 1) return 1;
     return chapterId + 1;
 }
 
+// Refreshes the top HUD text: currency, highest party level, location name and chapter, the objective
+// line, save status and the party HP bars.
 function updateUIHeaders() {
     const highestLevel = Math.max(...player.party.map(char => char.level || 1));
     document.getElementById("currency-text").innerText = `Gold: ${player.gold} | Tokens: ${player.tokens} | Lv ${highestLevel}`;
@@ -4078,6 +4307,8 @@ function updateUIHeaders() {
     renderPartyHud();
 }
 
+// Renders one HP bar row per party member (green above 50%, yellow above 25%, red below). Uses innerHTML
+// with names from the party data (trusted, from defaults/saves).
 function renderPartyHud() {
     const hud = document.getElementById("party-hud");
     if (!hud) return;
@@ -4093,6 +4324,8 @@ function renderPartyHud() {
     }).join("");
 }
 
+// Camera: top-left tile of the viewport, centred on the player but clamped to the map edges. The "visual"
+// variant below does the same from the tweened (fractional) player position for smooth scrolling.
 function getCameraOrigin() {
     const maxX = Math.max(0, MAP_COLS - VIEW_COLS);
     const maxY = Math.max(0, MAP_ROWS - VIEW_ROWS);
@@ -4112,6 +4345,8 @@ function getVisualCameraOrigin() {
     };
 }
 
+// Colour of a tile for the chosen map: each map has its own floor/wall/water triple (a biome palette);
+// portals are always purple and altars gold. Unknown maps fall back to map 0's palette.
 function getTileColor(tile, mapId) {
     const palettes = {
         0: { floor: "#10b981", wall: "#4b5563", water: "#2563eb" },
@@ -4145,6 +4380,12 @@ function getTileColor(tile, mapId) {
     return palette.floor;
 }
 
+// Draws one frame of the world: dark mode shows only the "SYSTEM OFFLINE" screen; otherwise it draws tiles
+// (one extra row/column so fractional scrolling leaves no gap), chests and altars, NPCs, the player sprite
+// at the tweened position, then the minimap and the interact prompt. Monochrome mode swaps sprites for
+// letters P/N and adds grid lines (an accessibility/retro option).
+// Called after every move, from the animation loop and from many UI handlers; it is cheap enough (about
+// 17x15 tiles) to redraw whole.
 // JRPG Overworld Canvas Renderer
 function drawMap() {
     updateUnlockedTabs();
@@ -4227,6 +4468,9 @@ function drawMap() {
     updateInteractPrompt();
 }
 
+// Draws every NPC tile of the current map at its current patrol position, skipping ones outside the
+// viewport. NPC data stores an emoji in `sprite`; the table below maps each emoji to one of the 12
+// pixel-art sprites (several emoji share a sprite). Unknown emoji use the player sprite.
 function drawNPCs(camera = getCameraOrigin()) {
     const activeGrid = MAP_GRIDS[player.currentMapId] || MAP_GRIDS[0];
     const chapterNPCs = NPCS[player.currentMapId] || {};
@@ -4322,6 +4566,15 @@ function drawNPCs(camera = getCameraOrigin()) {
     }
 }
 
+// Portal logic, depending on where the player stands: map 0 -> map 1 after a 1 s dialogue; map 1 ->
+// overworld only if the chapter gate is open; the overworld (map 2) -> back to Alexandria at (13,15) or
+// into a dungeon portal from DUNGEON_PORTALS if that chapter is unlocked; inside a dungeon -> back to the
+// overworld at the portal tile (7,11) if the gate is open. When refused the player is pushed one tile
+// back. Transitions are delayed with setTimeout so the dialogue can be read; each one saves to the server.
+// KNOWN BUG (reported, not fixed in this comment-only pass): DUNGEON_PORTALS is read below (overworld
+// portals and dungeon exits) but is not defined anywhere in the repository (git history shows it was
+// introduced in commit 2607b58 without a definition), so those two branches throw ReferenceError when
+// reached.
 // Warp Engine Portal Transitions
 function handlePortalTransition(worldX, worldY) {
     if (player.currentMapId === 0) {
@@ -4458,6 +4711,11 @@ function handlePortalTransition(worldX, worldY) {
     }
 }
 
+// Moves one tile if allowed: ignored during dialogue, combat, inventory, code focus and dark mode; blocked
+// by walls (1), water (5) and NPCs. After a successful step it plays a step sound, redraws, handles
+// portals, and on grass rolls for a random encounter (repel steps and post-fight grace steps are used up
+// first).
+// @param {number} dx,dy Step direction (-1, 0 or 1 each).
 // Collisions and Movements checks
 function movePlayer(dx, dy) {
     if (dialogueActive || isCombat || isInventoryOpen() || focusMode === 'code' || screenMode === 'dark') return;
@@ -4494,6 +4752,9 @@ function movePlayer(dx, dy) {
     }
 }
 
+// Enemy tables by map: name, sprite, hp/maxHp, atk, exp reward, race (for affinities) and optional
+// `ability`/`defeatText`. Map 0 has tutorial enemies; the Chapter 21 table also holds the boss Librarian
+// Veridicus.
 // Dynamic JRPG enemies per map area
 const MAP_ENEMIES = {
     0: [
@@ -4729,6 +4990,9 @@ const MAP_ENEMIES = {
 })();
 
 // Spells per player party class
+
+// Spells by class. Fields: cost in Compute Tokens, damage or an `effect` (defense_down lowers enemy
+// attack, shield/heal restore party HP), `multi` for double hits.
 const CLASS_SPELLS = {
     'Low-Level Optimizer': [
         { name: "Loop Unroll", cost: 15, damage: 35, desc: "Deals 35 optimization damage" },
@@ -4748,6 +5012,8 @@ const CLASS_SPELLS = {
     ]
 };
 
+// Combat topics each map's enemies are weak to; a chapter ability with the same `topic` deals 55% more
+// damage.
 const MAP_WEAKNESSES = {
     0: "PATH",
     1: "OCR",
@@ -4763,6 +5029,8 @@ const MAP_WEAKNESSES = {
     21: "HolyC"
 };
 
+// Special "skills" unlocked by completing a chapter (see getUnlockedCombatAbilities): cost, base damage,
+// matching topic and the status effect they inflict.
 const CHAPTER_COMBAT_ABILITIES = [
     { chapter: 0, name: "Path Strike", cost: 8, topic: "PATH", damage: 32, status: "Syntax Error", turns: 1, desc: "Hits PATH-weak enemies harder and disrupts their next special." },
     { chapter: 2, name: "Parameterized Guard", cost: 12, topic: "SQL", damage: 28, status: "Rate Limited", turns: 2, desc: "Weakens injection-type enemies by limiting their output." },
@@ -4772,9 +5040,12 @@ const CHAPTER_COMBAT_ABILITIES = [
     { chapter: 21, name: "HolyC Checksum", cost: 24, topic: "HolyC", damage: 60, status: "Deadlock", turns: 1, desc: "Bare-metal strike for the final altar." }
 ];
 
+// Current fight state. combatTurn is 'player', 'enemy' or 'waiting' (locks input while animations play).
 let currentEnemy = null;
 let combatTurn = 'player'; // 'player' or 'enemy'
 
+// Hook for context-sensitive NPC lines (for example Compiler Smith gives tutorial hints depending on
+// progress); returns the NPC object to show, possibly with replaced dialogue/options.
 function getContextualNpcDialogue(npc, mapId) {
     if (mapId === 0 && npc.name === "Compiler Smith" && screenMode === "color") {
         if (!hasInventoryFlag(TUTORIAL_SMITH_TALKED_FLAG)) {
@@ -4811,6 +5082,10 @@ function getContextualNpcDialogue(npc, mapId) {
 }
 
 // Trigger Interactions (chests, terminals, NPCs)
+
+// Enter-key interaction with whatever is next to the player: a hidden brick wall at (13,6) (three knocks
+// create the "Null Pointer" NPC, an Easter egg), NPC dialogue, altars (open the terminal in map 0 or the
+// final altar), portals, and chests (lore text, one-time gold/token reward, saved to the server).
 function checkInteraction() {
     if (focusMode === 'code' || screenMode === 'dark' || isInventoryOpen()) return;
     
@@ -4948,6 +5223,9 @@ function checkInteraction() {
     }
 }
 
+// Typewriter effect for dialogue: with the "scroll" speed setting it reveals two characters every 16 ms;
+// otherwise the text appears at once. The full text is kept so a keypress can finish it instantly
+// (completeDialogueText).
 // Retro char-scroll dialogue rendering (Settings > Dialogue Speed)
 let dialogueTypingTimer = null;
 let dialogueFullText = "";
@@ -4988,6 +5266,10 @@ function completeDialogueText() {
     if (textEl) textEl.innerText = dialogueFullText;
 }
 
+// Shows the dialogue box with a speaker, text and optional answer buttons. Choosing an option shows its
+// `reply` with a "Go Back" button that re-shows the question (isBackOption marks that second level); an
+// option with an `action` function runs that instead. A "Goodbye" button is added on the top level.
+// @param {Array<{text:string, reply?:string, action?:Function}>} [options]
 function showDialogue(speaker, text, options = null, isBackOption = false) {
     if (!dialogueActive) playSfx("menu");
     dialogueActive = true;
@@ -5037,6 +5319,7 @@ function showDialogue(speaker, text, options = null, isBackOption = false) {
     document.getElementById("dialogue-box").classList.remove("hidden");
 }
 
+// Closes the dialogue and refreshes the interact prompt.
 function hideDialogue() {
     if (dialogueTypingTimer) {
         clearInterval(dialogueTypingTimer);
@@ -5047,12 +5330,17 @@ function hideDialogue() {
     updateInteractPrompt();
 }
 
+// Turn-based combat. Enemies "telegraph": 30% of the time (if the enemy has an ability) the NEXT move is
+// its special, shown to the player one turn early so they can react.
 // Turn-based Combat logic
 // 30% chance the enemy winds up its special — shown to the player a turn early
 function rollEnemyIntent() {
     return currentEnemy && currentEnemy.ability && Math.random() < 0.30 ? "ability" : "attack";
 }
 
+// Starts a fight: marks combat active, plays battle music, picks an enemy (given template or random for
+// the map; the weakness comes from options, template or the map's weakness table), and opens the overlay.
+// options: {enemyTemplate, weakness, intro, isBoss}.
 function triggerCombat(options = {}) {
     isCombat = true;
     combatTurn = 'player';
@@ -5085,6 +5373,9 @@ function triggerCombat(options = {}) {
     initCombatScreen();
 }
 
+// Re-renders the whole combat screen: enemy line with a block-character HP bar, weakness, ability,
+// statuses and the telegraph, the party with HP/EXP, and the action menu (Attack, Spell, Skill, Item,
+// Lead, Flee) or a waiting button while it is not the player's turn.
 function initCombatScreen() {
     const enemyList = document.getElementById("enemies-list");
     const activeMember = getActivePartyMember();
@@ -5149,6 +5440,7 @@ function initCombatScreen() {
     }
 }
 
+// Sub-menu to choose which party member leads (acts) in combat.
 function showLeadSubmenu() {
     const menu = document.getElementById("combat-menu-options");
     menu.innerHTML = player.party.map((char, index) => `
@@ -5156,6 +5448,7 @@ function showLeadSubmenu() {
     `).join('') + `<button class="combat-menu-btn combat-back-btn">[Back]</button>`;
 }
 
+// Switches the lead if the target is alive; saves the choice.
 function setActiveLead(index) {
     const char = player.party[index];
     if (!char || char.hp <= 0) {
@@ -5171,6 +5464,11 @@ function setActiveLead(index) {
 }
 
 
+// Executes the chosen action. attack: damage = ATK x (0.9-1.1) with race effects; spell/skill open
+// sub-menus first and are then handled by castSpell/useChapterAbility; item: spend 10 tokens to heal
+// everyone 40; flee: escape except from bosses. After the player's action there is a 1.2 s pause, then
+// either victory or the enemy's turn (1 s later). The `waiting` state blocks double input during these
+// delays.
 function executeCombatAction(action, spellName = null) {
     const log = document.getElementById("combat-log-text");
     const menu = document.getElementById("combat-menu-options");
@@ -5244,6 +5542,7 @@ function executeCombatAction(action, spellName = null) {
     }
 }
 
+// Lists the active lead's class spells with their token cost.
 function showSpellSubmenu() {
     const menu = document.getElementById("combat-menu-options");
     const activeClass = getActivePartyMember().class;
@@ -5254,6 +5553,7 @@ function showSpellSubmenu() {
     `).join('') + `<button class="combat-menu-btn combat-back-btn">[Back]</button>`;
 }
 
+// Lists chapter skills the player has unlocked (or a disabled "none unlocked" button).
 function showChapterAbilitySubmenu() {
     const menu = document.getElementById("combat-menu-options");
     const abilities = getUnlockedCombatAbilities();
@@ -5267,6 +5567,8 @@ function showChapterAbilitySubmenu() {
     `).join('') + `<button class="combat-menu-btn combat-back-btn">[Back]</button>`;
 }
 
+// Uses a chapter skill: pays tokens; damage = base + 2 x level (x1.55 on a weakness hit); applies a status
+// effect; then ends the player's turn like any action.
 function useChapterAbility(abilityName) {
     const log = document.getElementById("combat-log-text");
     const menu = document.getElementById("combat-menu-options");
@@ -5307,6 +5609,8 @@ function useChapterAbility(abilityName) {
     }, 1200);
 }
 
+// Casts a class spell: pays tokens and applies damage (doubled for multi-hit spells, then race bonus),
+// lowers enemy attack by 4 (min 5), or heals the party 30 HP (36 for Ether races).
 function castSpell(spellName) {
     const log = document.getElementById("combat-log-text");
     const menu = document.getElementById("combat-menu-options");
@@ -5368,6 +5672,10 @@ function castSpell(spellName) {
     }, 1200);
 }
 
+// Enemy action: a deadlocked enemy loses the turn; otherwise it picks a random living party member, damage
+// = ATK x (0.8-1.2), reduced 30% when Rate Limited, +15% for a telegraphed ability, then the target's
+// defensive race effects apply. A "Syntax Error" status cancels the special once. The next intent is
+// rolled before acting so the telegraph is always one turn ahead.
 function enemyTurn() {
     const log = document.getElementById("combat-log-text");
     
@@ -5424,6 +5732,11 @@ function enemyTurn() {
     }, 1400);
 }
 
+// Victory: awards EXP (and the same number as gold), shows level-ups, records the boss flag for Veridicus,
+// saves, then closes combat after a short delay.
+// KNOWN BUG (reported, not fixed): playJingle() is called here and after a passed compile, but the
+// function was deleted in commit 2607b58 and is not defined anywhere now, so a ReferenceError is thrown at
+// this point and everything after it (gold, flags, save, endCombat) is skipped.
 function winCombat() {
     const log = document.getElementById("combat-log-text");
     const levelUps = awardPartyExp(currentEnemy.exp);
@@ -5459,6 +5772,8 @@ function winCombat() {
     }
 }
 
+// Defeat: costs up to 50 gold, fully heals the party, and warps to the respawn point with 6 steps of
+// encounter immunity.
 function loseCombat() {
     const log = document.getElementById("combat-log-text");
     log.innerText = `Your party was wiped out! Warping back to the nearest Shrine of Terry...`;
@@ -5485,6 +5800,8 @@ function loseCombat() {
     }, 2500);
 }
 
+// Respawn point: the Shrine of Terry at (2,7) if that tile is open on the current map, otherwise the
+// nearest open tile by Manhattan distance (generated maps cannot guarantee tile (2,7)).
 // Shrine of Terry is at (2,7) on map 0, but generated maps don't guarantee
 // that tile is open — fall back to the nearest walkable, NPC-free tile.
 function getRespawnPoint() {
@@ -5510,6 +5827,7 @@ function getRespawnPoint() {
     return best || { x: 2, y: 7 };
 }
 
+// Closes the combat overlay, resumes the overworld music and grants 6 grace steps without encounters.
 function endCombat() {
     isCombat = false;
     encounterGraceSteps = 6;
@@ -5518,10 +5836,14 @@ function endCombat() {
     drawMap();
 }
 
+// Tabs of the right-hand workspace (editor, terminal, TempleOS, chronicles, diagnostics, library...). The
+// buttons carry data-tab and the panes have the id pane-<tab>.
 // Workspace tab manager
 const tabButtons = document.querySelectorAll(".tab-btn");
 const tabPanes = document.querySelectorAll(".tab-pane");
 
+// Switches tab and starts what the tab needs: shell WebSocket for the terminal, TempleOS WebSocket, the
+// quest tree, the wiring diagnostics, or the library (which also counts pages as read).
 function activateWorkspaceTab(tabId) {
     const btn = document.querySelector(`.tab-btn[data-tab="${tabId}"]`);
     const pane = document.getElementById(`pane-${tabId}`);
@@ -5553,6 +5875,8 @@ tabButtons.forEach(btn => {
     });
 });
 
+// Code editor is a plain <textarea> (a "Monaco mock") with a line-number gutter, not the real Monaco
+// editor.
 // Monaco Editor Mock / Custom Area setup
 const codeEditor = document.getElementById("code-editor");
 const lineNumbers = document.getElementById("editor-line-numbers");
@@ -5577,6 +5901,12 @@ codeEditor.addEventListener("input", () => {
     lineNumbers.innerHTML = Array.from({ length: lines }, (_, i) => i + 1).join("<br>");
 });
 
+// Compile flow (Run button or Ctrl+Enter in the editor): POST the editor text to /api/compile for the
+// current chapter and print the validator output in the console tab. On success: unlock the chapter, pay
+// the contract reward once, play a fanfare (see the playJingle bug note near winCombat) and save; for
+// chapter 0 also run the dark -> monochrome -> colour transition and start the post-boot dialogue. On
+// failure: show the Learning Coach with hints. If the server cannot be reached an "offline simulator"
+// marks the chapter as passed without any verification, so progress made offline is not real validation.
 // Compile and Run Logic
 const runBtn = document.getElementById("run-btn");
 
@@ -5703,6 +6033,7 @@ runBtn.addEventListener("click", async () => {
     }
 });
 
+// Chapter list for the quest tree and chapter dropdown: {id, title, desc} per chapter.
 // Chapters data structured by ID
 const CHAPTERS = [
     { id: 0, title: "Chapter 0: Outpost Zero", desc: "Configure system path environment variables.", parent: null },
@@ -5729,6 +6060,8 @@ const CHAPTERS = [
     { id: 21, title: "Chapter 21: Altar of TempleOS", desc: "Boot bare-metal serial VM and run HolyC compilation checksums.", parent: 20 }
 ];
 
+// Field contracts per chapter: title, practical goal, deliverables and reward {gold, tokens, exp}. Shown
+// in the Chronicles tab; paid by completeChapterContract().
 const CHAPTER_CONTRACTS = {
     0: {
         title: "Restore the local toolchain",
@@ -5864,6 +6197,10 @@ const CHAPTER_CONTRACTS = {
     }
 };
 
+// Chapter contracts: each chapter has a "field contract" (title, goal, reward). A contract is complete
+// when the player owns the flag "contract:<n>", which the compile handler sets when the validator passes.
+// completeChapterContract() pays the reward once (gold, tokens, EXP to the whole party) and returns the
+// text to show, or null if there is none or it was already paid.
 function getChapterContract(chapterId) {
     return CHAPTER_CONTRACTS[chapterId] || null;
 }
@@ -5893,6 +6230,7 @@ function completeChapterContract(chapterId) {
     };
 }
 
+// Glossary: term -> short definition, used by the library chips and the codex search.
 const GLOSSARY_TERMS = {
     "PATH": "The shell environment variable listing directories where executable commands are searched.",
     "stdout": "The standard output stream. Shell redirection can write it to files with > or append with >>.",
@@ -5911,6 +6249,9 @@ const GLOSSARY_TERMS = {
     "serial bridge": "A connection that routes typed bytes to a VM or device over a serial-like stream."
 };
 
+// Library: books of lessons. Each book has an id, title, unlockChapter and pages; each page has title,
+// body, bullets, a code example, the expected output, glossary terms and the chapter (applyChapter) the
+// example belongs to. Pure data rendered with escaping by renderLibrary().
 const LIBRARY_BOOKS = [
     {
         id: "python-field-manual",
@@ -6284,6 +6625,8 @@ const LIBRARY_BOOKS = [
     }
 ];
 
+// Per-chapter lists of progressively stronger hints; getNextValidatorHint() walks through them each time a
+// compile fails.
 const VALIDATOR_HINTS = {
     0: ["Make sure PATH includes /usr/local/bin.", "Print a clear boot line so stdout is visible."],
     1: ["Return a matrix with the same row/column shape.", "Use 255 above threshold and 0 at or below threshold."],
@@ -6309,6 +6652,8 @@ const VALIDATOR_HINTS = {
     21: ["Reject Python def/print syntax.", "Accept HolyC markers such as U0, I64, or Print."]
 };
 
+// Per-chapter description of what the validator expects, plus an optional library link, used by
+// summarizeValidatorFailure().
 const VALIDATOR_EXPECTATIONS = {
     0: {
         expected: "A shell script that exports or updates PATH and prints visible output.",
@@ -6402,6 +6747,8 @@ const VALIDATOR_EXPECTATIONS = {
 
 let validatorHintCursor = {};
 
+// Cycles through the hints for a chapter one at a time (and wraps around), returning {text, index, total};
+// the cursor is kept in memory only.
 function getNextValidatorHint(chapterId) {
     const hints = VALIDATOR_HINTS[chapterId] || ["Read the field contract in Alt+3.", "Open Alt+9 Library for examples tied to this chapter."];
     const index = validatorHintCursor[chapterId] || 0;
@@ -6409,6 +6756,10 @@ function getNextValidatorHint(chapterId) {
     return { text: hints[index], index: index + 1, total: hints.length };
 }
 
+// Turns raw validator output (text from sandbox/test_frameworks) into a structured summary: the first
+// "Error:" line, missing function names parsed from "must define ..." messages, and "Got X, expected Y"
+// values, plus the chapter's static expectation. Regular expressions depend on the wording of the
+// validators; if they change the coach just shows the generic text.
 function summarizeValidatorFailure(chapterId, output) {
     const expectation = VALIDATOR_EXPECTATIONS[chapterId] || {
         expected: "The submitted code should satisfy the active chapter validator contract."
@@ -6434,6 +6785,9 @@ function summarizeValidatorFailure(chapterId, output) {
     };
 }
 
+// Builds the HTML of the "Learning Coach" box shown after a failed compile: problem, got/expected, the
+// next hint and a button to the relevant manual or the contract. All dynamic text goes through
+// escapeDiagnosticText() to avoid HTML injection from output.
 function renderValidatorFailureCoach(chapterId, output) {
     const summary = summarizeValidatorFailure(chapterId, output);
     const hint = getNextValidatorHint(chapterId);
@@ -6482,10 +6836,12 @@ const CODEX_ARTICLES = [
 let activeLibraryBookId = LIBRARY_BOOKS[0].id;
 let activeLibraryPage = 0;
 
+// A manual (library book) is unlocked when its chapter is unlocked or reached.
 function isManualUnlocked(book) {
     return player.unlockedChapters.includes(book.unlockChapter) || player.currentChapter >= book.unlockChapter;
 }
 
+// Marks a book as read; returns true only the first time.
 function markManualRead(bookId) {
     if (!player.readManuals.includes(bookId)) {
         player.readManuals.push(bookId);
@@ -6494,10 +6850,13 @@ function markManualRead(bookId) {
     return false;
 }
 
+// The book currently open in the library (falls back to the first).
 function getActiveLibraryBook() {
     return LIBRARY_BOOKS.find(book => book.id === activeLibraryBookId) || LIBRARY_BOOKS[0];
 }
 
+// Finds the lesson page that is meant for a chapter (page.applyChapter) and returns book/page ids and
+// titles, or null.
 function getLibraryLessonForChapter(chapterId) {
     for (let book of LIBRARY_BOOKS) {
         const pageIndex = book.pages.findIndex(page => page.applyChapter === chapterId);
@@ -6513,6 +6872,8 @@ function getLibraryLessonForChapter(chapterId) {
     return null;
 }
 
+// Renders the library: book list (with unlocked/read state), the current page, navigation and count; with
+// trackRead it marks the open page as read and may reward it.
 function renderLibrary(trackRead = false) {
     const list = document.getElementById("library-book-list");
     const title = document.getElementById("library-book-title");
@@ -6601,6 +6962,8 @@ function renderLibrary(trackRead = false) {
     showGlossaryTerm(page.terms[0]);
 }
 
+// Library navigation: open a book at page 0 (and render), or at a given page (also switches to the library
+// tab).
 function openLibraryBook(bookId) {
     activeLibraryBookId = bookId;
     activeLibraryPage = 0;
@@ -6614,12 +6977,14 @@ function openLibraryBookAtPage(bookId, pageIndex = 0) {
     renderLibrary(true);
 }
 
+// Returns a page object or null.
 function getLibraryPage(bookId, pageIndex) {
     const book = LIBRARY_BOOKS.find(item => item.id === bookId);
     if (!book) return null;
     return book.pages[pageIndex] || null;
 }
 
+// Copies the page's example code into the editor, updates the line-number gutter and focuses the editor.
 function insertLessonExample(bookId, pageIndex) {
     const page = getLibraryPage(bookId, pageIndex);
     if (!page || !codeEditor) return;
@@ -6629,6 +6994,8 @@ function insertLessonExample(bookId, pageIndex) {
     codeEditor.focus();
 }
 
+// "Apply to chapter": only allowed when that chapter is available; sets the current chapter, loads its
+// code from the server, then puts the lesson's example into the editor.
 function applyLessonChapter(chapterId, bookId, pageIndex) {
     const page = getLibraryPage(bookId, pageIndex);
     const chapterAvailable = player.unlockedChapters.includes(chapterId) || player.currentChapter >= chapterId;
@@ -6648,6 +7015,7 @@ function applyLessonChapter(chapterId, bookId, pageIndex) {
     });
 }
 
+// Shows a glossary definition (escaped) in the library side panel.
 function showGlossaryTerm(term) {
     const panel = document.getElementById("library-glossary-panel");
     if (!panel) return;
@@ -6657,6 +7025,7 @@ function showGlossaryTerm(term) {
     `;
 }
 
+// Rebuilds the chapter dropdown from the unlocked chapters only.
 // Active Chapter select dropdown updates
 function updateEditorChapterSelect() {
     const select = document.getElementById("editor-chapter-select");
@@ -6676,6 +7045,9 @@ function updateEditorChapterSelect() {
     select.value = player.currentChapter;
 }
 
+// Loads a chapter's starter or saved code: GET /api/code. If the backend is offline it shows a one-line
+// offline template and the expected file name instead. Also syncs the chapter selector, the quest tree
+// highlight, the browser tab text and hint panel.
 // REST Client: Load Chapter Code
 async function loadChapterCode(chapterId) {
     const codeEditor = document.getElementById("code-editor");
@@ -6738,6 +7110,8 @@ async function loadChapterCode(chapterId) {
     }
 }
 
+// Updates the mock "browser" tab with whitelisted documentation text for the current chapter (hard-coded
+// HTML snippets; no network access).
 // Whitelisted Search Browser Tab Updates
 function updateBrowserTab(chapterId) {
     const mockBrowserView = document.getElementById("mock-browser-view");
@@ -6881,6 +7255,12 @@ function updateBrowserTab(chapterId) {
 }
 
 // Chronicles Quest Dependency Tree Renderer
+
+// Renders the Chronicles tab: a card with the current objective and suggested reading, then one node per
+// chapter with its status (Locked, Unlocked, Active Target, Completed), the contract (reward, practical
+// task, deliverables) and buttons to open the lesson or the chapter. Node HTML uses innerHTML with data
+// from CHAPTERS/CHAPTER_CONTRACTS in this file (trusted). Row clicks are handled by delegation in
+// initEventDelegation().
 function renderChroniclesQuestTree() {
     const tree = document.getElementById("quest-tree");
     if (!tree) return;
@@ -6955,6 +7335,8 @@ function renderChroniclesQuestTree() {
     });
 }
 
+// Escapes the five HTML special characters so text can be inserted with innerHTML safely. Used for all
+// text that is not hard-coded (validator output, lesson text).
 function escapeDiagnosticText(value) {
     return String(value)
         .replace(/&/g, "&amp;")
@@ -6963,6 +7345,9 @@ function escapeDiagnosticText(value) {
         .replace(/"/g, "&quot;");
 }
 
+// Diagnostics helpers (used by runWiringDiagnostics): tile access with bounds checks, "walkable" test (not
+// wall, NPC or water), neighbour test, tile search, and a breadth-first search from the dungeon spawn
+// (1,7) to see whether a target tile can be reached by walking.
 function getTileAt(grid, x, y) {
     if (!grid || !grid[y] || typeof grid[y][x] === "undefined") return null;
     return grid[y][x];
@@ -7021,10 +7406,12 @@ function isReachableFromSpawn(grid, target) {
     return false;
 }
 
+// Records one finding {severity: critical|warn|info, title, detail}.
 function addDiagnosticIssue(items, severity, title, detail) {
     items.push({ severity, title, detail });
 }
 
+// Draws the diagnostics report into the Diagnostics tab: totals and a list of findings.
 function renderDiagnosticsReport(items, stats) {
     const summary = document.getElementById("diagnostics-summary");
     const statsPanel = document.getElementById("diagnostics-stats");
@@ -7058,6 +7445,14 @@ function renderDiagnosticsReport(items, stats) {
         `).join("");
 }
 
+// Self-test of the game data (Diagnostics tab and once at start-up). For each of the 22 chapters it
+// checks: the map exists with the expected 64x64 size, the spawn tile (1,7) and the respawn tile (2,7) are
+// walkable, the map has a portal and it is reachable, chests are reachable, every NPC tile has a complete
+// NPC record (and every record has a tile). It also checks NPC patrol routes, that the chapter registry
+// has no gaps or duplicates, and asks the server's /api/diagnostics about validators and templates. It
+// never changes the game; it only reports.
+// Known inconsistency (reported, not fixed): the patrol check reads `patrol.to`, but NPC_PATROLS entries
+// now use `route` arrays, so every patrol is reported as an out-of-bounds target and the report is noisy.
 async function runWiringDiagnostics() {
     const items = [];
     const expectedChapters = Array.from({ length: FINAL_CHAPTER + 1 }, (_, index) => index);
@@ -7276,6 +7671,9 @@ async function runWiringDiagnostics() {
 
 // Local PTY Terminal WebSocket Integration
 let shellSocket = null;
+
+// Updates the badge in the terminal tab from GET /api/sandbox-status: Arch container connected, host-shell
+// fallback, or backend offline.
 async function refreshSandboxStatusBadge() {
     const badge = document.getElementById("sandbox-status-badge");
     if (!badge) return;
@@ -7298,6 +7696,10 @@ async function refreshSandboxStatusBadge() {
     }
 }
 
+// Opens the shell WebSocket (/ws/shell) once, appends incoming text to #shell-output and reconnects every
+// 3 s after a close. Commands are sent by the #shell-input handler further down this file
+// (shellSocket.send(cmd + newline)). Note: server output is appended with innerHTML, so shell output
+// containing HTML would be rendered as markup (self-XSS in a single-user local tool).
 function initShellWebSocket() {
     refreshSandboxStatusBadge();
     if (shellSocket) return;
@@ -7329,6 +7731,8 @@ function initShellWebSocket() {
     }
 }
 
+// Same idea for the TempleOS serial console (/ws/templeos) but without auto-reconnect: the user re-opens
+// the tab to retry.
 // local TempleOS Serial VM Websocket Bridge
 let templeosSocket = null;
 function initTempleOSWebSocket() {
@@ -7361,6 +7765,9 @@ function initTempleOSWebSocket() {
 }
 
 // Local search and filter engine for Codex articles
+
+// Offline search over the codex articles (title, content, tags) and the glossary (term, definition):
+// case-insensitive substring match; an empty query lists everything.
 function searchCodex(query) {
     const results = document.getElementById("codex-search-results");
     if (!results) return;
@@ -7532,6 +7939,7 @@ document.getElementById("editor-chapter-select").addEventListener("change", (e) 
     loadChapterCode(chId);
 });
 
+// Show/hide helpers for the settings menu and the requirements modal; forceHide closes without toggling.
 function toggleSettingsMenu(forceHide = false) {
     const menu = document.getElementById("settings-menu");
     if (!menu) return;
@@ -7546,6 +7954,9 @@ function toggleRequirementsModal(forceHide = false) {
     else modal.classList.toggle("hidden");
 }
 
+// Held-key movement: a key press moves immediately, and while the key stays held the player repeats every
+// HELD_MOVE_INTERVAL_MS (150 ms) instead of relying on the operating system's key-repeat. DIRECTION_KEYS
+// maps WASD and arrow keys to (dx, dy).
 // Held-key movement: first press steps immediately, holding repeats on a
 // fixed cadence instead of relying on OS key-repeat.
 const DIRECTION_KEYS = {
@@ -7558,6 +7969,8 @@ const HELD_MOVE_INTERVAL_MS = 150;
 const heldDirections = [];
 let lastHeldMoveAt = 0;
 
+// Eases the drawn position toward the logical tile at TWEEN_TILES_PER_SEC; snaps instantly after a warp
+// (more than 2 tiles away). Returns true while something moved, so the caller knows to redraw.
 // Slide the visual position toward the logical tile; snap on warps (dist > 2)
 function tickPlayerTween(dt) {
     const dx = player.x - playerVisual.x;
@@ -7574,6 +7987,8 @@ function tickPlayerTween(dt) {
     return true;
 }
 
+// Per-frame loop (requestAnimationFrame): repeats movement for held keys when exploring freely, advances
+// the tween and redraws only when the visual position changed.
 let lastFrameAt = 0;
 function heldMovementLoop(now) {
     const dt = lastFrameAt ? (now - lastFrameAt) / 1000 : 0;
@@ -7596,6 +8011,7 @@ function heldMovementLoop(now) {
 }
 requestAnimationFrame(heldMovementLoop);
 
+// Releasing a key (or losing window focus) clears held directions so the character cannot keep walking.
 window.addEventListener("keyup", (e) => {
     const idx = heldDirections.indexOf(e.key);
     if (idx !== -1) heldDirections.splice(idx, 1);
@@ -7605,6 +8021,11 @@ window.addEventListener("blur", () => {
     heldDirections.length = 0;
 });
 
+// Global key handling, in priority order: resume a suspended AudioContext (browsers require a gesture),
+// advance the prologue, Alt+1..9 switch workspace tabs, inventory overlay keys, dialogue advancing
+// (Enter/Space/E), Tab (or Ctrl+E, if enabled) toggles between exploring and code focus, then movement,
+// Enter/Space/E to interact, I for inventory and Escape for settings. Keys typed into inputs/textareas are
+// not hijacked.
 // Keyboard Listeners (exploring, hotkeys)
 window.addEventListener("keydown", (e) => {
     if (audioCtx && audioCtx.state === "suspended") audioCtx.resume();
@@ -7699,6 +8120,8 @@ window.addEventListener("keydown", (e) => {
     }
 });
 
+// Settings UI: copies the stored settings into the controls; each control below saves immediately on
+// change (palette, dialogue speed, focus keys, volume, mute).
 // Settings handlers
 function syncSettingsUI() {
     const palette = document.getElementById("palette-selector");
@@ -7768,6 +8191,9 @@ if (manualSaveBtn) {
     manualSaveBtn.addEventListener("click", () => manualSave());
 }
 
+// Full reset: after a confirmation it restores the starting state (200 gold, 100 tokens, chapter 0 in the
+// dark cabin), clears inventory/chests/lessons, stops music, saves that state as a NEW checkpoint (older
+// checkpoints on the server remain loadable) and rebuilds the UI.
 function resetFullGame() {
     if (!confirm("Are you sure you want to completely reset the game? This will erase all your progress, gold, and levels, and return you to the beginning of Chapter 0.")) {
         return;
@@ -7809,6 +8235,7 @@ if (resetGameBtn) {
     resetGameBtn.addEventListener("click", () => resetFullGame());
 }
 
+// Buttons that open and close the "requirements" modal (from settings, the prologue and the terminal).
 // Requirements & Setup Warning Modal button triggers
 const openRequirementsBtn = document.getElementById("open-requirements-btn");
 if (openRequirementsBtn) {
@@ -7839,6 +8266,9 @@ if (terminalReqBtn) {
     });
 }
 
+// One place that binds click handlers by event delegation on containers (inventory, hints, combat menu,
+// console, library, quest tree), so buttons created later by innerHTML work without per-button listeners
+// and without inline onclick attributes.
 // Dynamic Event Delegation Binder
 function initEventDelegation() {
     // 1. Inventory & Shop Clicks
@@ -7981,6 +8411,9 @@ function initEventDelegation() {
 }
 
 // Development Auto-Reload Websocket Connection
+
+// Dev-only live reload: only on localhost/127.0.0.1 it connects to /ws/dev-reload and reloads the page
+// when the server reports changed client files; reconnects every 2 s.
 function initDevReloadWebSocket() {
     if (window.location.hostname !== "127.0.0.1" && window.location.hostname !== "localhost") {
         return;
@@ -8007,6 +8440,8 @@ function initDevReloadWebSocket() {
     }
 }
 
+// Prologue state: prologueIndex = current line of the opening story; postBootIndex = line of the dialogue
+// shown after chapter 0 passes (-1 = not running).
 let prologueIndex = 0;
 let postBootIndex = -1;
 
@@ -8023,6 +8458,8 @@ const POST_BOOT_DIALOGUES = [
     { speaker: "Deity Terry Shrine", text: "The Altar of TempleOS hums. Pilgrims must pass the 22 chapters of compilation to unlock the source weights." }
 ];
 
+// Shows the opening story while the screen is dark (and stops the music) or hides it and starts the
+// overworld music otherwise.
 function initPrologue() {
     const overlay = document.getElementById("prologue-overlay");
     if (!overlay) return;
@@ -8042,6 +8479,7 @@ function initPrologue() {
     updateUnlockedTabs();
 }
 
+// Shows one prologue line; the "use the terminal" prompt appears on the last line.
 function showPrologueStep() {
     const step = PROLOGUE_DIALOGUES[prologueIndex];
     if (!step) return;
@@ -8060,6 +8498,7 @@ function showPrologueStep() {
     }
 }
 
+// Enter/Space advances the prologue; after the last line it opens the terminal tab where chapter 0 starts.
 function advancePrologue() {
     if (prologueIndex < PROLOGUE_DIALOGUES.length - 1) {
         prologueIndex++;
@@ -8069,6 +8508,7 @@ function advancePrologue() {
     }
 }
 
+// Plays the scripted conversation after the first successful compile, then shows the opening hints.
 function advancePostBootDialogue() {
     postBootIndex++;
     if (postBootIndex < POST_BOOT_DIALOGUES.length) {
@@ -8081,6 +8521,10 @@ function advancePostBootDialogue() {
     }
 }
 
+// Progressive disclosure: only the terminal and library tabs exist in the dark; after boot the editor and
+// console appear, Chronicles/Codex after the first extra chapter, the browser tab from chapter 6,
+// diagnostics from chapter 13 and the TempleOS tab from chapter 21. If the active tab gets hidden, the
+// terminal tab becomes active.
 function updateUnlockedTabs() {
     const tabs = document.querySelectorAll(".tab-btn");
     tabs.forEach(tab => {
@@ -8126,6 +8570,8 @@ function updateUnlockedTabs() {
     });
 }
 
+// Draggable divider between the game view and the workspace: resizes the viewport width in pixels with a
+// 256 px minimum for both sides and redraws the map on release.
 // Draggable Panel Splitter
 function initSplitter() {
     const splitter = document.getElementById("layout-splitter");
@@ -8167,6 +8613,10 @@ function initSplitter() {
     });
 }
 
+// Start-up sequence on window load: bind delegated handlers, dev reload, load and apply settings, first
+// draw, audio object, splitter, fetch the newest save from the server, prologue, load chapter 0 code,
+// build the codex, quest tree, library and diagnostics, then redraw the map every 700 ms while idle so NPC
+// patrols and the objective pulse animate.
 // Startup Bootstrap
 window.addEventListener("load", () => {
     initEventDelegation();
