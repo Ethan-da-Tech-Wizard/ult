@@ -1,3 +1,5 @@
+# Rust package manifest for the Tauri desktop shell (see src/main.rs). The package is independent of the
+# Python server and of the CI workflow.
 [package]
 name = "zeus_assistant"
 version = "1.0.0"
@@ -5,9 +7,15 @@ description = "The Sacred Tech: Desktop Assistant Client"
 authors = ["Open Source Pilgrim"]
 edition = "2021"
 
+# build-dependencies run in build.rs at compile time; tauri-build generates the code that
+# tauri::generate_context!() reads (it requires a build.rs next to this manifest).
 [build-dependencies]
 tauri-build = { version = "1.5" }
 
+# `api-all` enables every Tauri JavaScript API (file system, shell, ...). That is convenient for
+# development but a larger attack surface than needed for a game that only talks to its local server;
+# narrow the feature list before shipping. serde/serde_json are declared for future IPC commands (none
+# exist yet).
 [dependencies]
 tauri = { version = "1.5", features = ["api-all"] }
 serde = { version = "1.0", features = ["derive"] }
