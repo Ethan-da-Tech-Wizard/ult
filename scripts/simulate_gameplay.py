@@ -10,8 +10,12 @@
 #          latencies, and generates an exhaustive Markdown progression log artifact.
 # ==============================================================================
 
-# How this file fits the app: developer tool (not part of CI) that plays through all 22 chapters automatically and writes a Markdown log to save_data/gameplay_progression.md (a tracked file in this repo, so running the script modifies it).
-# Caveat: unlike the CI smoke tests it does NOT set ZEUS_SAVE_DB_PATH, so it writes progress into the real save database (save_data/save_state.db) and leaves the game "completed" with extra checkpoint rows; back up or delete the save first if you care about it. The server output pipe is not read.
+# How this file fits the app: developer tool (not part of CI) that plays through all 22 chapters automatically
+# and writes a Markdown log to save_data/gameplay_progression.md (a tracked file in this repo, so running the
+# script modifies it).
+# Caveat: unlike the CI smoke tests it does NOT set ZEUS_SAVE_DB_PATH, so it writes progress into the real
+# save database (save_data/save_state.db) and leaves the game "completed" with extra checkpoint rows; back up
+# or delete the save first if you care about it. The server output pipe is not read.
 
 import json
 import os
@@ -26,7 +30,8 @@ import urllib.request
 ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 BASE_URL = "http://127.0.0.1:8000"
 
-# Human-readable title per chapter, used only for the log. Keep in step with CHAPTER_FILENAME_MAP / templates in server/main.py.
+# Human-readable title per chapter, used only for the log. Keep in step with CHAPTER_FILENAME_MAP / templates
+# in server/main.py.
 # Canonical chapter catalog titles mapping to specific challenge gates
 CHAPTER_NAMES = {
     0: "Outpost Zero (CLI Path Setup)",
@@ -54,7 +59,8 @@ CHAPTER_NAMES = {
 }
 
 
-# Same helper as in full_stack_smoke.py, but also prints the server's error body on HTTP errors for easier debugging.
+# Same helper as in full_stack_smoke.py, but also prints the server's error body on HTTP errors for easier
+# debugging.
 def request_json(path, method="GET", payload=None, timeout=10):
     """Executes HTTP JSON request against the local backend server."""
     data = None
@@ -87,7 +93,8 @@ def wait_for_server(proc, timeout=15):
     raise RuntimeError("Server did not become healthy in time.")
 
 
-# Walks chapters 0 to 21 and for each: fetch starter code, compile, record time, simulate a save, append a log section. Gold +100 and tokens +50 per chapter are simulation numbers, not the game's real reward formula.
+# Walks chapters 0 to 21 and for each: fetch starter code, compile, record time, simulate a save, append a log
+# section. Gold +100 and tokens +50 per chapter are simulation numbers, not the game's real reward formula.
 def main():
     """Main simulation driver stepping through all 22 chapter challenges."""
     print("🚀 Starting game server for progression playthrough...")
@@ -147,7 +154,8 @@ def main():
                 print(f"❌ Failed to solve chapter {ch_id}: {output}")
                 return 1
 
-            # Minimal save state is written after every chapter, so the final database row says "chapter 21, color mode".
+            # Minimal save state is written after every chapter, so the final database row says "chapter 21,
+            # color mode".
             # Update progression state variables
             unlocked.append(str(ch_id))
             gold += 100

@@ -11,7 +11,10 @@
 #          bound strictly to loopback interfaces with hot-reload capabilities.
 # ==============================================================================
 
-# How this file fits the app: the everyday launcher on macOS/Linux (./scripts/run_dev.sh). It makes sure the Python dependencies exist (creating .venv on first run), prints a notice about optional Docker/QEMU, and starts server/main.py, which serves both the API and the game client on http://127.0.0.1:8000. The Windows equivalent is scripts/run_dev.ps1.
+# How this file fits the app: the everyday launcher on macOS/Linux (./scripts/run_dev.sh). It makes sure the
+# Python dependencies exist (creating .venv on first run), prints a notice about optional Docker/QEMU, and
+# starts server/main.py, which serves both the API and the game client on http://127.0.0.1:8000. The Windows
+# equivalent is scripts/run_dev.ps1.
 # Halt on error (-e), treat uninitialized variables as fatal errors (-u),
 # and prevent pipe masking of intermediate non-zero return codes (-o pipefail).
 set -euo pipefail
@@ -35,7 +38,9 @@ fi
 # Phase 3: Self-Bootstrapping Virtual Environment Provisioning
 # ------------------------------------------------------------------------------
 
-# Interpreter choice: use .venv if it is healthy; otherwise use the system python3 if it already has the packages; otherwise bootstrap .venv. numpy is part of the check because several chapter validators import it.
+# Interpreter choice: use .venv if it is healthy; otherwise use the system python3 if it already has the
+# packages; otherwise bootstrap .venv. numpy is part of the check because several chapter validators import
+# it.
 # Default to system python3 unless virtual environment is active and healthy
 PY="python3"
 if [[ -x ".venv/bin/python" ]] && .venv/bin/python -c "import fastapi, uvicorn, numpy" >/dev/null 2>&1; then
@@ -72,6 +77,7 @@ echo ""
 # Phase 5: Executable Process Replacement
 # ------------------------------------------------------------------------------
 
-# `exec` replaces the shell with Python, so Ctrl+C and signals go straight to the server and no wrapper process lingers.
+# `exec` replaces the shell with Python, so Ctrl+C and signals go straight to the server and no wrapper
+# process lingers.
 # Replace the shell process image directly with the Uvicorn/FastAPI server process
 exec "$PY" server/main.py

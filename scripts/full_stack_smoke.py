@@ -11,10 +11,18 @@
 #          and sequentially executes and validates compile solutions across chapters 0 through 21.
 # ==============================================================================
 
-# How this file fits the app: CI job "Full-stack smoke" (.github/workflows/ci.yml) runs `python scripts/full_stack_smoke.py`; run it locally the same way from the repo root. It starts the real server (server/main.py) as a child process on 127.0.0.1:8000 with a throw-away save database, then drives the REST API like the browser would.
-# It proves: the server boots, all 22 chapter validators exist, saving/loading round-trips, an untouched starter template does NOT pass, and the starter code of chapters 1-21 plus the known Chapter 0 solution DO pass their validators. Exit codes: 0 success, 2 missing dependency, otherwise an assertion/exception trace.
-# Requirements: fastapi + uvicorn (requirements.txt); without Docker the validators run on the host Python (see server/sandbox_manager.py). Port 8000 must be free; the script does not choose another port.
-# Note: chapters 1-21 are compiled with whatever /api/code returns (the starter template, since the temporary database has no saved solutions) and are expected to pass their validators; chapter 0 is the exception and uses the known PATH solution below.
+# How this file fits the app: CI job "Full-stack smoke" (.github/workflows/ci.yml) runs `python
+# scripts/full_stack_smoke.py`; run it locally the same way from the repo root. It starts the real server
+# (server/main.py) as a child process on 127.0.0.1:8000 with a throw-away save database, then drives the REST
+# API like the browser would.
+# It proves: the server boots, all 22 chapter validators exist, saving/loading round-trips, an untouched
+# starter template does NOT pass, and the starter code of chapters 1-21 plus the known Chapter 0 solution DO
+# pass their validators. Exit codes: 0 success, 2 missing dependency, otherwise an assertion/exception trace.
+# Requirements: fastapi + uvicorn (requirements.txt); without Docker the validators run on the host Python
+# (see server/sandbox_manager.py). Port 8000 must be free; the script does not choose another port.
+# Note: chapters 1-21 are compiled with whatever /api/code returns (the starter template, since the temporary
+# database has no saved solutions) and are expected to pass their validators; chapter 0 is the exception and
+# uses the known PATH solution below.
 
 import json
 import os
@@ -25,13 +33,15 @@ import time
 import urllib.error
 import urllib.request
 
-# Repo root and the fixed loopback address used by every helper in this file (first_portal_smoke.py imports them from here).
+# Repo root and the fixed loopback address used by every helper in this file (first_portal_smoke.py imports
+# them from here).
 # Canonical root directory and local loopback address
 ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 BASE_URL = "http://127.0.0.1:8000"
 
 
-# Minimal JSON-over-HTTP helper built on the standard library so the test needs no `requests` package. Raises urllib.error.HTTPError on 4xx/5xx, which fails the test.
+# Minimal JSON-over-HTTP helper built on the standard library so the test needs no `requests` package. Raises
+# urllib.error.HTTPError on 4xx/5xx, which fails the test.
 def request_json(path, method="GET", payload=None, timeout=10):
     """Executes an HTTP JSON request against the local backend server.
 
@@ -55,7 +65,8 @@ def request_json(path, method="GET", payload=None, timeout=10):
         return json.loads(body) if body else {}
 
 
-# Polls /api/health every 0.4 s until it answers ok. Fails fast if the server process died (early exit) instead of waiting out the whole timeout.
+# Polls /api/health every 0.4 s until it answers ok. Fails fast if the server process died (early exit)
+# instead of waiting out the whole timeout.
 def wait_for_server(proc, timeout=20):
     """Polls the server health endpoint until operational status is confirmed or timeout expires.
 
@@ -81,7 +92,8 @@ def wait_for_server(proc, timeout=20):
 def main():
     """Main full-stack integration smoke testing routine."""
 
-    # The server is imported nowhere here (it runs as a subprocess), but a missing fastapi/uvicorn would otherwise appear as a confusing "server exited early" error.
+    # The server is imported nowhere here (it runs as a subprocess), but a missing fastapi/uvicorn would
+    # otherwise appear as a confusing "server exited early" error.
     # Pre-flight check: ensure required HTTP backend libraries are importable
     try:
         import fastapi  # noqa: F401
@@ -91,14 +103,17 @@ def main():
         print("Run: python3 -m pip install -r requirements.txt")
         return 2
 
-    # ZEUS_SAVE_DB_PATH points the server at a temporary database, so the player's real save_data/save_state.db is never touched. PYTHONPATH lets `from server import ...` work inside the child.
+    # ZEUS_SAVE_DB_PATH points the server at a temporary database, so the player's real
+    # save_data/save_state.db is never touched. PYTHONPATH lets `from server import ...` work inside the
+    # child.
     # Execute within an isolated temporary directory
     with tempfile.TemporaryDirectory(prefix="sacred-tech-smoke-") as tmp_dir:
         env = os.environ.copy()
         env["PYTHONPATH"] = ROOT_DIR
         env["ZEUS_SAVE_DB_PATH"] = os.path.join(tmp_dir, "save_state.db")
         
-        # Server output is captured into a pipe that this script never reads; a very chatty server could in theory fill the pipe buffer and stall, but the volume of INFO logs during this test is small.
+        # Server output is captured into a pipe that this script never reads; a very chatty server could in
+        # theory fill the pipe buffer and stall, but the volume of INFO logs during this test is small.
         # Launch backend FastAPI server subprocess
         proc = subprocess.Popen(
             [sys.executable, os.path.join(ROOT_DIR, "server", "main.py")],
@@ -122,7 +137,8 @@ def main():
                 raise AssertionError(f"missing validators: {missing}")
             print(f"[PASS] validators present: {len(diagnostics.get('validators_found', []))}")
 
-            # Round trip: POST a save with chapter 2 progress, then GET it back and check each field survived (strings are JSON inside JSON, hence the json.loads).
+            # Round trip: POST a save with chapter 2 progress, then GET it back and check each field survived
+            # (strings are JSON inside JSON, hence the json.loads).
             # 3. Save state roundtrip persistence verification
             save_payload = {
                 "gold": 321,
@@ -156,7 +172,8 @@ def main():
             assert saved_state.get("lastSavedAt") == "2026-06-09T00:00:00.000Z"
             print("[PASS] save/load persistence")
 
-            # Guards against a validator that always passes: the unmodified Chapter 0 skeleton must fail. The `skeleton=1` flag forces the template even if a saved solution exists.
+            # Guards against a validator that always passes: the unmodified Chapter 0 skeleton must fail. The
+            # `skeleton=1` flag forces the template even if a saved solution exists.
             # 4. Invariant: Raw skeleton template must be rejected
             ch0_solution = 'export PATH=$PATH:/usr/local/bin\necho "Booting environment..."\n'
             ch0_skeleton = request_json("/api/code?chapter_id=0&skeleton=1", timeout=10)
@@ -169,7 +186,8 @@ def main():
             assert not skeleton_result.get("success"), "Chapter 0 skeleton should not pass untouched"
             print("[PASS] chapter 0 skeleton correctly rejected")
 
-            # Compile every chapter in order. A chapter failure is collected (not raised immediately) so one run reports ALL failing chapters. 30 s client timeout is twice the server's 15 s test timeout.
+            # Compile every chapter in order. A chapter failure is collected (not raised immediately) so one
+            # run reports ALL failing chapters. 30 s client timeout is twice the server's 15 s test timeout.
             # 5. Sequential chapter compile verification (Chapters 0 through 21)
             failures = []
             for chapter_id in range(22):
@@ -197,7 +215,8 @@ def main():
             print("[PASS] full-stack smoke complete")
             return 0
 
-        # Always stop the server, even on assertion failure, or port 8000 stays busy for the next run (terminate first, kill if it ignores SIGTERM after 5 s).
+        # Always stop the server, even on assertion failure, or port 8000 stays busy for the next run
+        # (terminate first, kill if it ignores SIGTERM after 5 s).
         finally:
             # Terminate server process and wait for clean shutdown
             proc.terminate()
