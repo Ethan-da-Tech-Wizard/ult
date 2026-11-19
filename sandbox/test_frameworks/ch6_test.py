@@ -4,11 +4,19 @@
 # Last Modified: November 19, 2026
 # Purpose: Automated verification test suite validating Python package manifest dependency specifications. Parses requirements.txt for pinned version specifiers and security vulnerability patches.
 # ==============================================================================
+
+# How this file fits the app: the validator for chapter 6. server/sandbox_manager.py runs it (inside the zeus-sandbox container or, without Docker, with the host Python) every time the player presses Compile, after server/main.py has saved the player's code as save_data/relic_save/requirements.txt.
+# What it checks: every `requests==X.Y` line must be version 2.31 or newer (the CVE-fix floor); a file without requests only prints a warning and passes.
+# Contract with the rest of the app: exit code 0 means the chapter is solved; any failure prints an explanation and exits 1. The output is returned verbatim by /api/compile and shown to the player, so messages are written for learners. Run it by hand from the repo root: python3 sandbox/test_frameworks/ch6_test.py
+# The solution file is read as plain text and never executed.
 import os
 import sys
 
+# One test function so the file can also be run directly; it ends the process itself with sys.exit instead of returning a value.
 def test_chapter_6():
     print("Testing Chapter 6: Docker Relic Dependency Auditing...")
+
+    # Two locations are tried: /workspace is where the Docker container sees the player's files (bind mount of save_data/relic_save); the relative save_data path is used when run on the host from the repo root.
     requirements_path = "/workspace/requirements.txt"
     if not os.path.exists(requirements_path):
         requirements_path = "save_data/relic_save/requirements.txt"
@@ -44,5 +52,6 @@ def test_chapter_6():
     print("\n>>> All Chapter 6 tests passed! Docker dependencies audited and secure.")
     sys.exit(0)
 
+# Entry point when executed as a script (the way sandbox_manager.py runs it).
 if __name__ == "__main__":
     test_chapter_6()
