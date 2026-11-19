@@ -4,10 +4,11 @@
 # Program: build_templeos_img.sh
 # Programmer: Ethan-da-Tech-Wizard
 # Last Modified: November 19, 2026
-# Purpose: Automated QEMU disk image provisioner and installer for TempleOS virtualization.
-#          Downloads the TempleOS 5.03 ISO release, provisions a 256MB QCOW2/raw virtual hard disk,
-#          validates QEMU utility toolchain availability, configures virtual machine parameters,
-#          and sets up the environment for Chapter 21 HolyC bare-metal compilation challenges.
+# Purpose: Helper that prepares the files for a TempleOS virtual machine (Chapter 21). It checks that the
+#          QEMU tools exist, downloads the TempleOS ISO, and creates a BLANK 256MB raw disk file. It does NOT
+#          install TempleOS: the disk is empty and the ISO is not attached or run, so a VM started on the
+#          disk alone has nothing to boot. Finish the install by hand (boot QEMU with the ISO as a CD and
+#          this disk as the hard disk, run the TempleOS installer) before expecting a real HolyC console.
 # ==============================================================================
 
 # How this file fits the app: optional helper for Chapter 21. It downloads the TempleOS ISO and creates an
@@ -33,13 +34,18 @@ ISO_URL="${TEMPLEOS_ISO_URL:-https://templeos.org/Downloads/TempleOS.ISO}"
 ISO_PATH="$SAVE_DIR/TempleOS.ISO"
 DISK_SIZE="256M"
 
+# Banner wording is deliberate: it must not promise a bootable image, because the steps below only download
+# an ISO and create an empty disk file (see the header). Misleading text here previously made users expect a
+# working serial console after one run.
 echo ""
 echo "╔══════════════════════════════════════════════════════════╗"
 echo "║   The Sacred Tech — TempleOS Altar VM Builder            ║"
 echo "╚══════════════════════════════════════════════════════════╝"
 echo ""
-echo "This script builds a headless TempleOS serial console image"
-echo "for Chapter 21: Altar of TempleOS."
+echo "This script prepares the files for Chapter 21 (Altar of TempleOS):"
+echo "it downloads the TempleOS ISO and creates a BLANK ${DISK_SIZE} disk."
+echo "It does NOT install TempleOS and does not make anything bootable;"
+echo "you must run the TempleOS installer yourself afterwards."
 echo ""
 echo "TempleOS was written by Terry A. Davis (1969–2018)."
 echo "It is public domain. The OS and all its tools are free."
@@ -87,7 +93,8 @@ echo ""
 mkdir -p "$SAVE_DIR"
 
 # ------------------------------------------------------------------------------
-# Image Cache Check & Rebuild Prompt
+# Image Cache Check & Rebuild Prompt (re-running replaces the blank disk with another blank disk;
+# any manually installed TempleOS on it would be lost, hence the prompt)
 # ------------------------------------------------------------------------------
 if [[ -f "$IMG_PATH" ]]; then
     echo "ℹ️   TempleOS image already exists at $IMG_PATH"
@@ -124,5 +131,9 @@ echo "Creating $DISK_SIZE virtual disk image at $IMG_PATH..."
 qemu-img create -f raw "$IMG_PATH" "$DISK_SIZE"
 
 echo ""
-echo "✅  TempleOS VM disk provisioned: $IMG_PATH"
-echo "    The game server will mount this disk on loopback port 4444."
+echo "✅  Created a BLANK ${DISK_SIZE} disk file: $IMG_PATH"
+echo "    TempleOS is NOT installed on it yet, so it will not boot as is."
+echo "    ISO downloaded to: $ISO_PATH (not checksum-verified)"
+echo "    Next step (manual): boot QEMU with the ISO as a CD and this disk as the hard disk,"
+echo "    then run the TempleOS installer. Until the disk holds an installed OS, the game"
+echo "    server's QEMU launcher has nothing real to start and the mock HolyC altar is used."
