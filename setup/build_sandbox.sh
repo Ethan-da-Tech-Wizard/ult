@@ -10,6 +10,7 @@
 #          configuring the isolated environment for executing code challenges.
 # ==============================================================================
 
+# How this file fits the app: stand-alone way to build the Docker image the sandbox runs in (also done by setup/install_all.py). The image zeus-arch:latest (from sandbox/Dockerfile) is what server/sandbox_manager.py starts as container "zeus-sandbox". The IMAGE_NAME here must match the tag used in sandbox_manager.py and install_all.py.
 # Halt on error (-e), treat uninitialized variables as fatal errors (-u),
 # and prevent pipe masking of intermediate non-zero return codes (-o pipefail).
 set -euo pipefail
@@ -25,6 +26,7 @@ echo "║   The Sacred Tech — Arch Linux Sandbox Builder       ║"
 echo "╚══════════════════════════════════════════════════════╝"
 echo ""
 
+# Docker has to be installed and its daemon running; otherwise stop with a friendly message (both checks use exit code 1).
 # ------------------------------------------------------------------------------
 # Pre-Flight Checks: Docker Engine and Daemon Availability
 # ------------------------------------------------------------------------------
@@ -42,6 +44,7 @@ fi
 echo "✅  Docker found: $(docker --version)"
 echo ""
 
+# Rebuilds are opt-in because a build downloads about 1 GB; `docker rmi ... || true` ignores a failure (for example when a container still uses the image, in which case the build below simply replaces the tag).
 # ------------------------------------------------------------------------------
 # Image Cache Check & Rebuild Prompt
 # ------------------------------------------------------------------------------
