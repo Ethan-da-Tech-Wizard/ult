@@ -4,11 +4,19 @@
 # Last Modified: November 19, 2026
 # Purpose: Automated verification test suite validating autonomous ReAct decision loops and Self-Corrective RAG. Evaluates state machine transition bounds, step count enforcement, and iterative query rewriting.
 # ==============================================================================
+
+# How this file fits the app: the validator for chapter 18. server/sandbox_manager.py runs it (inside the zeus-sandbox container or, without Docker, with the host Python) every time the player presses Compile, after server/main.py has saved the player's code as save_data/relic_save/ch18_state.py.
+# What it checks: run_react_loop(state, step_fn, max_steps) must finish with status success after 4 steps and stop at max_steps for a loop that never ends; find_skeleton_ancestors(lineage, name) must return the ancestor chain and survive circular lineages; run_self_corrective_rag(query, retrieve, evaluate, rewrite, max_steps) must report status, steps and context for the first-try, rewrite-then-succeed and give-up cases.
+# Contract with the rest of the app: exit code 0 means the chapter is solved; any failure prints an explanation and exits 1. The output is returned verbatim by /api/compile and shown to the player, so messages are written for learners. Run it by hand from the repo root: python3 sandbox/test_frameworks/ch18_test.py
+# Security note: for Python chapters the player's file is imported with exec_module, so their code runs inside this process; use the Docker sandbox for untrusted code.
 import os
 import sys
 
+# One test function so the file can also be run directly; it ends the process itself with sys.exit instead of returning a value.
 def test_chapter_18():
     print("Testing Chapter 18: State Vaults (Agentic RAG State Machines)...")
+
+    # Two locations are tried: /workspace is where the Docker container sees the player's files (bind mount of save_data/relic_save); the relative save_data path is used when run on the host from the repo root.
     solution_path = "/workspace/ch18_state.py"
     if not os.path.exists(solution_path):
         solution_path = "save_data/relic_save/ch18_state.py"
@@ -20,6 +28,7 @@ def test_chapter_18():
     spec = importlib.util.spec_from_file_location("solution_module", solution_path)
     module = importlib.util.module_from_spec(spec)
     try:
+        # Loads the player's file as a throwaway module so its functions can be called; a syntax error or an exception at import time is reported as a compile failure rather than a crash.
         spec.loader.exec_module(module)
     except Exception as e:
         print(f"Error: Solution script failed to compile: {e}")
@@ -138,5 +147,6 @@ def test_chapter_18():
     print("\n>>> All Chapter 18 tests passed! Spooky Town lineage records complete.")
     sys.exit(0)
 
+# Entry point when executed as a script (the way sandbox_manager.py runs it).
 if __name__ == "__main__":
     test_chapter_18()
