@@ -11,8 +11,12 @@
 #          unlock the Chapter 1 portal while accurately persisting inventory across reloads.
 # ==============================================================================
 
-# How this file fits the app: CI job "First portal smoke" (python scripts/first_portal_smoke.py). A shorter, more targeted cousin of full_stack_smoke.py that checks the opening of the game: a fresh save starts at Chapter 0 in dark mode, the raw Chapter 0 template is rejected, the correct PATH solution passes, and a Chapter 1 save with tutorial inventory flags survives a reload.
-# Reuses ROOT_DIR/request_json/wait_for_server from full_stack_smoke.py (same directory, so the import works when run as a script). Exit codes as in full_stack_smoke.py.
+# How this file fits the app: CI job "First portal smoke" (python scripts/first_portal_smoke.py). A shorter,
+# more targeted cousin of full_stack_smoke.py that checks the opening of the game: a fresh save starts at
+# Chapter 0 in dark mode, the raw Chapter 0 template is rejected, the correct PATH solution passes, and a
+# Chapter 1 save with tutorial inventory flags survives a reload.
+# Reuses ROOT_DIR/request_json/wait_for_server from full_stack_smoke.py (same directory, so the import works
+# when run as a script). Exit codes as in full_stack_smoke.py.
 
 import json
 import os
@@ -67,7 +71,8 @@ def main():
             assert initial_state.get("currentChapter") == 0
             print("[PASS] fresh save starts at dark Chapter 0")
 
-            # The validator must reject the unmodified starter template (otherwise every chapter would count as solved from the start).
+            # The validator must reject the unmodified starter template (otherwise every chapter would count
+            # as solved from the start).
             # 3. Security Boundary: The raw skeleton must be rejected by validator
             skeleton_data = request_json("/api/code?chapter_id=0&skeleton=1")
             skeleton_result = request_json(
@@ -79,7 +84,8 @@ def main():
             assert not skeleton_result.get("success"), "Chapter 0 skeleton should not pass untouched"
             print("[PASS] Chapter 0 skeleton correctly rejected")
 
-            # The accepted answer appends /usr/local/bin to PATH, the Chapter 0 lesson ("restore the toolchain").
+            # The accepted answer appends /usr/local/bin to PATH, the Chapter 0 lesson ("restore the
+            # toolchain").
             # 4. Verification: Submit valid PATH extension statement and assert success
             compile_result = request_json(
                 "/api/compile",
@@ -90,7 +96,9 @@ def main():
             assert compile_result.get("success"), compile_result.get("output", "")
             print("[PASS] Chapter 0 compile restores the gate")
 
-            # Inventory flag names mirror the item/tutorial keys that client/app.js stores in the player's inventory; they are plain strings to the server, so this test only proves persistence, not game logic.
+            # Inventory flag names mirror the item/tutorial keys that client/app.js stores in the player's
+            # inventory; they are plain strings to the server, so this test only proves persistence, not game
+            # logic.
             # 5. Persistence: Post updated save state unlocking Chapter 1
             inventory = [
                 "contract:0",
@@ -119,7 +127,8 @@ def main():
             }
             request_json("/api/save", method="POST", payload=save_payload)
             
-            # Read the save back from SQLite through the API and compare each field, which catches serialisation or column-migration bugs.
+            # Read the save back from SQLite through the API and compare each field, which catches
+            # serialisation or column-migration bugs.
             # 6. Verification: Reload save state from SQLite and assert field roundtrip
             reloaded = request_json("/api/save")
             reloaded_state = json.loads(reloaded.get("state_json", "{}"))

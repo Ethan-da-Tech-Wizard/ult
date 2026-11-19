@@ -9,7 +9,8 @@
 #          directly to setup/install_all.py for virtual environment, container, and VM provisioning.
 # ==============================================================================
 
-# How this file fits the app: a tiny wrapper so users can type `./setup/install_all.sh` (CI does this with --minimal) without knowing the Python script's name. All arguments are forwarded unchanged ("$@").
+# How this file fits the app: a tiny wrapper so users can type `./setup/install_all.sh` (CI does this with
+# --minimal) without knowing the Python script's name. All arguments are forwarded unchanged ("$@").
 # Halt on error (-e), treat uninitialized variables as fatal errors (-u),
 # and prevent pipe masking of intermediate non-zero return codes (-o pipefail).
 set -euo pipefail

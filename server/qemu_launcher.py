@@ -8,10 +8,15 @@
 #          fall-back with syntax verification and deterministic 16-bit checksum calculation.
 # ==============================================================================
 
-# How this file fits the app: started once from the lifespan hook of server/main.py to provide the Chapter 21 "Altar of TempleOS" console. The browser connects to /ws/templeos, which proxies to TCP 127.0.0.1:4444.
-# Two back ends supply that port: real QEMU running a TempleOS disk image (save_data/templeos_core.img, built by setup/build_templeos_img.sh) with its serial port exposed as a telnet server, or an in-process mock "HolyC" server that
-# recognises HolyC-looking text and returns a fake compile result plus a checksum. The mock is what runs on most machines because the image is large and optional.
-# Limits: stock TempleOS does not drive a serial port, so real-QEMU output only appears with a serial-patched build; the mock's "compiler" is a keyword check, not a real HolyC compiler.
+# How this file fits the app: started once from the lifespan hook of server/main.py to provide the Chapter 21
+# "Altar of TempleOS" console. The browser connects to /ws/templeos, which proxies to TCP 127.0.0.1:4444.
+# Two back ends supply that port: real QEMU running a TempleOS disk image (save_data/templeos_core.img, built
+# by setup/build_templeos_img.sh) with its serial port exposed as a telnet server, or an in-process mock
+# "HolyC" server that
+# recognises HolyC-looking text and returns a fake compile result plus a checksum. The mock is what runs on
+# most machines because the image is large and optional.
+# Limits: stock TempleOS does not drive a serial port, so real-QEMU output only appears with a serial-patched
+# build; the mock's "compiler" is a keyword check, not a real HolyC compiler.
 import logging
 import os
 import socket
@@ -21,13 +26,16 @@ import time
 
 logger = logging.getLogger("QemuLauncher")
 
-# Relative to the current working directory (start from the repo root). The telnet port is fixed; main.py connects to the same number.
+# Relative to the current working directory (start from the repo root). The telnet port is fixed; main.py
+# connects to the same number.
 # Virtual drive image destination and loopback telnet port
 IMAGE_PATH = os.path.join("save_data", "templeos_core.img")
 PORT = 4444
 
 
-# Returns the QEMU Popen handle or None (mock started). QEMU is spawned and not waited on, so it keeps running for the life of the server; nothing here stops it at shutdown (it is orphaned when the server exits unless the OS cleans it up).
+# Returns the QEMU Popen handle or None (mock started). QEMU is spawned and not waited on, so it keeps running
+# for the life of the server; nothing here stops it at shutdown (it is orphaned when the server exits unless
+# the OS cleans it up).
 def start_qemu():
     """Starts the QEMU TempleOS instance with serial redirected to a local telnet socket.
 
@@ -44,7 +52,8 @@ def start_qemu():
         start_mock_holyc_server()
         return None
 
-    # -m 512M gives the guest 512 MB RAM (TempleOS needs little). `-serial telnet:...,server,nowait` makes QEMU listen on the port without blocking boot until a client connects.
+    # -m 512M gives the guest 512 MB RAM (TempleOS needs little). `-serial telnet:...,server,nowait` makes
+    # QEMU listen on the port without blocking boot until a client connects.
     # Assemble QEMU hardware virtualization parameters
     cmd = [
         "qemu-system-x86_64",
@@ -53,7 +62,8 @@ def start_qemu():
         "-serial", f"telnet:127.0.0.1:{PORT},server,nowait",
     ]
 
-    # Headless by default (-nographic). ZEUS_TEMPLEOS_VNC=1 instead exposes the guest screen on VNC 127.0.0.1:5900 (display :0 = port 5900) for debugging.
+    # Headless by default (-nographic). ZEUS_TEMPLEOS_VNC=1 instead exposes the guest screen on VNC
+    # 127.0.0.1:5900 (display :0 = port 5900) for debugging.
     # Conditionally bind VNC display or enforce headless execution
     if os.environ.get("ZEUS_TEMPLEOS_VNC") == "1":
         cmd += ["-vnc", "127.0.0.1:0"]
@@ -64,7 +74,8 @@ def start_qemu():
     try:
         logger.info(f"Launching QEMU TempleOS: {' '.join(cmd)}")
 
-        # DEVNULL discards QEMU output; if the pipes were left open and unread the child could block when a buffer fills.
+        # DEVNULL discards QEMU output; if the pipes were left open and unread the child could block when a
+        # buffer fills.
         # Spawn child process with suppressed standard streams to prevent pipe buffer blocks
         proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         return proc
@@ -74,7 +85,9 @@ def start_qemu():
         return None
 
 
-# Heuristic used by the mock (and mirrored by the chapter 21 validator): reject obviously interpreted languages, then require at least one HolyC type/function marker. Intentionally simple; it accepts any text containing those tokens.
+# Heuristic used by the mock (and mirrored by the chapter 21 validator): reject obviously interpreted
+# languages, then require at least one HolyC type/function marker. Intentionally simple; it accepts any text
+# containing those tokens.
 def looks_like_holyc(code):
     """Validates submitted code against HolyC linguistic syntax conventions.
 
@@ -94,7 +107,8 @@ def looks_like_holyc(code):
     return any(marker in code for marker in ("U0", "I64", "U8", "F64", "Print"))
 
 
-# Sum of all UTF-8 bytes modulo 65536 ("& 0xFFFF"). Deterministic so the chapter 21 puzzle can predict the value shown by the mock; it is NOT a cryptographic or CRC checksum.
+# Sum of all UTF-8 bytes modulo 65536 ("& 0xFFFF"). Deterministic so the chapter 21 puzzle can predict the
+# value shown by the mock; it is NOT a cryptographic or CRC checksum.
 def holyc_checksum(code):
     """Computes a deterministic 16-bit summation checksum over UTF-8 encoded text.
 
@@ -118,7 +132,8 @@ MOCK_HELP_TEXT = (
 )
 
 
-# Starts the listener thread and returns immediately. Binding failures (port already in use) are logged and the thread ends, so the console then simply fails to connect.
+# Starts the listener thread and returns immediately. Binding failures (port already in use) are logged and
+# the thread ends, so the console then simply fails to connect.
 def start_mock_holyc_server():
     """Launches an offline loopback socket server that mimics the TempleOS command prompt.
 
@@ -129,7 +144,8 @@ def start_mock_holyc_server():
       - Performs immediate HolyC syntax validation and emits compilation responses.
     """
 
-    # One thread per connection (daemon threads, so they never keep the server alive at exit); each thread runs a simple prompt/response loop.
+    # One thread per connection (daemon threads, so they never keep the server alive at exit); each thread
+    # runs a simple prompt/response loop.
     def client_thread(conn, addr):
         """Dedicated connection handler thread for each connected telnet client."""
         try:
@@ -158,7 +174,8 @@ def start_mock_holyc_server():
                     conn.sendall(MOCK_HELP_TEXT)
                     continue
 
-                # 0.4 s sleep imitates compiler latency so the puzzle feels real; it only blocks this client's thread.
+                # 0.4 s sleep imitates compiler latency so the puzzle feels real; it only blocks this client's
+                # thread.
                 # Simulate JIT compilation latency
                 conn.sendall(f"Compiling '{text[:60]}'...\r\n".encode("utf-8"))
                 time.sleep(0.4)
@@ -179,7 +196,8 @@ def start_mock_holyc_server():
         finally:
             conn.close()
 
-    # Accept loop. SO_REUSEADDR lets the server restart immediately without waiting for the old socket's TIME_WAIT to expire. Bound to loopback only.
+    # Accept loop. SO_REUSEADDR lets the server restart immediately without waiting for the old socket's
+    # TIME_WAIT to expire. Bound to loopback only.
     def server_loop():
         """Accept loop running within a background daemon thread."""
         server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)

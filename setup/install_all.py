@@ -11,9 +11,15 @@
 #          headless minimal, and automated full deployment modes.
 # ==============================================================================
 
-# How this file fits the app: the one-stop installer (python setup/install_all.py, or setup/install_all.sh/.ps1 wrappers; CI runs `./setup/install_all.sh --minimal`). Modes: interactive (asks about the optional parts), --minimal (Tier 1 only, never prompts) and --full (everything the machine supports, never prompts).
-# Effects on disk: creates .venv, installs requirements.txt into it, optionally builds the Docker image zeus-arch:latest and starts the container zeus-sandbox, and optionally runs setup/build_templeos_img.sh. It never installs Docker or QEMU themselves.
-# Exit codes: 1 for an unsupported Python or a missing venv interpreter; subprocess failures with check=True raise CalledProcessError (non-zero exit with a traceback).
+# How this file fits the app: the one-stop installer (python setup/install_all.py, or
+# setup/install_all.sh/.ps1 wrappers; CI runs `./setup/install_all.sh --minimal`). Modes: interactive (asks
+# about the optional parts), --minimal (Tier 1 only, never prompts) and --full (everything the machine
+# supports, never prompts).
+# Effects on disk: creates .venv, installs requirements.txt into it, optionally builds the Docker image
+# zeus-arch:latest and starts the container zeus-sandbox, and optionally runs setup/build_templeos_img.sh. It
+# never installs Docker or QEMU themselves.
+# Exit codes: 1 for an unsupported Python or a missing venv interpreter; subprocess failures with check=True
+# raise CalledProcessError (non-zero exit with a traceback).
 import argparse
 import os
 import shutil
@@ -21,7 +27,9 @@ import subprocess
 import sys
 
 
-# The three modes make the same code usable interactively and in CI: "minimal" answers no to everything, "full" answers yes, and "interactive" actually asks. EOF/Ctrl+C count as "no" so a closed stdin cannot hang the installer.
+# The three modes make the same code usable interactively and in CI: "minimal" answers no to everything,
+# "full" answers yes, and "interactive" actually asks. EOF/Ctrl+C count as "no" so a closed stdin cannot hang
+# the installer.
 def ask_yes_no(question, default="y", mode="interactive"):
     """Presents an interactive confirmation prompt respecting automated mode overrides.
 
@@ -112,7 +120,8 @@ def main():
     tier2_status = "skipped"
     tier3_status = "skipped"
 
-    # Tier 1 is always executed (even in minimal mode): create .venv if absent, then upgrade pip and install requirements.txt inside it so the system Python stays untouched.
+    # Tier 1 is always executed (even in minimal mode): create .venv if absent, then upgrade pip and install
+    # requirements.txt inside it so the system Python stays untouched.
     # --------------------------------------------------------------------------
     # Tier 1: Core Setup (Virtualenv and Requirements.txt)
     # --------------------------------------------------------------------------
@@ -138,7 +147,8 @@ def main():
     print("✅  Core game dependencies installed successfully.")
     tier1_status = f"installed (.venv at {venv_dir})"
 
-    # Tier 2: only when Docker is installed AND the daemon answers. If the daemon is unreachable the likely causes are printed (not running, or missing docker-group permission on Linux).
+    # Tier 2: only when Docker is installed AND the daemon answers. If the daemon is unreachable the likely
+    # causes are printed (not running, or missing docker-group permission on Linux).
     # --------------------------------------------------------------------------
     # Tier 2: Arch Linux Sandbox (Docker Engine & Container)
     # --------------------------------------------------------------------------
@@ -190,11 +200,13 @@ def main():
                 sandbox_path = os.path.join(project_root, "sandbox")
                 subprocess.run([docker_bin, "build", "--tag", "zeus-arch:latest", "--file", dockerfile_path, sandbox_path], check=True)
 
-            # The folder bind-mounted into the container as /workspace must exist before `docker run`, or Docker would create it as root-owned.
+            # The folder bind-mounted into the container as /workspace must exist before `docker run`, or
+            # Docker would create it as root-owned.
             relic_save_dir = os.path.join(project_root, "save_data", "relic_save")
             os.makedirs(relic_save_dir, exist_ok=True)
 
-            # Container logic mirrors ensure_sandbox_running() in server/sandbox_manager.py: running -> keep, stopped -> start, absent -> create with the same two bind mounts and a long-lived idle process.
+            # Container logic mirrors ensure_sandbox_running() in server/sandbox_manager.py: running -> keep,
+            # stopped -> start, absent -> create with the same two bind mounts and a long-lived idle process.
             # Check container state
             container_running = False
             container_exists = False
@@ -228,7 +240,8 @@ def main():
         else:
             tier2_status = "skipped (declined)"
 
-    # Tier 3: QEMU only matters for Chapter 21. The VM image build is interactive and large, so the default answer is "n"; on Windows the user is pointed at the shell script instead because it needs bash.
+    # Tier 3: QEMU only matters for Chapter 21. The VM image build is interactive and large, so the default
+    # answer is "n"; on Windows the user is pointed at the shell script instead because it needs bash.
     # --------------------------------------------------------------------------
     # Tier 3: TempleOS Altar VM (QEMU Hypervisor)
     # --------------------------------------------------------------------------
@@ -260,7 +273,8 @@ def main():
             else:
                 tier3_status = "skipped (declined)"
 
-    # Summary of what each tier ended up as, plus how to start the game (the server listens on 127.0.0.1:8000).
+    # Summary of what each tier ended up as, plus how to start the game (the server listens on
+    # 127.0.0.1:8000).
     # --------------------------------------------------------------------------
     # Installation Summary
     # --------------------------------------------------------------------------

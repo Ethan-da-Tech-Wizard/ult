@@ -9,14 +9,22 @@
 #          and hosts static game client assets bound strictly to loopback interfaces.
 # ==============================================================================
 
-# How this file fits the app: the whole backend of "The Sacred Tech" (a coding-lesson JRPG). The browser client (client/index.html + client/app.js) is served by this same process
-# and talks to it in three ways: REST under /api (save games, load/compile chapter code, diagnostics), WebSockets under /ws (a live shell, the TempleOS serial console, a dev auto-reload signal),
-# and plain static files at "/". The heavy lifting is delegated: server/sandbox_manager.py runs a chapter's validator in Docker, server/qemu_launcher.py starts QEMU or a mock HolyC server.
-# Run it with `python server/main.py` (binds 127.0.0.1:8000 only) or via scripts/run_dev.sh; build a single-file app with server/build_desktop.py (PyInstaller sets sys._MEIPASS, see below).
-# Data: SQLite file save_data/save_state.db (override with ZEUS_SAVE_DB_PATH): table player_state, newest row = current save, history trimmed to 50 rows. Player code lives in save_data/relic_save/.
-# Security model: loopback only, CORS limited to localhost origins. Known risks: /ws/shell hands out a real shell (a host bash when Docker is down) with no authentication and no Origin check; CORS does not apply to
-# WebSockets, so any web page opened in the same browser could connect to ws://127.0.0.1:8000/ws/shell. Treat it as a single-user local tool and add an Origin check/token before exposing it further.
-# Also, error handlers return str(exception) to the client, and the compile endpoint runs player code (inside Docker when available, but directly on the host as the fallback).
+# How this file fits the app: the whole backend of "The Sacred Tech" (a coding-lesson JRPG). The browser
+# client (client/index.html + client/app.js) is served by this same process
+# and talks to it in three ways: REST under /api (save games, load/compile chapter code, diagnostics),
+# WebSockets under /ws (a live shell, the TempleOS serial console, a dev auto-reload signal),
+# and plain static files at "/". The heavy lifting is delegated: server/sandbox_manager.py runs a chapter's
+# validator in Docker, server/qemu_launcher.py starts QEMU or a mock HolyC server.
+# Run it with `python server/main.py` (binds 127.0.0.1:8000 only) or via scripts/run_dev.sh; build a
+# single-file app with server/build_desktop.py (PyInstaller sets sys._MEIPASS, see below).
+# Data: SQLite file save_data/save_state.db (override with ZEUS_SAVE_DB_PATH): table player_state, newest row
+# = current save, history trimmed to 50 rows. Player code lives in save_data/relic_save/.
+# Security model: loopback only, CORS limited to localhost origins. Known risks: /ws/shell hands out a real
+# shell (a host bash when Docker is down) with no authentication and no Origin check; CORS does not apply to
+# WebSockets, so any web page opened in the same browser could connect to ws://127.0.0.1:8000/ws/shell. Treat
+# it as a single-user local tool and add an Origin check/token before exposing it further.
+# Also, error handlers return str(exception) to the client, and the compile endpoint runs player code (inside
+# Docker when available, but directly on the host as the fallback).
 import asyncio
 from contextlib import asynccontextmanager
 import logging
@@ -36,12 +44,14 @@ import uvicorn
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("ZeusServer")
 
-# Browsers connected to /ws/dev-reload. watch_client_files() sends them "reload" when a client file changes; the set is module-level because the watcher and the endpoint run as separate asyncio tasks.
+# Browsers connected to /ws/dev-reload. watch_client_files() sends them "reload" when a client file changes;
+# the set is module-level because the watcher and the endpoint run as separate asyncio tasks.
 # Set tracking active WebSocket connections for live client development reloading
 dev_reload_sockets: Set[WebSocket] = set()
 
 
-# Polling file watcher (no extra dependency such as watchdog): it compares modification times once per second and only while at least one dev-reload socket is connected, so it costs nothing in normal play.
+# Polling file watcher (no extra dependency such as watchdog): it compares modification times once per second
+# and only while at least one dev-reload socket is connected, so it costs nothing in normal play.
 async def watch_client_files():
     """Asynchronous background filesystem watcher monitoring client web assets for changes.
 
@@ -50,7 +60,8 @@ async def watch_client_files():
     connected development WebSockets to trigger instantaneous browser viewport refresh.
     """
 
-    # When frozen by PyInstaller the client files are unpacked under sys._MEIPASS instead of next to this source file.
+    # When frozen by PyInstaller the client files are unpacked under sys._MEIPASS instead of next to this
+    # source file.
     if hasattr(sys, "_MEIPASS"):
         client_dir = os.path.join(sys._MEIPASS, "client")
     else:
@@ -63,7 +74,8 @@ async def watch_client_files():
     # Snapshot of {path: mtime} used as the baseline for change detection.
     last_mtimes = {}
 
-    # Walks the client folder and records the mtime of every .html/.css/.js file. Files that disappear between listing and stat are skipped (OSError).
+    # Walks the client folder and records the mtime of every .html/.css/.js file. Files that disappear between
+    # listing and stat are skipped (OSError).
     def scan_files():
         """Scans mtime timestamps across supported client asset file extensions."""
         mtimes = {}
@@ -82,7 +94,8 @@ async def watch_client_files():
     except Exception as e:
         logger.error(f"Error initializing dev reload file scan: {e}")
 
-    # The loop never exits; it is cancelled at shutdown by lifespan(). A change is a new file, a newer mtime, or a deleted file.
+    # The loop never exits; it is cancelled at shutdown by lifespan(). A change is a new file, a newer mtime,
+    # or a deleted file.
     # Polling loop checking timestamps every 1.0 second
     while True:
         await asyncio.sleep(1.0)
@@ -117,7 +130,8 @@ async def watch_client_files():
             logger.error(f"Error in dev reload file watcher: {e}")
 
 
-# Start-up/shutdown hook (replaces the old @app.on_event). Everything before `yield` runs at start-up, everything after at shutdown.
+# Start-up/shutdown hook (replaces the old @app.on_event). Everything before `yield` runs at start-up,
+# everything after at shutdown.
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     """FastAPI application lifespan context manager controlling daemon lifecycle.
@@ -129,7 +143,9 @@ async def lifespan(_app: FastAPI):
       - Cancels the background file watcher task to prevent dangling event loop references.
     """
 
-    # The TempleOS serial service is started once per server run. The two import styles exist because the module is imported as `server.qemu_launcher` when run from the repo root and as a top-level module when main.py is run from inside server/.
+    # The TempleOS serial service is started once per server run. The two import styles exist because the
+    # module is imported as `server.qemu_launcher` when run from the repo root and as a top-level module when
+    # main.py is run from inside server/.
     logger.info("FastAPI startup. Booting QEMU launcher/mock server...")
     try:
         from server import qemu_launcher
@@ -154,7 +170,8 @@ async def lifespan(_app: FastAPI):
 # Instantiate FastAPI application with lifespan management
 app = FastAPI(title="Zeus RPG Core Server", lifespan=lifespan)
 
-# CORS only matters for the browser calling the API from another origin (for example the Vite dev server on port 5173); allow_credentials=True is safe here because the origin list is explicit, not "*".
+# CORS only matters for the browser calling the API from another origin (for example the Vite dev server on
+# port 5173); allow_credentials=True is safe here because the origin list is explicit, not "*".
 # Restrict CORS headers to local loopback webview instances
 app.add_middleware(
     CORSMiddleware,
@@ -164,14 +181,17 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Save database location (relative paths resolve against the current working directory, so start the server from the repo root).
+# Save database location (relative paths resolve against the current working directory, so start the server
+# from the repo root).
 # Database path resolution and chapter metadata mappings
 DB_PATH = os.environ.get("ZEUS_SAVE_DB_PATH", os.path.join("save_data", "save_state.db"))
 
 # 22 chapters, ids 0-21 (0 = Outpost Zero ... 21 = the TempleOS altar).
 EXPECTED_CHAPTER_IDS = list(range(22))
 
-# Chapter id -> the file the player's solution is saved as inside save_data/relic_save/. The sandbox validators (sandbox/test_frameworks/chN_test.py) import these exact file names, so renaming one here breaks the validator for that chapter. Chapter 6 is a requirements.txt, not Python.
+# Chapter id -> the file the player's solution is saved as inside save_data/relic_save/. The sandbox
+# validators (sandbox/test_frameworks/chN_test.py) import these exact file names, so renaming one here breaks
+# the validator for that chapter. Chapter 6 is a requirements.txt, not Python.
 CHAPTER_FILENAME_MAP = {
     0: "ch0_cli.sh",
     1: "ch1_ocr.py",
@@ -198,7 +218,8 @@ CHAPTER_FILENAME_MAP = {
 }
 
 
-# Creates the database and table on first run, adds the state_json column to databases created by older versions, and inserts one default save so GET /api/save always has a row. Safe to call repeatedly.
+# Creates the database and table on first run, adds the state_json column to databases created by older
+# versions, and inserts one default save so GET /api/save always has a row. Safe to call repeatedly.
 def init_db():
     """Initializes SQLite database schemas for player game saves and handles migrations."""
     db_dir = os.path.dirname(DB_PATH)
@@ -219,14 +240,16 @@ def init_db():
         )
     """)
 
-    # Additive migration: older save files lack state_json, so the column is added with a default instead of recreating the table.
+    # Additive migration: older save files lack state_json, so the column is added with a default instead of
+    # recreating the table.
     # Migration check: Ensure state_json column exists on legacy database files
     cursor.execute("PRAGMA table_info(player_state)")
     existing_columns = {row[1] for row in cursor.fetchall()}
     if "state_json" not in existing_columns:
         cursor.execute("ALTER TABLE player_state ADD COLUMN state_json TEXT DEFAULT '{}'")
 
-    # Starting party stats are embedded as JSON here and must match the initial `player` object in client/app.js, otherwise a fresh game and a loaded default save would differ.
+    # Starting party stats are embedded as JSON here and must match the initial `player` object in
+    # client/app.js, otherwise a fresh game and a loaded default save would differ.
     # Seed baseline initial save state if table is newly provisioned
     cursor.execute("SELECT COUNT(*) FROM player_state")
     if cursor.fetchone()[0] == 0:
@@ -246,12 +269,14 @@ def init_db():
     conn.close()
 
 
-# Runs at import time, so importing this module (for example from a test) creates the save file as a side effect.
+# Runs at import time, so importing this module (for example from a test) creates the save file as a side
+# effect.
 # Ensure database schema is valid on module import
 init_db()
 
 
-# Body of POST /api/save. The *_json fields are JSON documents stored as text; the server does not parse or validate their contents, so the client is the source of truth for their shape.
+# Body of POST /api/save. The *_json fields are JSON documents stored as text; the server does not parse or
+# validate their contents, so the client is the source of truth for their shape.
 class SaveStateModel(BaseModel):
     """Pydantic data validation model for incoming save state JSON payloads."""
     gold: int
@@ -263,14 +288,16 @@ class SaveStateModel(BaseModel):
     state_json: str = "{}"
 
 
-# Liveness probe (polled by scripts/full_stack_smoke.py and scripts/simulate_gameplay.py to wait until the server is up).
+# Liveness probe (polled by scripts/full_stack_smoke.py and scripts/simulate_gameplay.py to wait until the
+# server is up).
 @app.get("/api/health")
 def health():
     """Health check probe returning operational status and binding interface."""
     return {"status": "ok", "host": "127.0.0.1"}
 
 
-# Checks whether the Docker sandbox container is running so the UI can show "sandbox online/offline". Never raises: a missing docker binary is reported as unavailable.
+# Checks whether the Docker sandbox container is running so the UI can show "sandbox online/offline". Never
+# raises: a missing docker binary is reported as unavailable.
 @app.get("/api/sandbox-status")
 def sandbox_status():
     """Reports whether the Arch Linux Docker sandbox is available and running."""
@@ -294,7 +321,8 @@ def sandbox_status():
     return {"docker": docker_available, "container_running": container_running}
 
 
-# Self-check endpoint: lists which chapter validators and code templates exist and whether the save DB is present, so a broken install is visible at /api/diagnostics.
+# Self-check endpoint: lists which chapter validators and code templates exist and whether the save DB is
+# present, so a broken install is visible at /api/diagnostics.
 @app.get("/api/diagnostics")
 def diagnostics():
     """Comprehensive diagnostic probe validating test frameworks, templates, and database configuration."""
@@ -375,7 +403,8 @@ def list_saves(limit: int = 10):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# Fetch one historical checkpoint; 404 if the id does not exist. The inner `except HTTPException: raise` stops the generic handler turning the 404 into a 500.
+# Fetch one historical checkpoint; 404 if the id does not exist. The inner `except HTTPException: raise` stops
+# the generic handler turning the 404 into a 500.
 @app.get("/api/save/{save_id}")
 def get_save_by_id(save_id: int):
     """Retrieves a specific historical save state by primary key ID."""
@@ -395,7 +424,8 @@ def get_save_by_id(save_id: int):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# Insert a new row for every save (checkpoints) and then delete everything but the 50 newest rows, so the file cannot grow without bound. Parameterised SQL throughout.
+# Insert a new row for every save (checkpoints) and then delete everything but the 50 newest rows, so the file
+# cannot grow without bound. Parameterised SQL throughout.
 @app.post("/api/save")
 def save_state(state: SaveStateModel):
     """Persists a new game save record and trims historical entries beyond the 50-row rolling window."""
@@ -425,7 +455,9 @@ def save_state(state: SaveStateModel):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# Starter code shown to the player in each chapter's editor. The comment header in every template names the chapter's lesson and the function the validator in sandbox/test_frameworks/chN_test.py will call; those signatures must stay in step with the validators.
+# Starter code shown to the player in each chapter's editor. The comment header in every template names the
+# chapter's lesson and the function the validator in sandbox/test_frameworks/chN_test.py will call; those
+# signatures must stay in step with the validators.
 def get_default_skeleton(chapter_id: int) -> str:
     """Returns baseline starter template code for a given chapter curriculum."""
     skeletons = {
@@ -457,12 +489,14 @@ def get_default_skeleton(chapter_id: int) -> str:
     return skeletons.get(chapter_id, f"# Chapter {chapter_id} Solution\n")
 
 
-# Returns the player's saved solution if it exists, otherwise the starter template (also when skeleton=true, which the client uses for "reset code").
+# Returns the player's saved solution if it exists, otherwise the starter template (also when skeleton=true,
+# which the client uses for "reset code").
 @app.get("/api/code")
 def load_code(chapter_id: int, skeleton: bool = False):
     """Loads player solution code from disk, or falls back to standard skeleton template."""
     try:
-        # filename comes from the fixed map (or an integer-based default), never from user text, so there is no path-traversal risk here.
+        # filename comes from the fixed map (or an integer-based default), never from user text, so there is
+        # no path-traversal risk here.
         filename = CHAPTER_FILENAME_MAP.get(chapter_id, f"ch{chapter_id}_solution.py")
         try:
             from server import sandbox_manager
@@ -488,7 +522,9 @@ class CompileRequest(BaseModel):
     code: str
 
 
-# Saves the submitted code and runs the chapter's validator. Returns {"success": bool, "output": str} from sandbox_manager.execute_test(). Blocking subprocess work runs inside a synchronous endpoint, which FastAPI executes in its thread pool, so it does not freeze the event loop.
+# Saves the submitted code and runs the chapter's validator. Returns {"success": bool, "output": str} from
+# sandbox_manager.execute_test(). Blocking subprocess work runs inside a synchronous endpoint, which FastAPI
+# executes in its thread pool, so it does not freeze the event loop.
 @app.post("/api/compile")
 def compile_code(req: CompileRequest):
     """Writes submitted code to disk and invokes chapter validator inside Docker sandbox."""
@@ -504,7 +540,8 @@ def compile_code(req: CompileRequest):
         # Ensure destination directory exists on disk
         os.makedirs(sandbox_manager.RELIC_SAVE_DIR, exist_ok=True)
 
-        # The validator reads this file from the shared bind mount (/workspace inside the container), so it must be written before the test is launched.
+        # The validator reads this file from the shared bind mount (/workspace inside the container), so it
+        # must be written before the test is launched.
         # Write code file atomically to disk
         with open(save_path, "w", encoding="utf-8") as f:
             f.write(req.code)
@@ -521,8 +558,10 @@ def compile_code(req: CompileRequest):
 # Real-Time WebSocket Proxy Endpoints
 # ------------------------------------------------------------------------------
 
-# Interactive terminal for chapters 0 (Linux CLI) and others. Data path: browser keystrokes -> WebSocket -> PTY master -> shell; shell output -> PTY master -> WebSocket.
-# A PTY (pseudo-terminal) is used rather than pipes so programs behave as in a real terminal (colours, line editing, Ctrl+C).
+# Interactive terminal for chapters 0 (Linux CLI) and others. Data path: browser keystrokes -> WebSocket ->
+# PTY master -> shell; shell output -> PTY master -> WebSocket.
+# A PTY (pseudo-terminal) is used rather than pipes so programs behave as in a real terminal (colours, line
+# editing, Ctrl+C).
 @app.websocket("/ws/shell")
 async def ws_shell(websocket: WebSocket):
     """WebSocket terminal bridge connecting client to an interactive shell via pseudo-terminal (PTY).
@@ -535,7 +574,8 @@ async def ws_shell(websocket: WebSocket):
     try:
         # Check if Docker container is currently active
 
-        # Blocking call inside an async function (briefly stalls the event loop); acceptable for a single-user tool. Empty output means the container is not running.
+        # Blocking call inside an async function (briefly stalls the event loop); acceptable for a single-user
+        # tool. Empty output means the container is not running.
         container_check = os.popen("docker ps --filter name=zeus-sandbox -q").read().strip()
         if container_check:
             cmd = ["docker", "exec", "-it", "zeus-sandbox", "bash"]
@@ -549,7 +589,9 @@ async def ws_shell(websocket: WebSocket):
 
         # Allocate pseudo-terminal descriptor pair
 
-        # openpty() returns two ends: the child shell gets the slave side as stdin/stdout/stderr, the server keeps the master side. The server must close its copy of the slave (below) or it would never see end-of-file when the shell exits.
+        # openpty() returns two ends: the child shell gets the slave side as stdin/stdout/stderr, the server
+        # keeps the master side. The server must close its copy of the slave (below) or it would never see
+        # end-of-file when the shell exits.
         import pty
         master_fd, slave_fd = pty.openpty()
         proc = await asyncio.create_subprocess_exec(
@@ -561,7 +603,8 @@ async def ws_shell(websocket: WebSocket):
         )
         os.close(slave_fd)
 
-        # Reader coroutine: os.read blocks, so it runs in a thread executor to keep the event loop free. Output is decoded with errors="replace" so a split multibyte character cannot crash the stream.
+        # Reader coroutine: os.read blocks, so it runs in a thread executor to keep the event loop free.
+        # Output is decoded with errors="replace" so a split multibyte character cannot crash the stream.
         async def read_from_pty():
             """Reads terminal byte stream from PTY master and sends to WebSocket."""
             try:
@@ -586,7 +629,8 @@ async def ws_shell(websocket: WebSocket):
             except Exception as e:
                 logger.debug(f"Write PTY stream closed: {e}")
 
-        # Whichever direction ends first (shell exited or browser disconnected) stops the other; the finally block kills and reaps the process so no zombie remains and closes the PTY.
+        # Whichever direction ends first (shell exited or browser disconnected) stops the other; the finally
+        # block kills and reaps the process so no zombie remains and closes the PTY.
         try:
             done, pending = await asyncio.wait(
                 {asyncio.create_task(read_from_pty()), asyncio.create_task(write_to_pty())},
@@ -608,7 +652,8 @@ async def ws_shell(websocket: WebSocket):
         await websocket.close()
 
 
-# Bridge to the TempleOS (chapter 21) serial console on 127.0.0.1:4444, which is either QEMU's telnet serial socket or the mock server from qemu_launcher.py.
+# Bridge to the TempleOS (chapter 21) serial console on 127.0.0.1:4444, which is either QEMU's telnet serial
+# socket or the mock server from qemu_launcher.py.
 @app.websocket("/ws/templeos")
 async def ws_templeos(websocket: WebSocket):
     """WebSocket serial console proxy streaming data between browser and QEMU/mock HolyC server.
@@ -617,7 +662,8 @@ async def ws_templeos(websocket: WebSocket):
     """
     await websocket.accept()
     try:
-        # If nothing listens on the port the connection fails and the client gets a hint message instead of a silent hang.
+        # If nothing listens on the port the connection fails and the client gets a hint message instead of a
+        # silent hang.
         reader, writer = await asyncio.open_connection("127.0.0.1", 4444)
 
         async def read_qemu():
@@ -643,7 +689,9 @@ async def ws_templeos(websocket: WebSocket):
             except Exception as e:
                 logger.debug(f"QEMU Write stream closed: {e}")
 
-        # gather runs both pumps until one raises/ends; unlike the shell bridge it does not cancel the other pump explicitly, so a client that disconnects leaves the TCP connection to be closed by the garbage collector.
+        # gather runs both pumps until one raises/ends; unlike the shell bridge it does not cancel the other
+        # pump explicitly, so a client that disconnects leaves the TCP connection to be closed by the garbage
+        # collector.
         await asyncio.gather(
             read_qemu(),
             write_qemu(),
@@ -654,7 +702,8 @@ async def ws_templeos(websocket: WebSocket):
         await websocket.close()
 
 
-# Registers a browser as a live-reload listener. The receive loop only waits for the client to disconnect (it ignores any text it receives).
+# Registers a browser as a live-reload listener. The receive loop only waits for the client to disconnect (it
+# ignores any text it receives).
 @app.websocket("/ws/dev-reload")
 async def ws_dev_reload(websocket: WebSocket):
     """WebSocket endpoint registering connected browser clients for live development reloading."""
@@ -674,7 +723,8 @@ async def ws_dev_reload(websocket: WebSocket):
 # Static Web Client Asset Mounting
 # ------------------------------------------------------------------------------
 
-# Locate the client folder (bundled or source tree). If a built client/dist exists (for example from a Vite/Tauri build) it is served; otherwise the raw client folder is served.
+# Locate the client folder (bundled or source tree). If a built client/dist exists (for example from a
+# Vite/Tauri build) it is served; otherwise the raw client folder is served.
 if hasattr(sys, "_MEIPASS"):
     client_dir = os.path.join(sys._MEIPASS, "client")
 else:
