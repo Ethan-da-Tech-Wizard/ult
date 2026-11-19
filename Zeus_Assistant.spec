@@ -1,7 +1,15 @@
+# How this file fits the app: PyInstaller build recipe for the single-file executable "Zeus_Assistant". It
+# is a generated file (PyInstaller writes it when server/build_desktop.py runs) and then committed.
+# Caveat: the paths below are absolute and point to /home/user/Ult_Gaming/, which exists only on the
+# machine that generated it. server/build_desktop.py does not use this spec (it calls PyInstaller with
+# command-line arguments), so the spec is informational unless the paths are rewritten for your checkout.
 # -*- mode: python ; coding: utf-8 -*-
 
 
 a = Analysis(
+    # Analysis entry point and what to bundle: the server's main.py is the program; `datas` copies the
+    # client and sandbox folders into the executable's temporary extraction directory (sys._MEIPASS),
+    # where main.py and sandbox_manager.py look for them.
     ['/home/user/Ult_Gaming/server/main.py'],
     pathex=[],
     binaries=[],
@@ -14,8 +22,12 @@ a = Analysis(
     noarchive=False,
     optimize=0,
 )
+
+# PYZ = compressed archive of the pure-Python modules.
 pyz = PYZ(a.pure)
 
+# EXE options: console=True keeps a terminal window so server logs are visible; upx=True compresses the
+# binary if UPX is installed; the other flags are PyInstaller defaults.
 exe = EXE(
     pyz,
     a.scripts,
