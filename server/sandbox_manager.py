@@ -26,7 +26,7 @@ RELIC_SAVE_DIR = os.path.join(WORKSPACE_DIR, "save_data", "relic_save")
 def ensure_sandbox_running():
     """Checks if the Docker sandbox is running. If not, attempts to start it."""
     try:
-        # Check if container is running
+        # Step 1: Query Docker daemon to verify container existence and running state via inspect format string
         check_run = subprocess.run(
             ["docker", "inspect", "-f", "{{.State.Running}}", SANDBOX_CONTAINER_NAME],
             stdout=subprocess.PIPE,
@@ -36,7 +36,7 @@ def ensure_sandbox_running():
         if check_run.returncode == 0 and check_run.stdout.strip() == "true":
             return True
             
-        # Check if container exists but is stopped
+        # Step 2: Check if container exists in stopped state to avoid recreating container volumes
         check_exist = subprocess.run(
             ["docker", "ps", "-a", "--filter", f"name={SANDBOX_CONTAINER_NAME}", "-q"],
             stdout=subprocess.PIPE,
@@ -47,8 +47,7 @@ def ensure_sandbox_running():
             start_proc = subprocess.run(["docker", "start", SANDBOX_CONTAINER_NAME])
             return start_proc.returncode == 0
             
-        # Container does not exist, run a new instance
-        # Mount relic_save to /workspace inside container
+        # Step 3: Container does not exist, provision isolated instance with bind mounted save volume
         logger.info("Launching new sandbox container...")
         run_cmd = [
             "docker", "run", "-d",
