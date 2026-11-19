@@ -1,8 +1,8 @@
 # ==============================================================================
 # Program: ch20_test.py
 # Programmer: Ethan-da-Tech-Wizard
-# Last Modified: November 18, 2026
-# Purpose: Automated grading test suite validating student solution submissions for Chapter 20 curriculum.
+# Last Modified: November 19, 2026
+# Purpose: Automated verification test suite validating end-to-end multi-modal pipeline integration. Evaluates spatial bounding box line grouping, relational database lookup, and synthetic response composition.
 # ==============================================================================
 import os
 import sys
@@ -19,7 +19,7 @@ def test_chapter_20():
             sys.exit(1)
 
     import importlib.util
-    spec = importlib.util.spec_from_file_location("student_solution", solution_path)
+    spec = importlib.util.spec_from_file_location("solution_module", solution_path)
     module = importlib.util.module_from_spec(spec)
     try:
         spec.loader.exec_module(module)

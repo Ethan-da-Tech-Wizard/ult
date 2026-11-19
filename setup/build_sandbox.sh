@@ -3,14 +3,15 @@
 # ==============================================================================
 # Program: build_sandbox.sh
 # Programmer: Ethan-da-Tech-Wizard
-# Last Modified: November 18, 2026
-# Purpose: Docker container build script compiling the isolated execution sandbox for game challenges.
+# Last Modified: November 19, 2026
+# Purpose: Docker container image builder for The Sacred Tech's Arch Linux execution sandbox.
+#          Verifies host Docker installation and daemon connectivity, checks for pre-existing
+#          image tags, prompts for optional rebuilds, and executes container builds from Dockerfile
+#          configuring the isolated environment for executing code challenges.
 # ==============================================================================
-# ─────────────────────────────────────────────────────────────────────────────
-# build_sandbox.sh
-# Builds the Arch Linux zeus-arch Docker image for the Sacred Tech sandbox.
-# Run once before starting the game server.
-# ─────────────────────────────────────────────────────────────────────────────
+
+# Halt on error (-e), treat uninitialized variables as fatal errors (-u),
+# and prevent pipe masking of intermediate non-zero return codes (-o pipefail).
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -24,14 +25,15 @@ echo "║   The Sacred Tech — Arch Linux Sandbox Builder       ║"
 echo "╚══════════════════════════════════════════════════════╝"
 echo ""
 
-# Check Docker is installed
+# ------------------------------------------------------------------------------
+# Pre-Flight Checks: Docker Engine and Daemon Availability
+# ------------------------------------------------------------------------------
 if ! command -v docker &>/dev/null; then
     echo "❌  Docker is not installed. Please install Docker Desktop first."
     echo "    → https://www.docker.com/products/docker-desktop"
     exit 1
 fi
 
-# Check Docker daemon is running
 if ! docker info &>/dev/null 2>&1; then
     echo "❌  Docker daemon is not running. Please start Docker Desktop."
     exit 1
@@ -40,7 +42,9 @@ fi
 echo "✅  Docker found: $(docker --version)"
 echo ""
 
-# Check if image already exists
+# ------------------------------------------------------------------------------
+# Image Cache Check & Rebuild Prompt
+# ------------------------------------------------------------------------------
 if docker image inspect "$IMAGE_NAME" &>/dev/null 2>&1; then
     echo "ℹ️   Image '$IMAGE_NAME' already exists."
     read -r -p "    Rebuild? [y/N] " response
@@ -51,6 +55,9 @@ if docker image inspect "$IMAGE_NAME" &>/dev/null 2>&1; then
     docker rmi "$IMAGE_NAME" || true
 fi
 
+# ------------------------------------------------------------------------------
+# Docker Image Build Invocation
+# ------------------------------------------------------------------------------
 echo "🏗️   Building $IMAGE_NAME from $SANDBOX_DIR/Dockerfile ..."
 echo ""
 

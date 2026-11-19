@@ -3,18 +3,19 @@
 # ==============================================================================
 # Program: check_requirements.py
 # Programmer: Ethan-da-Tech-Wizard
-# Last Modified: November 18, 2026
-# Purpose: Pre-flight system requirements checker validating Python, Docker, QEMU, and virtualization.
+# Last Modified: November 19, 2026
+# Purpose: Pre-flight system requirements and readiness verification orchestrator for The Sacred Tech.
+#          Performs tiered environment discovery validating Python 3.10+ runtimes, virtual environments,
+#          package dependencies, Docker engine/daemon presence, and QEMU hardware emulation capabilities,
+#          providing actionable installation recommendations across Windows, macOS, and Linux platforms.
 # ==============================================================================
-# ─────────────────────────────────────────────────────────────────────────────
-# check_requirements.py — System Requirements Checker for The Sacred Tech
-# ─────────────────────────────────────────────────────────────────────────────
+
 import os
-import sys
 import shutil
 import subprocess
+import sys
 
-# Terminal colors
+# ANSI escape sequence color palettes for terminal reporting
 RESET = "\033[0m"
 BOLD = "\033[1m"
 RED = "\033[31m"
@@ -24,26 +25,43 @@ BLUE = "\033[34m"
 MAGENTA = "\033[35m"
 CYAN = "\033[36m"
 
+
 def print_header(title):
+    """Prints a styled section header banner."""
     print(f"\n{BOLD}{CYAN}=== {title} ==={RESET}")
 
+
 def print_status(name, status, details="", is_ok=True):
+    """Formats and prints an individual requirement verification row.
+
+    Args:
+        name: Name of the component or tool being checked.
+        status: Short status label ('PASSED', 'FAILED', 'FOUND', etc.).
+        details: Additional contextual information or version strings.
+        is_ok: Boolean indicating passing status.
+    """
     color = GREEN if is_ok else RED
     symbol = "✅" if is_ok else "❌"
     print(f" {symbol}  {BOLD}{name:<30}{RESET} : {color}{status:<15}{RESET} {details}")
 
+
 def check_command(cmd):
+    """Queries system PATH to verify presence of an executable binary."""
     return shutil.which(cmd) is not None
 
+
 def main():
+    """Main verification pipeline executing tiered system capability checks."""
     print(f"\n{BOLD}{YELLOW}=========================================================={RESET}")
     print(f"{BOLD}{YELLOW}      The Sacred Tech — System Requirements Checker       {RESET}")
     print(f"{BOLD}{YELLOW}=========================================================={RESET}")
 
-    # ── TIER 1: Python & PIP dependencies ──
+    # --------------------------------------------------------------------------
+    # Tier 1: Core Python & Package Dependencies (Mandatory)
+    # --------------------------------------------------------------------------
     print_header("Tier 1: Core JRPG Game (Required)")
-    
-    # Python Version Check
+
+    # 1. Python Version Check: Requires 3.10+
     major, minor = sys.version_info.major, sys.version_info.minor
     py_ok = major == 3 and minor >= 10
     py_ver_str = f"{major}.{minor}.{sys.version_info.micro}"
@@ -52,17 +70,17 @@ def main():
     else:
         print_status("Python 3.10+ Version", "FAILED", f"(Found {py_ver_str} - Upgrade to Python 3.10+)", is_ok=False)
 
-    # Virtual Environment check
+    # 2. Virtual Environment check
     project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
     venv_dir = os.path.join(project_root, ".venv")
     venv_exists = os.path.exists(venv_dir)
-    
+
     if venv_exists:
         print_status("Virtual Env (.venv)", "FOUND", f"({venv_dir})", is_ok=True)
     else:
-        print_status("Virtual Env (.venv)", "MISSING", f"(Run python setup/install_all.py)", is_ok=False)
+        print_status("Virtual Env (.venv)", "MISSING", "(Run python setup/install_all.py)", is_ok=False)
 
-    # Python packages check
+    # 3. Python package imports check
     packages = ["fastapi", "uvicorn", "numpy", "pydantic"]
     missing_packages = []
     for pkg in packages:
@@ -70,38 +88,42 @@ def main():
             __import__(pkg)
         except ImportError:
             missing_packages.append(pkg)
-            
+
     if not missing_packages:
         print_status("Python Packages", "PASSED", "(fastapi, uvicorn, numpy, pydantic present)", is_ok=True)
     else:
         print_status("Python Packages", "INCOMPLETE", f"(Missing: {', '.join(missing_packages)})", is_ok=False)
 
-    # ── TIER 2: Docker / Sandbox ──
+    # --------------------------------------------------------------------------
+    # Tier 2: Docker Engine & Container Sandbox (Optional)
+    # --------------------------------------------------------------------------
     print_header("Tier 2: Arch Linux Sandbox (Optional)")
     has_docker = check_command("docker")
-    
+
     if has_docker:
-        # Check if daemon is running
+        # Check if daemon is running and responsive
         daemon_ok = False
         try:
             res = subprocess.run(["docker", "info"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             daemon_ok = res.returncode == 0
         except Exception:
             pass
-            
+
         if daemon_ok:
             print_status("Docker CLI & Daemon", "PASSED", "(Ready to run compiler containers)", is_ok=True)
         else:
-            print_status("Docker CLI & Daemon", "PARTIAL", f"(Docker CLI installed, but daemon is NOT running)", is_ok=False)
+            print_status("Docker CLI & Daemon", "PARTIAL", "(Docker CLI installed, but daemon is NOT running)", is_ok=False)
             print(f"     {YELLOW}👉 Start Docker Desktop (or run 'sudo systemctl start docker'){RESET}")
     else:
         print_status("Docker Engine", "MISSING", "(Optional: required for Arch Linux Sandbox)", is_ok=False)
         print(f"     {YELLOW}👉 Download from: https://www.docker.com/products/docker-desktop/{RESET}")
 
-    # ── TIER 3: QEMU / TempleOS VM ──
+    # --------------------------------------------------------------------------
+    # Tier 3: QEMU Hypervisor & TempleOS VM (Optional)
+    # --------------------------------------------------------------------------
     print_header("Tier 3: TempleOS VM Altar (Optional)")
     has_qemu = check_command("qemu-system-x86_64")
-    
+
     if has_qemu:
         print_status("QEMU System Emulator", "PASSED", "(qemu-system-x86_64 found)", is_ok=True)
     else:
@@ -113,11 +135,13 @@ def main():
         else:
             print(f"     {YELLOW}👉 Install: sudo apt install qemu-system-x86 qemu-utils{RESET}")
 
-    # ── SUMMARY ──
+    # --------------------------------------------------------------------------
+    # Readiness Summary Matrix & Actionable Guidance
+    # --------------------------------------------------------------------------
     print(f"\n{BOLD}{YELLOW}=========================================================={RESET}")
     print(f"{BOLD}{YELLOW}                  Readiness Summary                       {RESET}")
     print(f"{BOLD}{YELLOW}=========================================================={RESET}")
-    
+
     t1_ready = py_ok and venv_exists and not missing_packages
     t2_ready = has_docker
     t3_ready = has_qemu
@@ -129,7 +153,7 @@ def main():
 
     print(f" {'🟢' if t2_ready else '🟡'}  {BOLD}Tier 2 Sandbox:{RESET}    {'Active' if t2_ready else 'Fallback Mode (Host Execution)'}")
     print(f" {'🟢' if t3_ready else '🟡'}  {BOLD}Tier 3 VM:{RESET}         {'Active' if t3_ready else 'Fallback Mode (Simulated Altar)'}")
-    
+
     print(f"\n{BOLD}{CYAN}Recommendations:{RESET}")
     if not t1_ready:
         print("  1. Run the auto-installer: python setup/install_all.py")
@@ -139,8 +163,9 @@ def main():
             print("  Windows powershell:  .\\scripts\\run_dev.ps1")
         else:
             print("  macOS/Linux bash:    ./scripts/run_dev.sh")
-            
+
     print(f"{BOLD}{YELLOW}=========================================================={RESET}\n")
+
 
 if __name__ == "__main__":
     main()

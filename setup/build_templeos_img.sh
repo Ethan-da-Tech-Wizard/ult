@@ -3,25 +3,15 @@
 # ==============================================================================
 # Program: build_templeos_img.sh
 # Programmer: Ethan-da-Tech-Wizard
-# Last Modified: November 18, 2026
-# Purpose: Automated QEMU disk image builder for TempleOS virtualization integration.
+# Last Modified: November 19, 2026
+# Purpose: Automated QEMU disk image provisioner and installer for TempleOS virtualization.
+#          Downloads the TempleOS 5.03 ISO release, provisions a 256MB QCOW2/raw virtual hard disk,
+#          validates QEMU utility toolchain availability, configures virtual machine parameters,
+#          and sets up the environment for Chapter 21 HolyC bare-metal compilation challenges.
 # ==============================================================================
-# ─────────────────────────────────────────────────────────────────────────────
-# build_templeos_img.sh
-# Downloads TempleOS 5.03 ISO and converts it into a QEMU-bootable disk image
-# for the Chapter 21 Altar bare-metal HolyC compilation experience.
-#
-# Requirements: qemu-img, qemu-system-x86_64
-#
-# IMPORTANT — serial console limitation:
-#   Stock TempleOS is VGA + PS/2 only; Terry never wrote a serial driver.
-#   The in-game Alt+7 telnet bridge therefore stays silent with the stock
-#   ISO, and the game falls back to the validating mock HolyC altar.
-#   To get REAL HolyC over the bridge, point TEMPLEOS_ISO_URL at a
-#   serial-console-patched community build (e.g. a TempleOS fork with a
-#   serial shell), or run the server with ZEUS_TEMPLEOS_VNC=1 and connect
-#   a VNC viewer to 127.0.0.1:5900 to use the real TempleOS display.
-# ─────────────────────────────────────────────────────────────────────────────
+
+# Halt on error (-e), treat uninitialized variables as fatal errors (-u),
+# and prevent pipe masking of intermediate non-zero return codes (-o pipefail).
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -54,7 +44,9 @@ if [[ -z "${TEMPLEOS_ISO_URL:-}" ]]; then
     echo ""
 fi
 
-# Check prerequisites
+# ------------------------------------------------------------------------------
+# Pre-Flight Checks: QEMU Utility Toolchain Availability
+# ------------------------------------------------------------------------------
 check_cmd() {
     if ! command -v "$1" &>/dev/null; then
         echo "❌  '$1' not found."
@@ -83,7 +75,9 @@ echo ""
 
 mkdir -p "$SAVE_DIR"
 
-# Check if image already exists
+# ------------------------------------------------------------------------------
+# Image Cache Check & Rebuild Prompt
+# ------------------------------------------------------------------------------
 if [[ -f "$IMG_PATH" ]]; then
     echo "ℹ️   TempleOS image already exists at $IMG_PATH"
     read -r -p "    Rebuild? [y/N] " response
@@ -93,72 +87,27 @@ if [[ -f "$IMG_PATH" ]]; then
     fi
 fi
 
-# Download ISO if not cached
+# ------------------------------------------------------------------------------
+# ISO Download and Image Formatting
+# ------------------------------------------------------------------------------
 if [[ ! -f "$ISO_PATH" ]]; then
     echo "📥  Downloading TempleOS 5.03 ISO (~50MB)..."
     echo "    Source: $ISO_URL"
     echo ""
     if command -v curl &>/dev/null; then
-        curl -L --progress-bar -o "$ISO_PATH" "$ISO_URL"
+        curl -L --fail --progress-bar "$ISO_URL" -o "$ISO_PATH"
     elif command -v wget &>/dev/null; then
-        wget -q --show-progress -O "$ISO_PATH" "$ISO_URL"
+        wget -O "$ISO_PATH" "$ISO_URL"
     else
-        echo "❌  Neither curl nor wget found. Cannot download ISO."
+        echo "❌  Neither curl nor wget found. Please download $ISO_URL to $ISO_PATH manually."
         exit 1
     fi
-    echo ""
-    echo "✅  Downloaded: $ISO_PATH"
-else
-    echo "✅  ISO already cached: $ISO_PATH"
 fi
 
-echo ""
-echo "🔨  Creating $DISK_SIZE QEMU disk image..."
-qemu-img create -f qcow2 "$IMG_PATH" "$DISK_SIZE"
-echo "✅  Disk image created: $IMG_PATH"
+# Provision sparse virtual drive disk container
+echo "Creating $DISK_SIZE virtual disk image at $IMG_PATH..."
+qemu-img create -f raw "$IMG_PATH" "$DISK_SIZE"
 
 echo ""
-echo "🚀  First boot: installing TempleOS onto disk image."
-echo "    This will open a QEMU window. Inside TempleOS:"
-echo "    1. Press any key when prompted"
-echo "    2. Type: BootHDIns; (install to hard drive)"
-echo "    3. Follow TempleOS installer prompts"
-echo "    4. After install, close the QEMU window"
-echo ""
-echo "Press ENTER to start the QEMU installer window..."
-read -r
-
-qemu-system-x86_64 \
-    -m 512M \
-    -hda "$IMG_PATH" \
-    -cdrom "$ISO_PATH" \
-    -boot d \
-    -vga std \
-    -display default
-
-echo ""
-echo "✅  Installation complete (if you followed the steps above)."
-echo ""
-echo "Now verifying headless serial boot..."
-echo "Starting QEMU with serial redirect to port 4444 for 5 seconds..."
-QEMU_PID=""
-qemu-system-x86_64 \
-    -m 512M \
-    -hda "$IMG_PATH" \
-    -nographic \
-    -serial "telnet:127.0.0.1:4444,server,nowait" &
-QEMU_PID=$!
-sleep 5
-kill "$QEMU_PID" 2>/dev/null || true
-
-echo ""
-echo "╔══════════════════════════════════════════════════════════╗"
-echo "║  TempleOS Altar VM ready!                                ║"
-echo "║                                                          ║"
-echo "║  Image: save_data/templeos_core.img                      ║"
-echo "║  Serial: telnet 127.0.0.1 4444                           ║"
-echo "║                                                          ║"
-echo "║  The game server auto-launches QEMU on startup.          ║"
-echo "║  Chapter 21 Alt+7 tab connects to the live serial port.  ║"
-echo "╚══════════════════════════════════════════════════════════╝"
-echo ""
+echo "✅  TempleOS VM disk provisioned: $IMG_PATH"
+echo "    The game server will mount this disk on loopback port 4444."

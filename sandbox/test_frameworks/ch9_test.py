@@ -1,8 +1,8 @@
 # ==============================================================================
 # Program: ch9_test.py
 # Programmer: Ethan-da-Tech-Wizard
-# Last Modified: November 18, 2026
-# Purpose: Automated grading test suite validating student solution submissions for Chapter 9 curriculum.
+# Last Modified: November 19, 2026
+# Purpose: Automated verification test suite validating Layer Normalization and SGD backpropagation weight updates. Evaluates row-wise statistical mean/variance calculation and mean squared error gradient descent.
 # ==============================================================================
 import os
 import sys
@@ -18,7 +18,7 @@ def test_chapter_9():
             sys.exit(1)
 
     import importlib.util
-    spec = importlib.util.spec_from_file_location("student_solution", solution_path)
+    spec = importlib.util.spec_from_file_location("solution_module", solution_path)
     module = importlib.util.module_from_spec(spec)
     try:
         spec.loader.exec_module(module)

@@ -1,8 +1,8 @@
 # ==============================================================================
 # Program: ch13_test.py
 # Programmer: Ethan-da-Tech-Wizard
-# Last Modified: November 18, 2026
-# Purpose: Automated grading test suite validating student solution submissions for Chapter 13 curriculum.
+# Last Modified: November 19, 2026
+# Purpose: Automated verification test suite validating NLP evaluation metrics. Evaluates 1-gram BLEU precision with exponential brevity penalty and ROUGE-L longest common subsequence F1 scoring.
 # ==============================================================================
 import os
 import sys
@@ -32,7 +32,7 @@ def test_chapter_13():
             sys.exit(1)
 
     import importlib.util
-    spec = importlib.util.spec_from_file_location("student_solution", solution_path)
+    spec = importlib.util.spec_from_file_location("solution_module", solution_path)
     module = importlib.util.module_from_spec(spec)
     try:
         spec.loader.exec_module(module)

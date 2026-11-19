@@ -1,8 +1,8 @@
 # ==============================================================================
 # Program: ch6_test.py
 # Programmer: Ethan-da-Tech-Wizard
-# Last Modified: November 18, 2026
-# Purpose: Automated grading test suite validating student solution submissions for Chapter 6 curriculum.
+# Last Modified: November 19, 2026
+# Purpose: Automated verification test suite validating Python package manifest dependency specifications. Parses requirements.txt for pinned version specifiers and security vulnerability patches.
 # ==============================================================================
 import os
 import sys
