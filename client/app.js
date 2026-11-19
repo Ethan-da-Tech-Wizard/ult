@@ -860,6 +860,47 @@ Object.keys(MAP_GRIDS).forEach(mapId => {
     MAP_GRIDS[mapId] = expandMapGrid(Number(mapId), MAP_GRIDS[mapId]);
 });
 
+/**
+ * Overworld (map 2) coordinates of the portal into each dungeon chapter: DUNGEON_PORTALS[chapterId] = {x, y}.
+ * handlePortalTransition() reads it twice: to recognise which dungeon a stepped-on portal tile leads to, and
+ * to put the player on the tile just below that portal when they leave the dungeon.
+ *
+ * RECONSTRUCTION NOTE: commit 2607b58 added those reads but never defined the table, and no earlier commit,
+ * doc or script contains one, so the original coordinates could not be recovered. This layout is new: 20
+ * portals (chapters 2-21; chapter 0 is the cabin and chapter 1 is Alexandria, neither is a dungeon) in
+ * 4 rows of 5, chapter ids increasing left-to-right then top-to-bottom, so progress reads like a table.
+ * Rows sit at y = 28, 34, 40, 46 and columns at x = 8, 20, 32, 44, 56: far from the NPC tiles of map 2
+ * (all at x <= 14, y <= 9) and from the 64x64 border, and 6 apart vertically so each row's access road
+ * (y + 1) never touches the next row's portals.
+ */
+const DUNGEON_PORTALS = {};
+(function placeOverworldPortals() {
+    const grid = MAP_GRIDS[2];
+    const columnsX = [8, 20, 32, 44, 56];
+    const rowsY = [28, 34, 40, 46];
+
+    // Alexandria return portal: handlePortalTransition() special-cases (13,15) and Alexandria drops the
+    // player at (13,16), directly below it, so it is the hub's entrance.
+    grid[15][13] = 6;
+
+    // Vertical spine from the entrance down past the last portal row so every row's road connects to it.
+    // Direct assignment rather than carveRoad(): the spine only has to turn scattered wall noise (tile 1)
+    // into grass, and x = 13 / y >= 16 is always inside the border so no bounds checks are needed.
+    for (let y = 16; y <= rowsY[rowsY.length - 1] + 1; y++) grid[y][13] = 0;
+
+    rowsY.forEach((y, row) => {
+        // Access road one tile below the portals: the transition code pushes a refused (locked) player back
+        // to y + 1, so that tile must always be walkable or the player would be stuck inside a wall.
+        for (let x = 4; x <= 58; x++) grid[y + 1][x] = 0;
+
+        columnsX.forEach((x, col) => {
+            const chapterId = 2 + row * columnsX.length + col;
+            grid[y][x] = 6;
+            DUNGEON_PORTALS[chapterId] = { x, y };
+        });
+    });
+})();
+
 // NPC database: NPCS[mapId]["x,y"] = {name, dialogue tree, ...}. Dialogue entries support branching
 // options handled by checkInteraction()/showDialogue(); this table is data only and is by far the largest
 // part of the file.
@@ -4625,10 +4666,8 @@ function drawNPCs(camera = getCameraOrigin()) {
 // into a dungeon portal from DUNGEON_PORTALS if that chapter is unlocked; inside a dungeon -> back to the
 // overworld at the portal tile (7,11) if the gate is open. When refused the player is pushed one tile
 // back. Transitions are delayed with setTimeout so the dialogue can be read; each one saves to the server.
-// KNOWN BUG (reported, not fixed in this comment-only pass): DUNGEON_PORTALS is read below (overworld
-// portals and dungeon exits) but is not defined anywhere in the repository (git history shows it was
-// introduced in commit 2607b58 without a definition), so those two branches throw ReferenceError when
-// reached.
+// DUNGEON_PORTALS (defined after the map expansion near the top of this file) supplies the portal
+// coordinates read below; it was missing after commit 2607b58 so both branches threw ReferenceError.
 // Warp Engine Portal Transitions
 function handlePortalTransition(worldX, worldY) {
     if (player.currentMapId === 0) {
