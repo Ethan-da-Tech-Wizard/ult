@@ -35,8 +35,10 @@ what you have and falls back gracefully for the rest.
 | **2. Arch Linux sandbox (optional)** | The Alt+5 terminal becomes a *real* Arch Linux container; chapter validators run sandboxed instead of on your host | **Docker** (Docker Desktop on macOS/Windows, `docker` on Linux) |
 | **3. TempleOS Altar VM (optional)** | Chapter 21's Alt+7 tab drives a real TempleOS virtual machine | **QEMU** (`brew install qemu` / `sudo apt install qemu-system-x86 qemu-utils`) |
 
-Without Tier 2 the terminal uses your host shell (a yellow badge in-game
-tells you which one you're in). Without Tier 3 the Altar uses the built-in
+Without Tier 2 the Alt+5 terminal refuses to start a shell on your computer
+(it falls back to the built-in practice terminal). To allow a real host shell
+anyway, start the server with `ZEUS_ALLOW_HOST_SHELL=1`; the terminal socket
+also requires a per-run token that the game client fetches automatically. Without Tier 3 the Altar uses the built-in
 validating HolyC console — same puzzles, no VM.
 
 **Python packages** (installed automatically by the installer or first
@@ -155,8 +157,9 @@ Then open http://127.0.0.1:8000.
 
 - **"Backend offline" in-game** — the server isn't running; start
   `./scripts/run_dev.sh` and refresh.
-- **Terminal badge says "host shell fallback"** — Docker isn't running or
-  the sandbox was never built. Run `./setup/install_all.sh --full` (or
+- **Terminal badge says "host shell fallback"** / terminal says "no shell
+  started" — Docker isn't running or the sandbox was never built (a host
+  shell is only given when `ZEUS_ALLOW_HOST_SHELL=1`). Run `./setup/install_all.sh --full` (or
   `setup/build_sandbox.sh`) with Docker started.
 - **Chapter validators fail with `ModuleNotFoundError: numpy`** — your
   Python env predates the installer; re-run `./setup/install_all.sh`.

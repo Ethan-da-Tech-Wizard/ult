@@ -19,10 +19,10 @@
 # single-file app with server/build_desktop.py (PyInstaller sets sys._MEIPASS, see below).
 # Data: SQLite file save_data/save_state.db (override with ZEUS_SAVE_DB_PATH): table player_state, newest row
 # = current save, history trimmed to 50 rows. Player code lives in save_data/relic_save/.
-# Security model: loopback only, CORS limited to localhost origins. Known risks: /ws/shell hands out a real
-# shell (a host bash when Docker is down) with no authentication and no Origin check; CORS does not apply to
-# WebSockets, so any web page opened in the same browser could connect to ws://127.0.0.1:8000/ws/shell. Treat
-# it as a single-user local tool and add an Origin check/token before exposing it further.
+# Security model: loopback only, CORS limited to localhost origins. /ws/shell hands out a real shell, and
+# CORS does not apply to WebSockets, so it is guarded separately (see server/shell_guard.py): the handshake
+# must carry a loopback Origin and Host, the first frame must be the per-run random token served by
+# /api/shell-token, and a shell on the HOST (Docker down) is only given when ZEUS_ALLOW_HOST_SHELL=1.
 # Also, error handlers return str(exception) to the client, and the compile endpoint runs player code (inside
 # Docker when available, but directly on the host as the fallback).
 import asyncio
@@ -33,11 +33,20 @@ import sqlite3
 import sys
 from typing import Set
 
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 import uvicorn
+
+# Access-control helpers for /ws/shell. Same dual-import pattern as sandbox_manager below: `server.shell_guard`
+# when started from the repo root (tests, smoke scripts), top-level `shell_guard` when main.py is run from
+# inside server/ (python server/main.py puts server/ itself on sys.path).
+try:
+    from server import shell_guard
+except ImportError:
+    import shell_guard
 
 # Standard logging; INFO level shows start-up and reload events in the terminal that launched the server.
 # Initialize structured server logging
@@ -553,6 +562,25 @@ def compile_code(req: CompileRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# Hands the browser client the per-run token it must send as the first /ws/shell frame. Why an endpoint: the
+# static client has no other way to learn a secret generated at server start. Why this is not a hole: a page
+# on another site can fire a request here but cannot READ the answer (the CORS list above does not include
+# it), and requests whose Host is not loopback (DNS rebinding) or that the browser marks cross-site are
+# refused outright. Cache-Control: no-store keeps the token out of proxies and the disk cache.
+@app.get("/api/shell-token")
+def shell_token(request: Request):
+    """Returns {"token": ...} for the terminal WebSocket handshake; 403 for non-local callers."""
+    # Host header: loopback names only (rebinding defence). Origin: absent (same-origin GET) or local.
+    # Sec-Fetch-Site: set by modern browsers; "cross-site" means another website initiated this request.
+    if (
+        not shell_guard.is_loopback_host(request.headers.get("host"))
+        or not shell_guard.is_local_origin(request.headers.get("origin"))
+        or request.headers.get("sec-fetch-site") == "cross-site"
+    ):
+        raise HTTPException(status_code=403, detail="Shell token is only available to the local game client.")
+    return JSONResponse({"token": shell_guard.SHELL_TOKEN}, headers={"Cache-Control": "no-store"})
+
+
 # WebSocket endpoints. Messages are plain text frames in both directions (terminal bytes decoded as UTF-8).
 # ------------------------------------------------------------------------------
 # Real-Time WebSocket Proxy Endpoints
@@ -566,11 +594,47 @@ def compile_code(req: CompileRequest):
 async def ws_shell(websocket: WebSocket):
     """WebSocket terminal bridge connecting client to an interactive shell via pseudo-terminal (PTY).
 
-    Spawns `docker exec -it zeus-sandbox bash` if the container is running;
-    otherwise falls back to a host bash shell. Uses `pty.openpty()` to capture
-    full ANSI escape sequences, control characters, and line editing.
+    Access control (all checked BEFORE any process is spawned, see server/shell_guard.py):
+      1. handshake headers: loopback TCP peer, loopback Host, loopback-or-absent Origin;
+      2. the first text frame must equal the per-run token from GET /api/shell-token (5 s to send it);
+      3. the host-bash fallback is only used when ZEUS_ALLOW_HOST_SHELL=1.
+    Failures close the socket with code 1008 (policy violation) and the client does not auto-reconnect.
+
+    Spawns `docker exec -it zeus-sandbox bash` if the container is running; otherwise (only when opted in)
+    a host bash shell. Uses `pty.openpty()` to capture full ANSI escape sequences, control characters, and
+    line editing.
     """
+    # Refuse before accept(): Starlette answers an un-accepted close with HTTP 403, so a hostile page learns
+    # nothing and no WebSocket session ever exists. Browsers always send Origin on WebSocket handshakes and
+    # scripts cannot forge it, which is what makes the Origin test meaningful; Host and peer address stop DNS
+    # rebinding and any accidental non-loopback bind.
+    client_host = websocket.client.host if websocket.client else None
+    if (
+        not shell_guard.is_loopback_client(client_host)
+        or not shell_guard.is_loopback_host(websocket.headers.get("host"))
+        or not shell_guard.is_local_origin(websocket.headers.get("origin"))
+    ):
+        logger.warning(
+            "Rejected /ws/shell handshake (peer=%s, host=%s, origin=%s)",
+            client_host, websocket.headers.get("host"), websocket.headers.get("origin"),
+        )
+        await websocket.close(code=1008)
+        return
+
     await websocket.accept()
+
+    # Token handshake. The token travels in the first frame instead of the URL so it never lands in access
+    # logs or browser history. The timeout stops an unauthenticated peer from holding the socket open.
+    try:
+        first_frame = await asyncio.wait_for(websocket.receive_text(), timeout=5)
+    except Exception:
+        # Timeout, disconnect or a binary frame: all treated as failed authentication.
+        first_frame = None
+    if not shell_guard.token_matches(first_frame):
+        logger.warning("Rejected /ws/shell: missing or wrong token")
+        await websocket.close(code=1008)
+        return
+
     try:
         # Check if Docker container is currently active
 
@@ -580,12 +644,21 @@ async def ws_shell(websocket: WebSocket):
         if container_check:
             cmd = ["docker", "exec", "-it", "zeus-sandbox", "bash"]
             await websocket.send_text("\r\n[Sandbox: connected to Arch Linux container 'zeus-sandbox']\r\n")
-        else:
+        elif shell_guard.host_shell_allowed():
             cmd = ["bash"]
             await websocket.send_text(
                 "\r\n[Sandbox OFFLINE: this is your HOST shell, not the Arch container.\r\n"
-                " Run setup/build_sandbox.sh with Docker installed for the real sandbox.]\r\n"
+                " (ZEUS_ALLOW_HOST_SHELL=1 is set.) Run setup/build_sandbox.sh with Docker installed for the real sandbox.]\r\n"
             )
+        else:
+            # Default is to refuse: a host shell is full access to the user's account, so it must be an
+            # explicit operator decision, not something that happens because Docker happens to be stopped.
+            await websocket.send_text(
+                "\r\n[Sandbox OFFLINE: no shell started. Run setup/build_sandbox.sh with Docker installed,\r\n"
+                " or start the server with ZEUS_ALLOW_HOST_SHELL=1 to allow a shell on this computer.]\r\n"
+            )
+            await websocket.close(code=1008)
+            return
 
         # Allocate pseudo-terminal descriptor pair
 
