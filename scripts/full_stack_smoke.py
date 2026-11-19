@@ -3,9 +3,14 @@
 # ==============================================================================
 # Program: full_stack_smoke.py
 # Programmer: Ethan-da-Tech-Wizard
-# Last Modified: November 18, 2026
-# Purpose: Comprehensive stack integration test verifying API server, sandbox execution, and asset delivery.
+# Last Modified: November 19, 2026
+# Purpose: Comprehensive full-stack integration verification harness for The Sacred Tech.
+#          Spawns an ephemeral background server instance with isolated SQLite storage,
+#          validates system diagnostic endpoints, asserts validator presence across all 22 chapters,
+#          verifies atomic save/reload transactions, asserts skeleton rejection constraints,
+#          and sequentially executes and validates compile solutions across chapters 0 through 21.
 # ==============================================================================
+
 import json
 import os
 import subprocess
@@ -15,12 +20,23 @@ import time
 import urllib.error
 import urllib.request
 
-
+# Canonical root directory and local loopback address
 ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 BASE_URL = "http://127.0.0.1:8000"
 
 
 def request_json(path, method="GET", payload=None, timeout=10):
+    """Executes an HTTP JSON request against the local backend server.
+
+    Args:
+        path: URL path relative to BASE_URL.
+        method: HTTP verb ('GET', 'POST', etc.).
+        payload: Optional dictionary to serialize as JSON body.
+        timeout: Network socket timeout in seconds.
+
+    Returns:
+        dict: Parsed JSON response dictionary.
+    """
     data = None
     headers = {}
     if payload is not None:
@@ -33,6 +49,12 @@ def request_json(path, method="GET", payload=None, timeout=10):
 
 
 def wait_for_server(proc, timeout=20):
+    """Polls the server health endpoint until operational status is confirmed or timeout expires.
+
+    Args:
+        proc: Subprocess handle of the executing FastAPI server.
+        timeout: Maximum duration in seconds to wait for socket readiness.
+    """
     deadline = time.time() + timeout
     last_error = None
     while time.time() < deadline:
@@ -49,6 +71,8 @@ def wait_for_server(proc, timeout=20):
 
 
 def main():
+    """Main full-stack integration smoke testing routine."""
+    # Pre-flight check: ensure required HTTP backend libraries are importable
     try:
         import fastapi  # noqa: F401
         import uvicorn  # noqa: F401
@@ -57,10 +81,13 @@ def main():
         print("Run: python3 -m pip install -r requirements.txt")
         return 2
 
+    # Execute within an isolated temporary directory
     with tempfile.TemporaryDirectory(prefix="sacred-tech-smoke-") as tmp_dir:
         env = os.environ.copy()
         env["PYTHONPATH"] = ROOT_DIR
         env["ZEUS_SAVE_DB_PATH"] = os.path.join(tmp_dir, "save_state.db")
+        
+        # Launch backend FastAPI server subprocess
         proc = subprocess.Popen(
             [sys.executable, os.path.join(ROOT_DIR, "server", "main.py")],
             cwd=ROOT_DIR,
@@ -71,15 +98,18 @@ def main():
         )
 
         try:
+            # 1. Health check verification
             wait_for_server(proc)
             print("[PASS] server health")
 
+            # 2. Diagnostics verification: confirm all 22 chapter test validators exist
             diagnostics = request_json("/api/diagnostics")
             missing = diagnostics.get("missing_validators", [])
             if missing:
                 raise AssertionError(f"missing validators: {missing}")
             print(f"[PASS] validators present: {len(diagnostics.get('validators_found', []))}")
 
+            # 3. Save state roundtrip persistence verification
             save_payload = {
                 "gold": 321,
                 "compute_tokens": 123,
@@ -112,9 +142,7 @@ def main():
             assert saved_state.get("lastSavedAt") == "2026-06-09T00:00:00.000Z"
             print("[PASS] save/load persistence")
 
-            # Chapter 0's skeleton must NOT pass (the tutorial requires the
-            # player to actually write the export), so compile it with a
-            # player-style solution instead of the raw skeleton.
+            # 4. Invariant: Raw skeleton template must be rejected
             ch0_solution = 'export PATH=$PATH:/usr/local/bin\necho "Booting environment..."\n'
             ch0_skeleton = request_json("/api/code?chapter_id=0&skeleton=1", timeout=10)
             skeleton_result = request_json(
@@ -126,6 +154,7 @@ def main():
             assert not skeleton_result.get("success"), "Chapter 0 skeleton should not pass untouched"
             print("[PASS] chapter 0 skeleton correctly rejected")
 
+            # 5. Sequential chapter compile verification (Chapters 0 through 21)
             failures = []
             for chapter_id in range(22):
                 if chapter_id == 0:
@@ -152,6 +181,7 @@ def main():
             print("[PASS] full-stack smoke complete")
             return 0
         finally:
+            # Terminate server process and wait for clean shutdown
             proc.terminate()
             try:
                 proc.wait(timeout=5)

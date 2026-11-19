@@ -1,8 +1,8 @@
 # ==============================================================================
 # Program: ch0_test.py
 # Programmer: Ethan-da-Tech-Wizard
-# Last Modified: November 18, 2026
-# Purpose: Automated grading test suite validating student solution submissions for Chapter 0 curriculum.
+# Last Modified: November 19, 2026
+# Purpose: Automated verification test suite validating POSIX shell PATH environment configuration. Asserts that the solution extends the existing PATH search hierarchy without clobbering baseline system binary directories.
 # ==============================================================================
 import os
 import re

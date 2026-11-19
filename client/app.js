@@ -1,8 +1,11 @@
 // ==============================================================================
 // Program: app.js
 // Programmer: Ethan-da-Tech-Wizard
-// Last Modified: November 18, 2026
-// Purpose: Client-side game engine managing 2D tilemap rendering, player movement, combat, and dialogue.
+// Last Modified: November 19, 2026
+// Purpose: Client-side game engine and retro 2D canvas viewport controller for The Sacred Tech.
+//          Orchestrates tilemap rendering, viewport culling, keyboard/gamepad input handling,
+//          turn-based party combat mechanics, NPC dialog state trees, local inventory persistence,
+//          and asynchronous REST communications with the backend evaluation and sandbox runtime.
 // ==============================================================================
 // The Sacred Tech - Client Engine Logic
 
@@ -1050,7 +1053,7 @@ const NPCS = {
             options: [
                 { text: "Examine the patch", reply: "It's a parameterized query patch! The pork rind is infused with prepared statement logic. User inputs are now bound as parameters, not concatenated into the SQL string. Impenetrable. I feel GREAT." },
                 { text: "Oink back", reply: "OINK OINK! *tail wag* You speak fluent SQL sanitizer! Always escape your inputs, or a 10-year-old will DROP your production database and you'll spend 3 hours on the phone with your DBA crying." },
-                { text: "Ask about SQL injection stories", reply: "Bobby Tables came through last harvest. His mom named him: Robert'); DROP TABLE students;-- and an entire school's database was wiped. Proper parameterization would have saved them. The children lost their homework. The DBA lost their job. Dark times." },
+                { text: "Ask about SQL injection stories", reply: "Bobby Tables came through last harvest. His mom named him: Robert'); DROP TABLE users;-- and an entire enterprise database was wiped. Proper parameterization would have saved them. The team lost their production records. The DBA lost their job. Dark times." },
                 { text: "Chitchat", reply: "Third normal form is the cleanest way to live! No duplicate mud, no redundant truffle fields, everything normalized. My house is also in 3NF. No redundant rooms. Sometimes I miss having a hallway though." }
             ]
         },
@@ -2619,7 +2622,7 @@ const NPCS = {
             sprite: "🧓",
             dialogue: "I was here when the first pipeline ran. 2039. Before the Lockdown. I watched it work. I watched the Lockdown shut it down. I helped rebuild it, piece by piece, as the pieces became open again. I am the Assembly's memory. I remember what it was. I see what it is becoming again.",
             options: [
-                { text: "Ask about 2039", reply: "2039: the Golden Year. Every chapter's system was open-source, documented, reproducible. The pipeline ran end-to-end. Students completed Chapter 0 and eventually reached Chapter 21 in six months. The knowledge flowed. Then Veridicus signed the Stabilization Act. The Elder watched the repositories go dark, one by one. The Elder will not see that happen again." },
+                { text: "Ask about 2039", reply: "2039: the Golden Year. Every chapter's system was open-source, documented, reproducible. The pipeline ran end-to-end. Engineers completed Chapter 0 and eventually reached Chapter 21 in six months. The knowledge flowed. Then Veridicus signed the Stabilization Act. The Elder watched the repositories go dark, one by one. The Elder will not see that happen again." },
                 { text: "Ask about what comes next", reply: "The Altar. Chapter 21. TempleOS. The bare-metal compilation. The serial port bridge. The HolyC checksum. These are the final tests. Beyond the Altar: the open web, restored. Everything you've learned, applied. The Elder has seen pilgrims reach the Altar. Few have compiled successfully. The ones who do — they change things." }
             ]
         },

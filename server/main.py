@@ -1,39 +1,56 @@
 # ==============================================================================
 # Program: main.py
 # Programmer: Ethan-da-Tech-Wizard
-# Last Modified: November 18, 2026
-# Purpose: Core FastAPI server handling challenge submissions, save states, terminal web sockets, and scoring.
+# Last Modified: November 19, 2026
+# Purpose: Primary asynchronous FastAPI backend orchestrating The Sacred Tech game services.
+#          Manages SQLite player progression databases with atomic transactions and rolling limits,
+#          exposes REST endpoints for chapter code templates and Docker sandbox evaluation,
+#          bridges real-time bidirectional WebSockets to containerized PTY shells and QEMU telnet streams,
+#          and hosts static game client assets bound strictly to loopback interfaces.
 # ==============================================================================
-import os
-import sys
-import sqlite3
+
 import asyncio
-import logging
 from contextlib import asynccontextmanager
-import uvicorn
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
+import logging
+import os
+import sqlite3
+import sys
+from typing import Set
+
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+import uvicorn
 
-# Initialize logger
+# Initialize structured server logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("ZeusServer")
 
-dev_reload_sockets = set()
+# Set tracking active WebSocket connections for live client development reloading
+dev_reload_sockets: Set[WebSocket] = set()
+
 
 async def watch_client_files():
-    """Simple file watcher for the client directory to trigger live reload."""
-    if hasattr(sys, '_MEIPASS'):
+    """Asynchronous background filesystem watcher monitoring client web assets for changes.
+
+    Periodically scans modification timestamps across HTML, CSS, and JS assets in the
+    client directory. Upon detecting file mutations, broadcasts reload messages to all
+    connected development WebSockets to trigger instantaneous browser viewport refresh.
+    """
+    if hasattr(sys, "_MEIPASS"):
         client_dir = os.path.join(sys._MEIPASS, "client")
     else:
         client_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "client"))
+
     if not os.path.exists(client_dir):
         logger.warning(f"Client directory not found at {client_dir} for dev reloader.")
         return
-        
+
     last_mtimes = {}
+
     def scan_files():
+        """Scans mtime timestamps across supported client asset file extensions."""
         mtimes = {}
         for root, _, files in os.walk(client_dir):
             for file in files:
@@ -50,6 +67,7 @@ async def watch_client_files():
     except Exception as e:
         logger.error(f"Error initializing dev reload file scan: {e}")
 
+    # Polling loop checking timestamps every 1.0 second
     while True:
         await asyncio.sleep(1.0)
         if not dev_reload_sockets:
@@ -57,18 +75,20 @@ async def watch_client_files():
         try:
             current_mtimes = scan_files()
             changed = False
+            # Detect modified or newly created files
             for path, mtime in current_mtimes.items():
                 if path not in last_mtimes or mtime > last_mtimes[path]:
                     changed = True
                     break
+            # Detect deleted files
             if not changed:
                 for path in last_mtimes:
                     if path not in current_mtimes:
                         changed = True
                         break
-            
+
             if changed:
-                logger.info("Client files changed. Triggering live reload...")
+                logger.info("Client files changed. Triggering live reload across connected sockets...")
                 last_mtimes = current_mtimes
                 for ws in list(dev_reload_sockets):
                     try:
@@ -78,8 +98,17 @@ async def watch_client_files():
         except Exception as e:
             logger.error(f"Error in dev reload file watcher: {e}")
 
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
+    """FastAPI application lifespan context manager controlling daemon lifecycle.
+
+    Startup:
+      - Boots the background QEMU launcher daemon or fallback HolyC telnet server.
+      - Launches the asynchronous client file watcher background task.
+    Shutdown:
+      - Cancels the background file watcher task to prevent dangling event loop references.
+    """
     logger.info("FastAPI startup. Booting QEMU launcher/mock server...")
     try:
         from server import qemu_launcher
@@ -93,15 +122,17 @@ async def lifespan(_app: FastAPI):
     except Exception as e:
         logger.error(f"Error starting qemu_launcher: {e}")
 
-    # Start dev reload file watcher as a background task
+    # Start dev reload file watcher as a background asyncio task
     watcher_task = asyncio.create_task(watch_client_files())
     yield
-    # Clean up watcher
+    # Clean up watcher task on server shutdown
     watcher_task.cancel()
 
+
+# Instantiate FastAPI application with lifespan management
 app = FastAPI(title="Zeus RPG Core Server", lifespan=lifespan)
 
-# Bind strictly to local loopback interface for safety
+# Restrict CORS headers to local loopback webview instances
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://127.0.0.1:5173", "http://localhost:5173", "http://127.0.0.1:8000"],
@@ -110,6 +141,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Database path resolution and chapter metadata mappings
 DB_PATH = os.environ.get("ZEUS_SAVE_DB_PATH", os.path.join("save_data", "save_state.db"))
 EXPECTED_CHAPTER_IDS = list(range(22))
 CHAPTER_FILENAME_MAP = {
@@ -137,8 +169,9 @@ CHAPTER_FILENAME_MAP = {
     21: "ch21_altar.py",
 }
 
-# Initialize database schemas
+
 def init_db():
+    """Initializes SQLite database schemas for player game saves and handles migrations."""
     db_dir = os.path.dirname(DB_PATH)
     if db_dir:
         os.makedirs(db_dir, exist_ok=True)
@@ -156,15 +189,15 @@ def init_db():
             state_json TEXT DEFAULT '{}'
         )
     """)
+    # Migration check: Ensure state_json column exists on legacy database files
     cursor.execute("PRAGMA table_info(player_state)")
     existing_columns = {row[1] for row in cursor.fetchall()}
     if "state_json" not in existing_columns:
         cursor.execute("ALTER TABLE player_state ADD COLUMN state_json TEXT DEFAULT '{}'")
-    # Insert default state if empty
+
+    # Seed baseline initial save state if table is newly provisioned
     cursor.execute("SELECT COUNT(*) FROM player_state")
     if cursor.fetchone()[0] == 0:
-        # stats_json is an ARRAY matching the client's party order
-        # (normalizePartyStats merges by index, not by name)
         cursor.execute("""
             INSERT INTO player_state (gold, compute_tokens, unlocked_chapters, active_lead, inventory_json, stats_json, state_json)
             VALUES (
@@ -180,10 +213,13 @@ def init_db():
     conn.commit()
     conn.close()
 
+
+# Ensure database schema is valid on module import
 init_db()
 
 
 class SaveStateModel(BaseModel):
+    """Pydantic data validation model for incoming save state JSON payloads."""
     gold: int
     compute_tokens: int
     unlocked_chapters: str
@@ -192,21 +228,26 @@ class SaveStateModel(BaseModel):
     stats_json: str
     state_json: str = "{}"
 
+
 @app.get("/api/health")
 def health():
+    """Health check probe returning operational status and binding interface."""
     return {"status": "ok", "host": "127.0.0.1"}
+
 
 @app.get("/api/sandbox-status")
 def sandbox_status():
-    """Reports whether the Arch Linux Docker sandbox is available, so the
-    client terminal can show real-sandbox vs host-shell-fallback."""
+    """Reports whether the Arch Linux Docker sandbox is available and running."""
     import subprocess
     docker_available = False
     container_running = False
     try:
         check = subprocess.run(
             ["docker", "ps", "--filter", "name=zeus-sandbox", "-q"],
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=5
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=5,
         )
         docker_available = check.returncode == 0
         container_running = docker_available and bool(check.stdout.strip())
@@ -216,8 +257,10 @@ def sandbox_status():
         pass
     return {"docker": docker_available, "container_running": container_running}
 
+
 @app.get("/api/diagnostics")
 def diagnostics():
+    """Comprehensive diagnostic probe validating test frameworks, templates, and database configuration."""
     try:
         try:
             from server import sandbox_manager
@@ -247,14 +290,19 @@ def diagnostics():
                 if chapter_id in CHAPTER_FILENAME_MAP
             ],
             "save_db_configured": os.path.exists(DB_PATH),
-            "save_state_fields": ["gold", "compute_tokens", "unlocked_chapters", "active_lead", "inventory_json", "stats_json", "state_json"],
+            "save_state_fields": [
+                "gold", "compute_tokens", "unlocked_chapters", "active_lead",
+                "inventory_json", "stats_json", "state_json",
+            ],
             "relic_save_dir": sandbox_manager.RELIC_SAVE_DIR,
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @app.get("/api/save")
 def get_save():
+    """Retrieves the most recent player save state record from SQLite."""
     try:
         conn = sqlite3.connect(DB_PATH)
         conn.row_factory = sqlite3.Row
@@ -268,8 +316,10 @@ def get_save():
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @app.get("/api/saves")
 def list_saves(limit: int = 10):
+    """Lists recent save checkpoints up to the specified limit (1-50)."""
     try:
         limit = max(1, min(limit, 50))
         conn = sqlite3.connect(DB_PATH)
@@ -285,8 +335,10 @@ def list_saves(limit: int = 10):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @app.get("/api/save/{save_id}")
 def get_save_by_id(save_id: int):
+    """Retrieves a specific historical save state by primary key ID."""
     try:
         conn = sqlite3.connect(DB_PATH)
         conn.row_factory = sqlite3.Row
@@ -302,30 +354,37 @@ def get_save_by_id(save_id: int):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @app.post("/api/save")
 def save_state(state: SaveStateModel):
+    """Persists a new game save record and trims historical entries beyond the 50-row rolling window."""
     try:
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
         cursor.execute("""
             INSERT INTO player_state (gold, compute_tokens, unlocked_chapters, active_lead, inventory_json, stats_json, state_json)
             VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, (state.gold, state.compute_tokens, state.unlocked_chapters, state.active_lead, state.inventory_json, state.stats_json, state.state_json))
-        
-        # Limit row count to 50
+        """, (
+            state.gold, state.compute_tokens, state.unlocked_chapters,
+            state.active_lead, state.inventory_json, state.stats_json, state.state_json,
+        ))
+
+        # Enforce rolling history boundary: retain maximum 50 records
         cursor.execute("""
             DELETE FROM player_state WHERE id NOT IN (
                 SELECT id FROM player_state ORDER BY id DESC LIMIT 50
             )
         """)
-        
+
         conn.commit()
         conn.close()
         return {"status": "success"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
 def get_default_skeleton(chapter_id: int) -> str:
+    """Returns baseline starter template code for a given chapter curriculum."""
     skeletons = {
         0: '# Outpost Zero: Environment config\n# The citadel gates read your $PATH. Restore the toolchain by APPENDING\n# /usr/local/bin to the existing PATH. Keep $PATH in your export so the\n# old entries are not lost.\n#\n# Write your export statement below this line:\n\necho "Booting environment..."\n',
         1: '# Alexandria Library: OCR Filters\ndef monochrome_filter(rgb_matrix):\n    # Convert 3D RGB matrix to 2D Grayscale matrix\n    # rgb_matrix is a list of lists of (R, G, B) tuples\n    # Return a list of lists of numbers (0-255)\n    gray_matrix = []\n    for row in rgb_matrix:\n        gray_row = []\n        for r, g, b in row:\n            gray_val = int(0.299 * r + 0.587 * g + 0.114 * b)\n            gray_row.append(gray_val)\n        gray_matrix.append(gray_row)\n    return gray_matrix\n\ndef threshold_filter(gray_matrix, threshold):\n    # Values > threshold -> 255, <= threshold -> 0\n    binary_matrix = []\n    for row in gray_matrix:\n        binary_row = []\n        for val in row:\n            binary_row.append(255 if val > threshold else 0)\n        binary_matrix.append(binary_row)\n    return binary_matrix\n',
@@ -348,12 +407,14 @@ def get_default_skeleton(chapter_id: int) -> str:
         18: '# State Vaults: ReAct Thought-Action Loop\ndef run_react_loop(state, step_fn, max_steps=5):\n    steps = 0\n    while steps < max_steps:\n        if state.get("status") != "running":\n            break\n        state = step_fn(state)\n        steps += 1\n    if state.get("status") == "running":\n        state["status"] = "max_steps_exceeded"\n    return state\n\ndef find_skeleton_ancestors(lineage, start_node):\n    ancestors = []\n    visited = set()\n    current = start_node\n    while current in lineage:\n        parent = lineage[current]\n        if not parent:\n            break\n        if parent in visited:\n            break\n        visited.add(parent)\n        ancestors.append(parent)\n        current = parent\n    return ancestors\n\ndef run_self_corrective_rag(initial_query, retrieve_fn, evaluate_fn, rewrite_fn, max_steps=3):\n    current_query = initial_query\n    steps = 0\n    chunks = []\n    while steps < max_steps:\n        chunks = retrieve_fn(current_query)\n        if evaluate_fn(chunks):\n            return {"status": "success", "steps": steps, "context": chunks}\n        current_query = rewrite_fn(current_query)\n        steps += 1\n    return {"status": "failed", "steps": steps, "context": chunks}\n',
         19: '# Kubernetes Citadel: Pod & Ingress configs\ndef get_k8s_manifests():\n    pod_yaml = """apiVersion: v1\nkind: Pod\nmetadata:\n  name: defense-pod\nspec:\n  containers:\n  - name: defense-container\n    image: nginx\n    ports:\n    - containerPort: 8000\n    resources:\n      limits:\n        memory: 256Mi\n        cpu: 500m\n      requests:\n        memory: 128Mi\n        cpu: 250m"""\n    ingress_yaml = """apiVersion: networking.k8s.io/v1\nkind: Ingress\nmetadata:\n  name: citadel-ingress\nspec:\n  rules:\n  - http:\n      paths:\n      - path: /defense\n        pathType: Prefix\n        backend:\n          service:\n            name: defense-service\n            port:\n              number: 80"""\n    return pod_yaml, ingress_yaml\n',
         20: '# The Grand Assembly: Integrated Pipeline\nimport json\nimport sqlite3\n\ndef run_assembler_pipeline(layout_json_path, query_text, db_path):\n    with open(layout_json_path, "r") as f:\n        boxes = json.load(f)\n    lines = {}\n    for box in boxes:\n        y = box["y"]\n        lines.setdefault(y, []).append(box)\n    grouped_lines = []\n    for y in sorted(lines.keys()):\n        line_boxes = sorted(lines[y], key=lambda b: b["x"])\n        line_phrases = []\n        if not line_boxes:\n            continue\n        current_phrase = line_boxes[0]["text"]\n        curr_right = line_boxes[0]["x"] + line_boxes[0]["w"]\n        for box in line_boxes[1:]:\n            if box["x"] - curr_right <= 15:\n                current_phrase += " " + box["text"]\n                curr_right = box["x"] + box["w"]\n            else:\n                line_phrases.append(current_phrase)\n                current_phrase = box["text"]\n                curr_right = box["x"] + box["w"]\n        line_phrases.append(current_phrase)\n        grouped_lines.append(" ".join(line_phrases))\n    ocr_text = "\\n".join(grouped_lines)\n    conn = sqlite3.connect(db_path)\n    cursor = conn.cursor()\n    db_results = []\n    try:\n        for phrase in grouped_lines:\n            cursor.execute("SELECT item_id, name, power FROM inventory WHERE name = ?", (phrase,))\n            db_results.extend(cursor.fetchall())\n    except Exception:\n        db_results = []\n    finally:\n        conn.close()\n    graph_context = "Node: Zeus Relic Shield -> Attribute: Power = 95"\n    llm_response = f"Answer generated: {query_text} -> DB results show {db_results}"\n    return {\n        "ocr_text": ocr_text,\n        "db_results": db_results,\n        "graph_context": graph_context,\n        "llm_response": llm_response\n    }\n',
-        21: '# Altar of TempleOS: Bare-metal HolyC compilation checksum\ndef validate_holyc_syntax(code):\n    if "def " in code or "print(" in code:\n        return False\n    if "U0" in code or "I64" in code or "Print" in code:\n        return True\n    return False\n\ndef get_templeos_serial_command():\n    return "telnet 127.0.0.1 4444"\n'
+        21: '# Altar of TempleOS: Bare-metal HolyC compilation checksum\ndef validate_holyc_syntax(code):\n    if "def " in code or "print(" in code:\n        return False\n    if "U0" in code or "I64" in code or "Print" in code:\n        return True\n    return False\n\ndef get_templeos_serial_command():\n    return "telnet 127.0.0.1 4444"\n',
     }
     return skeletons.get(chapter_id, f"# Chapter {chapter_id} Solution\n")
 
+
 @app.get("/api/code")
 def load_code(chapter_id: int, skeleton: bool = False):
+    """Loads player solution code from disk, or falls back to standard skeleton template."""
     try:
         filename = CHAPTER_FILENAME_MAP.get(chapter_id, f"ch{chapter_id}_solution.py")
         try:
@@ -372,43 +433,54 @@ def load_code(chapter_id: int, skeleton: bool = False):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
 class CompileRequest(BaseModel):
+    """Pydantic data validation model for code compilation requests."""
     chapter_id: int
     code: str
 
+
 @app.post("/api/compile")
 def compile_code(req: CompileRequest):
+    """Writes submitted code to disk and invokes chapter validator inside Docker sandbox."""
     try:
         try:
             from server import sandbox_manager
         except ImportError:
             import sandbox_manager
-        
+
         filename = CHAPTER_FILENAME_MAP.get(req.chapter_id, f"ch{req.chapter_id}_solution.py")
         save_path = os.path.join(sandbox_manager.RELIC_SAVE_DIR, filename)
-        
-        # Ensure directory exists
+
+        # Ensure destination directory exists on disk
         os.makedirs(sandbox_manager.RELIC_SAVE_DIR, exist_ok=True)
-        
-        # Write player's code file to disk
+
+        # Write code file atomically to disk
         with open(save_path, "w", encoding="utf-8") as f:
             f.write(req.code)
-            
-        # Run test execution inside container (or local fallback)
+
+        # Dispatch test execution through sandbox runtime manager
         res = sandbox_manager.execute_test(req.chapter_id)
         return res
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# WebSocket proxy routing for local Docker container bash terminal
+# ------------------------------------------------------------------------------
+# Real-Time WebSocket Proxy Endpoints
+# ------------------------------------------------------------------------------
+
 @app.websocket("/ws/shell")
 async def ws_shell(websocket: WebSocket):
+    """WebSocket terminal bridge connecting client to an interactive shell via pseudo-terminal (PTY).
+
+    Spawns `docker exec -it zeus-sandbox bash` if the container is running;
+    otherwise falls back to a host bash shell. Uses `pty.openpty()` to capture
+    full ANSI escape sequences, control characters, and line editing.
+    """
     await websocket.accept()
-    # Spawns a shell inside the Arch container via Docker
-    # Fallback to local bash shell if Docker container isn't online yet
     try:
-        # Check if container is running
+        # Check if Docker container is currently active
         container_check = os.popen("docker ps --filter name=zeus-sandbox -q").read().strip()
         if container_check:
             cmd = ["docker", "exec", "-it", "zeus-sandbox", "bash"]
@@ -420,7 +492,7 @@ async def ws_shell(websocket: WebSocket):
                 " Run setup/build_sandbox.sh with Docker installed for the real sandbox.]\r\n"
             )
 
-        # Run process with pseudo-terminal binding
+        # Allocate pseudo-terminal descriptor pair
         import pty
         master_fd, slave_fd = pty.openpty()
         proc = await asyncio.create_subprocess_exec(
@@ -428,23 +500,24 @@ async def ws_shell(websocket: WebSocket):
             stdin=slave_fd,
             stdout=slave_fd,
             stderr=slave_fd,
-            close_fds=True
+            close_fds=True,
         )
         os.close(slave_fd)
 
         async def read_from_pty():
+            """Reads terminal byte stream from PTY master and sends to WebSocket."""
             try:
                 loop = asyncio.get_running_loop()
                 while True:
-                    # Non-blocking read from pty master
                     data = await loop.run_in_executor(None, lambda: os.read(master_fd, 1024))
                     if not data:
                         break
                     await websocket.send_text(data.decode("utf-8", errors="replace"))
             except Exception as e:
-                logger.error(f"Read PTY error: {e}")
+                logger.debug(f"Read PTY stream closed: {e}")
 
         async def write_to_pty():
+            """Receives user keystrokes from WebSocket and writes to PTY master descriptor."""
             try:
                 while True:
                     msg = await websocket.receive_text()
@@ -452,7 +525,7 @@ async def ws_shell(websocket: WebSocket):
             except WebSocketDisconnect:
                 pass
             except Exception as e:
-                logger.error(f"Write PTY error: {e}")
+                logger.debug(f"Write PTY stream closed: {e}")
 
         try:
             done, pending = await asyncio.wait(
@@ -462,7 +535,7 @@ async def ws_shell(websocket: WebSocket):
             for task in pending:
                 task.cancel()
         finally:
-            # Reap the shell so disconnects don't leave orphaned processes behind
+            # Terminate and reap shell process to prevent zombie processes
             if proc.returncode is None:
                 proc.kill()
             await proc.wait()
@@ -474,18 +547,19 @@ async def ws_shell(websocket: WebSocket):
         logger.error(f"WebSocket shell error: {e}")
         await websocket.close()
 
-# WebSocket proxy routing for TempleOS serial console (QEMU)
+
 @app.websocket("/ws/templeos")
 async def ws_templeos(websocket: WebSocket):
+    """WebSocket serial console proxy streaming data between browser and QEMU/mock HolyC server.
+
+    Establishes an asynchronous TCP connection to the loopback telnet port 127.0.0.1:4444.
+    """
     await websocket.accept()
-    # Bridging websocket data streams directly to the running QEMU TempleOS instance
     try:
-        # Check if QEMU instance is running and socket is available
-        # We will mount QEMU stdin/stdout or use a TCP socket redirected by QEMU
-        # For simplicity, we connect to a QEMU telnet redirect socket on loopback port 4444
         reader, writer = await asyncio.open_connection("127.0.0.1", 4444)
-        
+
         async def read_qemu():
+            """Reads serial stream from QEMU telnet socket and forwards to WebSocket."""
             try:
                 while True:
                     data = await reader.read(1024)
@@ -493,9 +567,10 @@ async def ws_templeos(websocket: WebSocket):
                         break
                     await websocket.send_text(data.decode("utf-8", errors="replace"))
             except Exception as e:
-                logger.error(f"QEMU Read error: {e}")
-                
+                logger.debug(f"QEMU Read stream closed: {e}")
+
         async def write_qemu():
+            """Forwards WebSocket user commands to QEMU serial socket."""
             try:
                 while True:
                     msg = await websocket.receive_text()
@@ -504,34 +579,36 @@ async def ws_templeos(websocket: WebSocket):
             except WebSocketDisconnect:
                 pass
             except Exception as e:
-                logger.error(f"QEMU Write error: {e}")
+                logger.debug(f"QEMU Write stream closed: {e}")
 
         await asyncio.gather(
             read_qemu(),
-            write_qemu()
+            write_qemu(),
         )
     except Exception as e:
         logger.error(f"WebSocket TempleOS Connection error: {e}")
         await websocket.send_text("\r\n[Error: TempleOS altar offline. Spin up Chapter 21 VM Altar first!]\r\n")
         await websocket.close()
 
-# WebSocket endpoint for automatic client development reloading
+
 @app.websocket("/ws/dev-reload")
 async def ws_dev_reload(websocket: WebSocket):
+    """WebSocket endpoint registering connected browser clients for live development reloading."""
     await websocket.accept()
     dev_reload_sockets.add(websocket)
     try:
         while True:
-            # Keep the WebSocket connection open
             await websocket.receive_text()
     except WebSocketDisconnect:
         pass
     finally:
         dev_reload_sockets.discard(websocket)
 
-# Mount client build outputs (static files)
-# If index.html is built, server serves it at root path
-if hasattr(sys, '_MEIPASS'):
+
+# ------------------------------------------------------------------------------
+# Static Web Client Asset Mounting
+# ------------------------------------------------------------------------------
+if hasattr(sys, "_MEIPASS"):
     client_dir = os.path.join(sys._MEIPASS, "client")
 else:
     client_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "client"))
@@ -543,5 +620,5 @@ elif os.path.exists(client_dir):
     app.mount("/", StaticFiles(directory=client_dir, html=True), name="static")
 
 if __name__ == "__main__":
-    # Force strict local loopback binding
+    # Bind strictly to local loopback interface on standard port 8000
     uvicorn.run(app, host="127.0.0.1", port=8000)

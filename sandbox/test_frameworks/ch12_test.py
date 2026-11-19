@@ -1,8 +1,8 @@
 # ==============================================================================
 # Program: ch12_test.py
 # Programmer: Ethan-da-Tech-Wizard
-# Last Modified: November 18, 2026
-# Purpose: Automated grading test suite validating student solution submissions for Chapter 12 curriculum.
+# Last Modified: November 19, 2026
+# Purpose: Automated verification test suite validating Neo4j Cypher graph traversal syntax generation. Asserts that shortestPath queries properly structure node patterns, edge wildcards, and return bindings.
 # ==============================================================================
 import os
 import sys
@@ -17,7 +17,7 @@ def test_chapter_12():
             sys.exit(1)
 
     import importlib.util
-    spec = importlib.util.spec_from_file_location("student_solution", solution_path)
+    spec = importlib.util.spec_from_file_location("solution_module", solution_path)
     module = importlib.util.module_from_spec(spec)
     try:
         spec.loader.exec_module(module)

@@ -1,8 +1,8 @@
 # ==============================================================================
 # Program: ch2_test.py
 # Programmer: Ethan-da-Tech-Wizard
-# Last Modified: November 18, 2026
-# Purpose: Automated grading test suite validating student solution submissions for Chapter 2 curriculum.
+# Last Modified: November 19, 2026
+# Purpose: Automated verification test suite validating SQL query parameterization and injection prevention. Verifies that user-supplied input tokens are bound safely as parameters rather than interpolated into SQL text.
 # ==============================================================================
 import os
 import sys
@@ -36,9 +36,9 @@ def test_chapter_2():
             print("Error: Solution file 'ch2_sql.py' not found.")
             sys.exit(1)
             
-    # Import student functions
+    # Import solution functions
     import importlib.util
-    spec = importlib.util.spec_from_file_location("student_solution", solution_path)
+    spec = importlib.util.spec_from_file_location("solution_module", solution_path)
     module = importlib.util.module_from_spec(spec)
     try:
         spec.loader.exec_module(module)

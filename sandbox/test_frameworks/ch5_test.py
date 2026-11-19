@@ -1,8 +1,8 @@
 # ==============================================================================
 # Program: ch5_test.py
 # Programmer: Ethan-da-Tech-Wizard
-# Last Modified: November 18, 2026
-# Purpose: Automated grading test suite validating student solution submissions for Chapter 5 curriculum.
+# Last Modified: November 19, 2026
+# Purpose: Automated verification test suite validating memory-efficient array summation optimizations. Benchmarks contiguous memory traversal and verifies equivalence against baseline summation models.
 # ==============================================================================
 import os
 import sys
@@ -18,7 +18,7 @@ def test_chapter_5():
             sys.exit(1)
 
     import importlib.util
-    spec = importlib.util.spec_from_file_location("student_solution", solution_path)
+    spec = importlib.util.spec_from_file_location("solution_module", solution_path)
     module = importlib.util.module_from_spec(spec)
     try:
         spec.loader.exec_module(module)
@@ -43,7 +43,7 @@ def test_chapter_5():
     duration_py = time.perf_counter() - start_py
     print(f"Pure Python Loop: {duration_py*1000:.3f} ms")
     
-    # Student Optimized execution
+    # Solution Optimized execution
     try:
         start_opt = time.perf_counter()
         opt_sum = module.optimized_array_sum(test_data)
