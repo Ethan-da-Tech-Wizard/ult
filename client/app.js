@@ -7537,14 +7537,68 @@ function renderDiagnosticsReport(items, stats) {
         `).join("");
 }
 
+/**
+ * Diagnostics check for NPC patrol data: every NPC with a patrol must start on an NPC tile and every tile of
+ * its route must be inside the map and open floor, mirroring what getPatrolPosition() will accept at runtime.
+ *
+ * Reads the same shape getPatrolPosition() reads: `route` (array of [x, y] tiles, current format) or, for
+ * legacy entries, a single `to` tile joined to the home tile. The earlier version of this check read only
+ * `to`; NPC_PATROLS entries now only carry `route`, so `to` was undefined and all patrols were reported as
+ * "out of bounds" (noise that hid real findings).
+ *
+ * @param {Array<{severity: string, title: string, detail: string}>} items report list; findings are pushed
+ *   onto it (it is the only thing mutated).
+ * @returns {void}
+ */
+function checkPatrolRoutes(items) {
+    Object.entries(NPC_PATROLS).forEach(([mapIdText, patrols]) => {
+        const mapId = Number(mapIdText);
+        const grid = MAP_GRIDS[mapId];
+        Object.entries(patrols).forEach(([key, patrol]) => {
+            const [fromX, fromY] = key.split(",").map(Number);
+            const fromTile = getTileAt(grid, fromX, fromY);
+
+            // A patrol keyed on a tile that is not an NPC means the route belongs to nobody (a map edit
+            // moved the NPC but not the patrol table).
+            if (fromTile !== 2) {
+                addDiagnosticIssue(items, "warn", `Map ${mapId} patrol start mismatch`, `${key} should be an NPC tile.`);
+            }
+
+            // Same fallback as getPatrolPosition so the diagnostic judges exactly the data the game uses.
+            const route = patrol.route || [[fromX, fromY], patrol.to];
+            route.forEach((point) => {
+                const [toX, toY] = point || [];
+
+                // The home tile is the NPC's own tile (tile 2) and is always allowed, so it is not checked
+                // as "open floor"; only the points the NPC walks to are.
+                if (toX === fromX && toY === fromY) return;
+
+                // Non-finite or outside the 64x64 map: critical because getPatrolPosition would index
+                // outside the grid for this point (it silently drops it, hiding a broken data table).
+                if (!Number.isFinite(toX) || !Number.isFinite(toY) || toX < 0 || toX >= MAP_COLS || toY < 0 || toY >= MAP_ROWS) {
+                    addDiagnosticIssue(items, "critical", `Map ${mapId} patrol target out of bounds`, `${key} patrol destination is invalid.`);
+                    return;
+                }
+
+                // Runtime keeps route points on grass (0) or NPC (2) tiles and drops the rest, so anything
+                // else means that step of the loop is skipped: a warning, not a failure.
+                const toTile = getTileAt(grid, toX, toY);
+                if (toTile !== 0 && toTile !== 2) {
+                    addDiagnosticIssue(items, "warn", `Map ${mapId} patrol target not open floor`, `${key} moves to (${toX},${toY}), tile ${toTile}.`);
+                }
+            });
+        });
+    });
+}
+
 // Self-test of the game data (Diagnostics tab and once at start-up). For each of the 22 chapters it
 // checks: the map exists with the expected 64x64 size, the spawn tile (1,7) and the respawn tile (2,7) are
 // walkable, the map has a portal and it is reachable, chests are reachable, every NPC tile has a complete
 // NPC record (and every record has a tile). It also checks NPC patrol routes, that the chapter registry
 // has no gaps or duplicates, and asks the server's /api/diagnostics about validators and templates. It
 // never changes the game; it only reports.
-// Known inconsistency (reported, not fixed): the patrol check reads `patrol.to`, but NPC_PATROLS entries
-// now use `route` arrays, so every patrol is reported as an out-of-bounds target and the report is noisy.
+// (The patrol check used to read the retired `patrol.to` field and flagged every patrol as out of bounds;
+// it now lives in checkPatrolRoutes() and reads `route`.)
 async function runWiringDiagnostics() {
     const items = [];
     const expectedChapters = Array.from({ length: FINAL_CHAPTER + 1 }, (_, index) => index);
@@ -7621,24 +7675,8 @@ async function runWiringDiagnostics() {
         });
     });
 
-    Object.entries(NPC_PATROLS).forEach(([mapIdText, patrols]) => {
-        const mapId = Number(mapIdText);
-        const grid = MAP_GRIDS[mapId];
-        Object.entries(patrols).forEach(([key, patrol]) => {
-            const [fromX, fromY] = key.split(",").map(Number);
-            const [toX, toY] = patrol.to || [];
-            const fromTile = getTileAt(grid, fromX, fromY);
-            const toTile = getTileAt(grid, toX, toY);
-            if (fromTile !== 2) {
-                addDiagnosticIssue(items, "warn", `Map ${mapId} patrol start mismatch`, `${key} should be an NPC tile.`);
-            }
-            if (!Number.isFinite(toX) || !Number.isFinite(toY) || toX < 0 || toX >= MAP_COLS || toY < 0 || toY >= MAP_ROWS) {
-                addDiagnosticIssue(items, "critical", `Map ${mapId} patrol target out of bounds`, `${key} patrol destination is invalid.`);
-            } else if (toTile !== 0) {
-                addDiagnosticIssue(items, "warn", `Map ${mapId} patrol target not open floor`, `${key} moves to (${toX},${toY}), tile ${toTile}.`);
-            }
-        });
-    });
+    // Patrol routes are validated by their own function so the check can be run (and tested) on its own.
+    checkPatrolRoutes(items);
 
     const chapterIds = CHAPTERS.map(ch => ch.id);
     const missingChapterDefs = expectedChapters.filter(id => !chapterIds.includes(id));
