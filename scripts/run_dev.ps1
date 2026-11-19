@@ -1,10 +1,18 @@
+# How this file fits the app: the Windows counterpart of scripts/run_dev.sh. Run it from PowerShell as
+# .\scripts\run_dev.ps1. It finds a Python interpreter, makes sure the game's packages exist (creating
+# .venv on first launch), prints a notice about optional Docker/QEMU, and starts server/main.py, which
+# serves the game on http://127.0.0.1:8000.
 # Launches The Sacred Tech on Windows. Self-bootstrapping: if the Python dependencies
 # are missing, they are installed into a local .venv automatically.
 
+# Resolve the repository root from this script's location so it works from any current directory, then
+# work from there (the server and its relative save_data path expect it).
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ProjectRoot = (Get-Item $ScriptDir).Parent.FullName
 Set-Location $ProjectRoot
 
+# Interpreter discovery: try `python` first, then the Windows launcher `py`. Only the exit code matters;
+# the version text is captured but unused. If neither exists the script stops with exit code 1.
 $pythonCmd = "python"
 $hasPython = $false
 try {
@@ -29,6 +37,9 @@ if (-not $hasPython) {
     exit 1
 }
 
+# Choose which interpreter runs the server: the project's .venv if it already has fastapi, uvicorn and
+# numpy (numpy is needed by several chapter validators); otherwise the host Python if it already has them;
+# otherwise create .venv and install requirements.txt into it (first launch only).
 $venvPython = Join-Path $ProjectRoot ".venv\Scripts\python.exe"
 $PY = $pythonCmd
 
@@ -66,6 +77,8 @@ if ($venvOk) {
     }
 }
 
+# Static notice that Docker and QEMU are optional; without them the game falls back to the host shell and
+# the simulated HolyC altar.
 Write-Host ""
 Write-Host "=========================================================="
 Write-Host " ⚠️  SYSTEM REQUIREMENTS & SETUP NOTICE:"
@@ -80,4 +93,5 @@ Write-Host "▶️   The Sacred Tech is starting..."
 Write-Host "    Open http://127.0.0.1:8000 in your browser."
 Write-Host ""
 
+# Run the server in the foreground; Ctrl+C stops it. Output stays in this console.
 & $PY server/main.py
