@@ -4,8 +4,25 @@
    Last Modified: November 19, 2026
    Purpose: Retro pixel-art visual styling, retro terminal CRT scanline effects, and responsive dialog boxes.
    ============================================================================== */
+
+/* How this file fits the app: the only stylesheet of client/index.html. It defines the retro look (pixel
+   borders, CRT scanlines), the three colour palettes, the absolute-positioned HUD overlays on top of the
+   game canvas, and the tabbed workspace on the right. Class and id names are the contract with
+   client/app.js and index.html (for example `hidden`, `active`, `ui-panel`, `tab-pane`, `quest-node`,
+   `palette-*`); renaming one requires changing the others.
+   Layering (z-index): HUD panels 10, dialogue 15, autosave toast 16, combat overlay 20, inventory/shop 25,
+   prologue 30, splitter 40, settings menu and requirements modal 100, CRT scanline overlay 9999
+   (pointer-events: none so it never intercepts clicks).
+   Network note: the @import below loads three Google fonts when online; offline the browser falls back to
+   the generic monospace/sans-serif fonts named in the variables.
+*/
 @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Fira+Code:wght@400;600&family=Outfit:wght@400;600&display=swap');
 
+/* Theme tokens (CSS custom properties) used everywhere: backgrounds, border, text and accent colours, the
+   glow colour, the three font stacks and the pixel-border width. The default is the "JRPG Navy" theme; the
+   palette classes below override these same variables, which is how the palette selector re-skins the
+   whole UI without touching other rules.
+*/
 :root {
     /* Theme Palette: Default JRPG Navy */
     --bg-primary: #0a0e1c;
@@ -23,6 +40,9 @@
     --border-pixel-width: 4px;
 }
 
+/* Palette variations: app.js applyPalette() adds `palette-<name>` to <body> (gameboy green, CRT amber,
+   dark mode); each block only redefines the variables above.
+*/
 /* Palette Variations */
 body.palette-gameboy {
     --bg-primary: #0f380f;
@@ -75,6 +95,7 @@ body.palette-ff1 {
     padding: 0;
 }
 
+/* Page base: full-window, no scrolling (the game fits the viewport), pixel font by default. */
 body {
     background-color: var(--bg-primary);
     color: var(--text-color);
@@ -87,6 +108,11 @@ body {
 }
 
 /* CRT Screen Effect Overlay */
+
+/* CRT effect: a fixed full-screen layer drawing horizontal scanlines (alternating transparent and dark
+   horizontal lines) and a faint red/blue colour fringe. It sits above everything (z-index 9999) and
+   ignores the mouse.
+*/
 .crt-overlay {
     position: fixed;
     top: 0;
@@ -109,6 +135,9 @@ body {
     overflow: hidden;
 }
 
+/* Draggable divider between game and workspace; initSplitter() in app.js resizes #jrpg-viewport while it
+   is dragged (the splitter shows a `dragging` state).
+*/
 /* Vertical Drag Resize Splitter */
 #layout-splitter {
     width: 8px;
@@ -126,6 +155,9 @@ body {
     box-shadow: 0 0 10px var(--accent-glow);
 }
 
+/* Left side: the viewport is a positioned container so overlays can be placed with absolute positioning
+   relative to it. The canvas uses image-rendering: pixelated so the 8-bit sprites stay crisp when scaled.
+*/
 /* LEFT: JRPG Canvas screen */
 #jrpg-viewport {
     background-color: #000;
@@ -147,6 +179,10 @@ body {
 }
 
 /* UI Panel Styling matching JRPG borders */
+
+/* Shared look of HUD panels: dark translucent box with a 4px pixel border and a drop shadow. Individual
+   panels (objective, minimap, party HUD, prompts, dialogue) add their own position.
+*/
 .ui-panel {
     background: var(--bg-secondary);
     border: var(--border-pixel-width) double var(--border-color);
@@ -259,6 +295,9 @@ body {
     box-shadow: 0 0 8px var(--accent-glow);
 }
 
+/* Full-screen overlays inside the viewport: inventory/shop (z 25), combat (z 20), prologue (z 30). Each is
+   shown by removing the `hidden` class in script.
+*/
 #inventory-overlay {
     position: absolute;
     top: 92px;
@@ -337,6 +376,10 @@ body {
 }
 
 /* Combat Overlay layout */
+
+/* Combat screen: a grid with enemy and party lists, the combat log, and the action menu (.combat-actions
+   buttons carry data-action attributes).
+*/
 #combat-overlay {
     position: absolute;
     top: 0;
@@ -428,6 +471,11 @@ body {
 }
 
 /* Onboarding Prologue styles */
+
+/* Prologue overlay: black screen with typewriter-style text; the `prologue-dark` class is set by
+   initPrologue() while the screen is dark; `prologue-bw` styles a black-and-white variant of the same
+   overlay (not currently set by app.js).
+*/
 #prologue-overlay {
     position: absolute;
     top: 0;
@@ -458,6 +506,9 @@ body {
     line-height: 2;
 }
 
+/* Dialogue box overlay at the bottom of the viewport; the avatar square, text and option buttons are
+   filled by showDialogue().
+*/
 /* Dialogue Box overlay layout */
 #dialogue-box {
     position: absolute;
@@ -491,6 +542,10 @@ body {
 }
 
 /* RIGHT: Split IDE Workspace layout */
+
+/* Right side: the IDE workspace. Tab buttons are shown or hidden by updateUnlockedTabs(); only the pane
+   with class `active` is displayed (.tab-pane is hidden by default).
+*/
 #ide-workspace {
     background-color: var(--bg-secondary);
     display: flex;
@@ -549,6 +604,11 @@ body {
 }
 
 /* Editor Styles */
+
+/* Editor pane: toolbar (chapter select, Reset, Compile & Run), the line-number gutter and the code
+   <textarea> (monospace, no wrapping so line numbers stay aligned), plus the specialist hint bubbles that
+   slide over the editor.
+*/
 #pane-editor {
     height: 100%;
 }
@@ -678,6 +738,8 @@ body {
 }
 
 /* Console logs styling */
+
+/* Console pane: the validator output area and the Learning Coach box that explains a failed compile. */
 .console-actions {
     background-color: rgba(0, 0, 0, 0.1);
     padding: 8px 15px;
@@ -787,6 +849,9 @@ body {
     font-size: 14px;
 }
 
+/* Chronicles tab: the quest tree. A node's class (`completed`, `active-target`, `locked`) is chosen by
+   renderChroniclesQuestTree().
+*/
 /* Chronicles & Quest lists */
 .chronicles-container {
     padding: 20px;
@@ -836,6 +901,10 @@ body {
 }
 
 /* Codex container styling */
+
+/* Codex and Library tabs: search box and result cards, bookshelf list, reader with page controls, lesson
+   cards, code blocks and glossary chips.
+*/
 .codex-container {
     padding: 20px;
     display: flex;
@@ -1067,6 +1136,9 @@ body {
     line-height: 1.45;
 }
 
+/* Browser tab (a fake, read-only browser view) and the Diagnostics tab (summary stats and rows coloured by
+   severity: critical, warn, info).
+*/
 /* Sandboxed Browser styling */
 .browser-container {
     display: flex;
@@ -1250,6 +1322,9 @@ body {
     color: rgba(255,255,255,0.7);
 }
 
+/* Settings overlay (z-index 100), the save-slot list and the party HP bars in the HUD (the bar width is
+   set inline by renderPartyHud(); colours change at 50% and 25%).
+*/
 /* Settings Overlay */
 #settings-menu {
     position: fixed;
@@ -1369,6 +1444,9 @@ body {
     text-align: right;
 }
 
+/* Combat extras: the enemy "telegraph" line (a warning colour for a special attack, a calm colour for a
+   normal one) and the sandbox status badge colours (ok, fallback, unknown) used in the terminal tab.
+*/
 /* Enemy telegraph line in combat */
 .combat-intent-line {
     font-size: 0.72em;
@@ -1403,6 +1481,9 @@ body {
     color: #9ca3af;
 }
 
+/* Utility class used throughout: hides an element completely. !important is needed because many components
+   set their own display value with higher specificity.
+*/
 .hidden {
     display: none !important;
 }
@@ -1426,6 +1507,7 @@ body {
     background: var(--accent-color);
 }
 
+/* Form controls (selects) styled to match the retro theme. */
 /* Retro select input styling */
 .retro-select {
     background-color: var(--bg-primary);
@@ -1601,6 +1683,7 @@ body {
     color: rgba(255,255,255,0.8);
 }
 
+/* Dialogue option buttons and the requirements modal (z-index 100) at the end of the file. */
 #dialogue-options {
     display: flex;
     gap: 8px;
