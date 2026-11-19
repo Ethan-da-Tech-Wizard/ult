@@ -7802,6 +7802,10 @@ async function runWiringDiagnostics() {
 // Local PTY Terminal WebSocket Integration
 let shellSocket = null;
 
+// True from the moment initShellWebSocket() starts fetching the token until the socket exists, so two
+// quick tab switches cannot open two shells now that the open is asynchronous.
+let shellConnecting = false;
+
 // Updates the badge in the terminal tab from GET /api/sandbox-status: Arch container connected, host-shell
 // fallback, or backend offline.
 async function refreshSandboxStatusBadge() {
@@ -7827,36 +7831,69 @@ async function refreshSandboxStatusBadge() {
 }
 
 // Opens the shell WebSocket (/ws/shell) once, appends incoming text to #shell-output and reconnects every
-// 3 s after a close. Commands are sent by the #shell-input handler further down this file
+// 3 s after a normal close. Commands are sent by the #shell-input handler further down this file
 // (shellSocket.send(cmd + newline)). Note: server output is appended with innerHTML, so shell output
 // containing HTML would be rendered as markup (self-XSS in a single-user local tool).
-function initShellWebSocket() {
+//
+// Authentication: the server refuses shells to anyone without the per-run token. This function first GETs
+// it from /api/shell-token (only answered to loopback callers), then sends it as the FIRST frame as soon as
+// the socket opens (not in the URL, so it stays out of logs and history). A close with code 1008 means the
+// server refused us on purpose (bad token, non-local origin, or no Docker and host shell not enabled), so
+// that case does NOT reconnect: retrying every 3 s would only spam the server log and the terminal.
+async function initShellWebSocket() {
     refreshSandboxStatusBadge();
-    if (shellSocket) return;
+    if (shellSocket || shellConnecting) return;
+    shellConnecting = true;
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const host = window.location.host || '127.0.0.1:8000';
 
     const shellOutput = document.getElementById("shell-output");
     shellOutput.innerHTML += `\n[Connecting to secure WebSocket shell routing...]\n`;
-    
+
+    // Step 1: fetch the token. no-store because it must be current for this server run, never cached.
+    let token = "";
+    try {
+        const response = await fetch('/api/shell-token', { cache: 'no-store' });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        token = (await response.json()).token || "";
+    } catch (e) {
+        // Server down or refusing us: same 3 s retry the old reconnect loop used, so the terminal comes up
+        // by itself once the backend is reachable.
+        shellConnecting = false;
+        shellOutput.innerHTML += `\n[Could not get a shell token (${e}). Running in local offline fallback mode; retrying...]\n`;
+        setTimeout(initShellWebSocket, 3000);
+        return;
+    }
+
     try {
         shellSocket = new WebSocket(`${protocol}//${host}/ws/shell`);
-        
+        shellConnecting = false;
+
+        // Must be the first frame: the server reads exactly one frame as the token before it spawns a shell.
+        shellSocket.onopen = () => {
+            shellSocket.send(token);
+        };
+
         shellSocket.onmessage = (event) => {
             shellOutput.innerHTML += event.data;
             shellOutput.scrollTop = shellOutput.scrollHeight;
         };
-        
-        shellSocket.onclose = () => {
-            shellOutput.innerHTML += "\n[Terminal connection closed. Attempting reconnect...]\n";
+
+        shellSocket.onclose = (event) => {
             shellSocket = null;
+            if (event && event.code === 1008) {
+                shellOutput.innerHTML += "\n[Terminal refused by the server (see the message above). Not reconnecting.]\n";
+                return;
+            }
+            shellOutput.innerHTML += "\n[Terminal connection closed. Attempting reconnect...]\n";
             setTimeout(initShellWebSocket, 3000);
         };
-        
+
         shellSocket.onerror = () => {
             if (shellSocket) shellSocket.close();
         };
     } catch (e) {
+        shellConnecting = false;
         shellOutput.innerHTML += `\n[WebSocket error: ${e}. Running in local offline fallback mode.]\n`;
     }
 }
