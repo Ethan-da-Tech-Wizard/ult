@@ -10,11 +10,15 @@
 #          providing actionable installation recommendations across Windows, macOS, and Linux platforms.
 # ==============================================================================
 
+# How this file fits the app: read-only diagnostic (python setup/check_requirements.py). It changes nothing; it reports which of the three "tiers" are available so a player knows whether the game will use real Docker/QEMU or the built-in fallbacks.
+# Tier 1 = Python 3.10+, the .venv and the packages (required). Tier 2 = Docker for the Arch sandbox (optional). Tier 3 = QEMU for the TempleOS VM (optional). The fix for anything missing is setup/install_all.py.
+# Exit status is always 0: the result is only printed, so it cannot be used as a CI gate. The check imports the packages with the CURRENT interpreter, not the .venv one, so it can report "missing" when the packages are only installed in .venv; run it with .venv/bin/python for an accurate answer.
 import os
 import shutil
 import subprocess
 import sys
 
+# ANSI colour codes; terminals that do not understand them (some Windows consoles) will show the raw escape text.
 # ANSI escape sequence color palettes for terminal reporting
 RESET = "\033[0m"
 BOLD = "\033[1m"
@@ -31,6 +35,7 @@ def print_header(title):
     print(f"\n{BOLD}{CYAN}=== {title} ==={RESET}")
 
 
+# Prints one aligned result row; column widths (30 and 15) keep the table tidy for the longest labels used below.
 def print_status(name, status, details="", is_ok=True):
     """Formats and prints an individual requirement verification row.
 
@@ -45,6 +50,7 @@ def print_status(name, status, details="", is_ok=True):
     print(f" {symbol}  {BOLD}{name:<30}{RESET} : {color}{status:<15}{RESET} {details}")
 
 
+# shutil.which searches PATH exactly as the shell would, so no subprocess is needed.
 def check_command(cmd):
     """Queries system PATH to verify presence of an executable binary."""
     return shutil.which(cmd) is not None
@@ -61,6 +67,7 @@ def main():
     # --------------------------------------------------------------------------
     print_header("Tier 1: Core JRPG Game (Required)")
 
+    # The code base uses syntax and library features from Python 3.10 (and FastAPI/pydantic releases that require it).
     # 1. Python Version Check: Requires 3.10+
     major, minor = sys.version_info.major, sys.version_info.minor
     py_ok = major == 3 and minor >= 10
@@ -70,6 +77,7 @@ def main():
     else:
         print_status("Python 3.10+ Version", "FAILED", f"(Found {py_ver_str} - Upgrade to Python 3.10+)", is_ok=False)
 
+    # .venv is the location install_all.py and scripts/run_dev.sh create; its absence only means the setup step has not been run.
     # 2. Virtual Environment check
     project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
     venv_dir = os.path.join(project_root, ".venv")
@@ -80,6 +88,7 @@ def main():
     else:
         print_status("Virtual Env (.venv)", "MISSING", "(Run python setup/install_all.py)", is_ok=False)
 
+    # `__import__` only tests that import works; versions are not checked.
     # 3. Python package imports check
     packages = ["fastapi", "uvicorn", "numpy", "pydantic"]
     missing_packages = []
@@ -98,6 +107,8 @@ def main():
     # Tier 2: Docker Engine & Container Sandbox (Optional)
     # --------------------------------------------------------------------------
     print_header("Tier 2: Arch Linux Sandbox (Optional)")
+
+    # `docker info` succeeds only when the daemon is reachable (CLI present is not enough). Output is discarded; only the exit code matters.
     has_docker = check_command("docker")
 
     if has_docker:
@@ -142,6 +153,7 @@ def main():
     print(f"{BOLD}{YELLOW}                  Readiness Summary                       {RESET}")
     print(f"{BOLD}{YELLOW}=========================================================={RESET}")
 
+    # Tier 1 must pass entirely; tiers 2 and 3 only upgrade the experience (fallback modes exist in server/sandbox_manager.py and server/qemu_launcher.py).
     t1_ready = py_ok and venv_exists and not missing_packages
     t2_ready = has_docker
     t3_ready = has_qemu
