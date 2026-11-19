@@ -8,16 +8,23 @@
 #          and implements fallback local subprocess execution when container virtualization is unavailable.
 # ==============================================================================
 
+# How this file fits the app: called by server/main.py (POST /api/compile -> execute_test, GET /api/diagnostics -> paths). It runs the per-chapter validator scripts in sandbox/test_frameworks/ against the player's saved solution.
+# Two modes: (1) the "zeus-arch" Docker image (built by setup/build_sandbox.sh from sandbox/Dockerfile) with the validators and the player's files bind-mounted; (2) when Docker is missing, the same validator is run with the host's Python.
+# Limits: the 15 s timeouts bound runtime only; the fallback mode has NO isolation at all (player code runs as the current user), and the container is started without memory/CPU/network limits.
+# Test: scripts/full_stack_smoke.py exercises this path.
 import logging
 import os
 import subprocess
 import sys
 
+# Logger name shown in server output.
 logger = logging.getLogger("ZeusSandbox")
 
+# Name used for `docker inspect/exec/start`; also checked by server/main.py (sandbox status and the shell bridge), so change it everywhere or nowhere.
 # Constant identifier for the isolated Docker container runtime
 SANDBOX_CONTAINER_NAME = "zeus-sandbox"
 
+# Where the project root is: normally the repo root; for a PyInstaller build the bundled read-only files live under sys._MEIPASS but the writable workspace must be the current directory.
 # ------------------------------------------------------------------------------
 # Directory Resolution Architecture (Handles PyInstaller _MEIPASS Bundle Extraction)
 # ------------------------------------------------------------------------------
@@ -30,10 +37,12 @@ else:
     WORKSPACE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
     BUNDLED_SANDBOX_DIR = os.path.join(WORKSPACE_DIR, "sandbox")
 
+# Player solution files; bind-mounted into the container as /workspace (read/write) so the validator sees what /api/compile wrote.
 # Persistent directory storing user solution files accessible inside container volume
 RELIC_SAVE_DIR = os.path.join(WORKSPACE_DIR, "save_data", "relic_save")
 
 
+# Idempotent "make sure the container is up" in three escalating steps: already running -> done; exists but stopped -> `docker start`; missing -> `docker run -d` a long-lived idle container (`tail -f /dev/null` keeps it alive so each test is a fast `docker exec`, not a fresh container).
 def ensure_sandbox_running():
     """Verifies that the Docker sandbox container is active, starting or creating it if necessary.
 
@@ -47,6 +56,7 @@ def ensure_sandbox_running():
         bool: True if container is active and reachable; False on Docker daemon failure.
     """
     try:
+        # `docker inspect -f {{.State.Running}}` prints "true" or "false"; a non-zero exit code means the container does not exist (or Docker is not running).
         # Step 1: Query Docker daemon to verify container existence and running state via inspect format string
         check_run = subprocess.run(
             ["docker", "inspect", "-f", "{{.State.Running}}", SANDBOX_CONTAINER_NAME],
@@ -57,6 +67,7 @@ def ensure_sandbox_running():
         if check_run.returncode == 0 and check_run.stdout.strip() == "true":
             return True
 
+        # `ps -a` includes stopped containers; restarting keeps the same mounts, which avoids recreating volumes.
         # Step 2: Check if container exists in stopped state to avoid recreating container volumes
         check_exist = subprocess.run(
             ["docker", "ps", "-a", "--filter", f"name={SANDBOX_CONTAINER_NAME}", "-q"],
@@ -69,6 +80,8 @@ def ensure_sandbox_running():
             return start_proc.returncode == 0
 
         # Step 3: Container does not exist, provision isolated instance with bind mounted save volume
+
+        # Two bind mounts: user code (read/write, needed for solutions and chapter side effects) and validators (/sandbox). The image tag zeus-arch:latest must already exist (built by setup/build_sandbox.sh); if it does not, `docker run` fails and False is returned.
         logger.info("Launching new sandbox container...")
         run_cmd = [
             "docker", "run", "-d",
@@ -89,6 +102,7 @@ def ensure_sandbox_running():
         return False
 
 
+# Runs ch<N>_test.py and returns its combined output. Exit code 0 means the chapter is solved. Timeout 15 s protects against infinite loops in player code; on timeout the child is killed by subprocess.run.
 def execute_test(chapter_id: int):
     """Executes the test suite for a given chapter inside the running sandbox or local fallback.
 
@@ -104,6 +118,8 @@ def execute_test(chapter_id: int):
     Returns:
         dict: Mapping containing boolean 'success' flag and string 'output' buffer.
     """
+
+    # No container: fall back to running the validator directly on the host. The validator still imports the player's file from the shared workspace.
     if not ensure_sandbox_running():
         # Fallback to local execution if Docker is not installed or running
         logger.warning("Docker sandbox not running. Executing tests locally as fallback.")
@@ -127,6 +143,7 @@ def execute_test(chapter_id: int):
         except Exception as e:
             return {"success": False, "output": f"Local execution failed: {e}"}
 
+    # Container mode: `docker exec` inside the persistent container (python is the container's interpreter).
     # Execute test script inside the isolated Docker container
     test_script = f"/sandbox/test_frameworks/ch{chapter_id}_test.py"
     exec_cmd = ["docker", "exec", SANDBOX_CONTAINER_NAME, "python", test_script]
