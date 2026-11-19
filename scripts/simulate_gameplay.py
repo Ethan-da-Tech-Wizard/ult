@@ -13,9 +13,11 @@
 # How this file fits the app: developer tool (not part of CI) that plays through all 22 chapters automatically
 # and writes a Markdown log to save_data/gameplay_progression.md (a tracked file in this repo, so running the
 # script modifies it).
-# Caveat: unlike the CI smoke tests it does NOT set ZEUS_SAVE_DB_PATH, so it writes progress into the real
-# save database (save_data/save_state.db) and leaves the game "completed" with extra checkpoint rows; back up
-# or delete the save first if you care about it. The server output pipe is not read.
+# Isolation: like the CI smoke tests it sets ZEUS_SAVE_DB_PATH to a throw-away temp database, so the
+# player's real save (save_data/save_state.db) is never read or written. (It used to skip this and left the
+# real save "completed" with 22 extra checkpoint rows.) Still shared with the real game: the compiled
+# solutions are written under save_data/relic_save/ by the server's /api/compile, which has no override, so
+# back that folder up if you care about your own chapter code. The server output pipe is not read.
 
 import json
 import os
@@ -100,6 +102,12 @@ def main():
     print("🚀 Starting game server for progression playthrough...")
     env = os.environ.copy()
     env["PYTHONPATH"] = ROOT_DIR
+
+    # The temp directory outlives the server (cleaned up in the finally block below) and holds the throw-away
+    # save database. ZEUS_SAVE_DB_PATH is read by server/main.py at import time, so it must be in the child's
+    # environment before the process starts; pointing it here keeps the player's real save_state.db untouched.
+    tmp_dir = tempfile.TemporaryDirectory(prefix="sacred-tech-sim-")
+    env["ZEUS_SAVE_DB_PATH"] = os.path.join(tmp_dir.name, "save_state.db")
 
     # Launch server subprocess with pipe redirection
     proc = subprocess.Popen(
@@ -208,6 +216,10 @@ def main():
             proc.wait(timeout=5)
         except subprocess.TimeoutExpired:
             proc.kill()
+
+        # Removed only after the server is gone: deleting a SQLite file under a running writer can fail on
+        # Windows and would hide the original error.
+        tmp_dir.cleanup()
 
 
 if __name__ == "__main__":
