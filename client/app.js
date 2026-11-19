@@ -3187,6 +3187,60 @@ function playSfx(type) {
     }
 }
 
+/**
+ * Plays a short multi-note jingle for the big moments: combat victory, level up, and a passed validator.
+ * Restored from the version that existed before commit 2607b58 deleted it while its callers (winCombat and
+ * the compile-pass handler) stayed, which threw a ReferenceError mid-victory and skipped the rewards, save
+ * and endCombat() that follow the call.
+ *
+ * Side effects: schedules oscillators on the shared AudioContext; nothing is stored. Silent no-op before
+ * initAudio() has run (browsers block audio until a user gesture) or when gameSettings.muted is set.
+ *
+ * @param {string} kind "victory", "levelup" or "fanfare"; anything else falls back to "victory" so a typo
+ *   at a call site degrades to a sound instead of throwing.
+ * @returns {void}
+ */
+function playJingle(kind) {
+    // Same guard as playSfx: without a context there is nothing to play, and muted must always win.
+    if (!audioCtx || gameSettings.muted) return;
+
+    // Each note is [frequency in Hz, start offset in seconds from now]. Offsets of 0.1-0.15 s give a quick
+    // arpeggio; frequencies are equal-tempered pitches (523.25 = C5, 659.25 = E5, 783.99 = G5, 1046.5 = C6).
+    // levelup repeats its top note (1318.5 = E6) at 0.3 s and 0.45 s for a "ta-da" ending.
+    const sequences = {
+        victory: [[523.25, 0], [659.25, 0.12], [783.99, 0.24], [1046.5, 0.36]],
+        levelup: [[659.25, 0], [783.99, 0.1], [987.77, 0.2], [1318.5, 0.3], [1318.5, 0.45]],
+        fanfare: [[392.0, 0], [523.25, 0.1], [659.25, 0.2], [783.99, 0.3], [1046.5, 0.45]]
+    };
+    const notes = sequences[kind] || sequences.victory;
+
+    // try/catch because a suspended or closed AudioContext can throw; audio is decoration and must never
+    // abort the game-logic call that requested it.
+    try {
+        notes.forEach(([freq, at]) => {
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+
+            // Absolute start time on the audio clock (not Date.now): the clock keeps running while the
+            // tab is busy, so notes stay evenly spaced.
+            const t = audioCtx.currentTime + at;
+            osc.type = "square";
+            osc.frequency.setValueAtTime(freq, t);
+
+            // Gain ramps to near-zero (exponential ramps cannot reach exactly 0) over 0.15 s so each note
+            // decays like a plucked tone and ends without a speaker click; stop() lands just after.
+            gain.gain.setValueAtTime(0.05 * getMasterVolumeFactor(), t);
+            gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.15);
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            osc.start(t);
+            osc.stop(t + 0.16);
+        });
+    } catch (e) {
+        console.error("Jingle error:", e);
+    }
+}
+
 // Starts the looping background music for a theme using two oscillators: a treble voice following
 // track.notes and a bass voice changing every fourth note. A timer (setInterval) steps through the melody
 // at half a beat per tick. Calls stopBgm() first, so only one track plays.
@@ -5734,9 +5788,8 @@ function enemyTurn() {
 
 // Victory: awards EXP (and the same number as gold), shows level-ups, records the boss flag for Veridicus,
 // saves, then closes combat after a short delay.
-// KNOWN BUG (reported, not fixed): playJingle() is called here and after a passed compile, but the
-// function was deleted in commit 2607b58 and is not defined anywhere now, so a ReferenceError is thrown at
-// this point and everything after it (gold, flags, save, endCombat) is skipped.
+// playJingle() (defined next to playSfx) is called here and after a passed compile; it was missing after
+// commit 2607b58 and made this function throw before paying gold and saving, fixed by restoring it.
 function winCombat() {
     const log = document.getElementById("combat-log-text");
     const levelUps = awardPartyExp(currentEnemy.exp);
@@ -5903,7 +5956,7 @@ codeEditor.addEventListener("input", () => {
 
 // Compile flow (Run button or Ctrl+Enter in the editor): POST the editor text to /api/compile for the
 // current chapter and print the validator output in the console tab. On success: unlock the chapter, pay
-// the contract reward once, play a fanfare (see the playJingle bug note near winCombat) and save; for
+// the contract reward once, play a fanfare (playJingle, next to playSfx) and save; for
 // chapter 0 also run the dark -> monochrome -> colour transition and start the post-boot dialogue. On
 // failure: show the Learning Coach with hints. If the server cannot be reached an "offline simulator"
 // marks the chapter as passed without any verification, so progress made offline is not real validation.
