@@ -76,7 +76,7 @@ function loadApp(overrides) {
         ...overrides,
     };
     sandbox.window = sandbox;
-    sandbox.document = inertDom();
+    sandbox.document = (overrides && overrides.document) || inertDom();
     vm.createContext(sandbox);
     const source = fs.readFileSync(APP_PATH, "utf8");
     // The accessor lives in the same script so its eval sees the file's top-level const/let bindings.

@@ -4412,7 +4412,7 @@ function renderPartyHud() {
         const color = pct > 0.5 ? "#4ade80" : pct > 0.25 ? "#facc15" : "#ef4444";
         return `
         <div class="party-hud-row">
-            <span class="party-hud-name">${char.name}</span>
+            <span class="party-hud-name">${escapeDiagnosticText(char.name)}</span>
             <div class="party-hud-bar"><div class="party-hud-fill" style="width:${Math.round(pct * 100)}%; background:${color};"></div></div>
             <span class="party-hud-hp">${char.hp}/${char.max_hp}</span>
         </div>`;
@@ -5513,7 +5513,7 @@ function initCombatScreen() {
         const activeMarker = char === activeMember ? " ★" : "";
         return `
         <div class="combat-char-row">
-            <span><strong>${char.name}${activeMarker}</strong> <span style="font-size:0.75em; color:#888;">Lv ${char.level || 1} (${char.race}) ${char.class}</span></span>
+            <span><strong>${escapeDiagnosticText(char.name)}${activeMarker}</strong> <span style="font-size:0.75em; color:#888;">Lv ${char.level || 1} (${char.race}) ${char.class}</span></span>
             <span style="font-size:0.8em;">HP: ${char.hp}/${char.max_hp} ${charBar} EXP: ${char.exp || 0}/${char.next_exp || getNextExpForLevel(char.level || 1)}</span>
         </div>`;
     }).join('');
@@ -5537,7 +5537,7 @@ function initCombatScreen() {
 function showLeadSubmenu() {
     const menu = document.getElementById("combat-menu-options");
     menu.innerHTML = player.party.map((char, index) => `
-        <button class="combat-menu-btn" data-lead-index="${index}">${char.name} (${getRaceAffinity(char.race)})</button>
+        <button class="combat-menu-btn" data-lead-index="${index}">${escapeDiagnosticText(char.name)} (${getRaceAffinity(char.race)})</button>
     `).join('') + `<button class="combat-menu-btn combat-back-btn">[Back]</button>`;
 }
 
@@ -6047,7 +6047,7 @@ runBtn.addEventListener("click", async () => {
         
         if (res.ok) {
             const data = await res.json();
-            log.innerHTML += data.output;
+            log.innerHTML += escapeDiagnosticText(data.output);
             
             if (data.success) {
                 log.innerHTML += `\n>>> Verification PASS! Restoration complete.\n`;
@@ -7434,7 +7434,8 @@ function escapeDiagnosticText(value) {
         .replace(/&/g, "&amp;")
         .replace(/</g, "&lt;")
         .replace(/>/g, "&gt;")
-        .replace(/"/g, "&quot;");
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
 }
 
 // Diagnostics helpers (used by runWiringDiagnostics): tile access with bounds checks, "walkable" test (not
@@ -7860,7 +7861,7 @@ async function initShellWebSocket() {
         // Server down or refusing us: same 3 s retry the old reconnect loop used, so the terminal comes up
         // by itself once the backend is reachable.
         shellConnecting = false;
-        shellOutput.innerHTML += `\n[Could not get a shell token (${e}). Running in local offline fallback mode; retrying...]\n`;
+        shellOutput.innerHTML += escapeDiagnosticText(`\n[Could not get a shell token (${e}). Running in local offline fallback mode; retrying...]\n`);
         setTimeout(initShellWebSocket, 3000);
         return;
     }
@@ -7875,7 +7876,7 @@ async function initShellWebSocket() {
         };
 
         shellSocket.onmessage = (event) => {
-            shellOutput.innerHTML += event.data;
+            shellOutput.innerHTML += escapeDiagnosticText(event.data);
             shellOutput.scrollTop = shellOutput.scrollHeight;
         };
 
@@ -7894,7 +7895,7 @@ async function initShellWebSocket() {
         };
     } catch (e) {
         shellConnecting = false;
-        shellOutput.innerHTML += `\n[WebSocket error: ${e}. Running in local offline fallback mode.]\n`;
+        shellOutput.innerHTML += escapeDiagnosticText(`\n[WebSocket error: ${e}. Running in local offline fallback mode.]\n`);
     }
 }
 
@@ -7914,7 +7915,7 @@ function initTempleOSWebSocket() {
         templeosSocket = new WebSocket(`${protocol}//${host}/ws/templeos`);
         
         templeosSocket.onmessage = (event) => {
-            templeosOutput.innerHTML += event.data;
+            templeosOutput.innerHTML += escapeDiagnosticText(event.data);
             templeosOutput.scrollTop = templeosOutput.scrollHeight;
         };
         
@@ -7927,7 +7928,7 @@ function initTempleOSWebSocket() {
             if (templeosSocket) templeosSocket.close();
         };
     } catch (e) {
-        templeosOutput.innerHTML += `\n[Bridge failed: ${e}]\n`;
+        templeosOutput.innerHTML += escapeDiagnosticText(`\n[Bridge failed: ${e}]\n`);
     }
 }
 
@@ -7993,7 +7994,7 @@ shellInput.addEventListener("keydown", (e) => {
             shellSocket.send(cmd + "\n");
         } else {
             // Local fallback execution — supports Chapter 0 CLI curriculum
-            shellOutput.innerHTML += `\n$ ${cmd}\n`;
+            shellOutput.innerHTML += escapeDiagnosticText(`\n$ ${cmd}\n`);
             const args = cmd.trim().split(/\s+/);
             const baseCmd = args[0];
             
@@ -8005,60 +8006,60 @@ shellInput.addEventListener("keydown", (e) => {
                 const flags = args.slice(1).join(' ');
                 const entries = Object.keys(window._shellFs);
                 if (flags.includes('-la') || flags.includes('-al')) {
-                    shellOutput.innerHTML += `total ${entries.length * 4}\n`;
-                    entries.forEach(e => shellOutput.innerHTML += `drwxr-xr-x pilgrim pilgrim  4096 Jun  7 09:00 ${e}\n`);
+                    shellOutput.innerHTML += escapeDiagnosticText(`total ${entries.length * 4}\n`);
+                    entries.forEach(e => shellOutput.innerHTML += escapeDiagnosticText(`drwxr-xr-x pilgrim pilgrim  4096 Jun  7 09:00 ${e}\n`));
                 } else {
-                    shellOutput.innerHTML += entries.join('  ') + '\n';
+                    shellOutput.innerHTML += escapeDiagnosticText(entries.join('  ') + '\n');
                 }
             } else if (baseCmd === 'pwd') {
-                shellOutput.innerHTML += '/home/pilgrim/workspace\n';
+                shellOutput.innerHTML += escapeDiagnosticText('/home/pilgrim/workspace\n');
             } else if (baseCmd === 'export') {
                 if (args[1] && args[1].includes('=')) {
                     const [key, val] = args[1].split('=');
                     window._shellEnv[key] = val.replace(/"/g, '');
-                    shellOutput.innerHTML += `[exported] ${key}=${window._shellEnv[key]}\n`;
+                    shellOutput.innerHTML += escapeDiagnosticText(`[exported] ${key}=${window._shellEnv[key]}\n`);
                 } else {
-                    shellOutput.innerHTML += Object.entries(window._shellEnv).map(([k,v]) => `${k}=${v}`).join('\n') + '\n';
+                    shellOutput.innerHTML += escapeDiagnosticText(Object.entries(window._shellEnv).map(([k,v]) => `${k}=${v}`).join('\n') + '\n');
                 }
             } else if (baseCmd === 'echo') {
                 const msg = args.slice(1).join(' ').replace(/\$(\w+)/g, (_, k) => window._shellEnv[k] || '');
-                shellOutput.innerHTML += msg + '\n';
+                shellOutput.innerHTML += escapeDiagnosticText(msg + '\n');
             } else if (baseCmd === 'printenv') {
                 if (args[1]) {
-                    shellOutput.innerHTML += (window._shellEnv[args[1]] || '') + '\n';
+                    shellOutput.innerHTML += escapeDiagnosticText((window._shellEnv[args[1]] || '') + '\n');
                 } else {
-                    shellOutput.innerHTML += Object.entries(window._shellEnv).map(([k,v]) => `${k}=${v}`).join('\n') + '\n';
+                    shellOutput.innerHTML += escapeDiagnosticText(Object.entries(window._shellEnv).map(([k,v]) => `${k}=${v}`).join('\n') + '\n');
                 }
             } else if (baseCmd === 'cat') {
                 const filename = args[1] || '';
                 if (window._shellFs[filename] !== undefined && window._shellFs[filename] !== null) {
-                    shellOutput.innerHTML += window._shellFs[filename] + '\n';
+                    shellOutput.innerHTML += escapeDiagnosticText(window._shellFs[filename] + '\n');
                 } else if (filename) {
-                    shellOutput.innerHTML += `cat: ${filename}: No such file or directory\n`;
+                    shellOutput.innerHTML += escapeDiagnosticText(`cat: ${filename}: No such file or directory\n`);
                 } else {
-                    shellOutput.innerHTML += 'cat: missing operand\n';
+                    shellOutput.innerHTML += escapeDiagnosticText('cat: missing operand\n');
                 }
             } else if (baseCmd === 'touch') {
                 const filename = args[1];
-                if (filename) { window._shellFs[filename] = ''; shellOutput.innerHTML += `[created] ${filename}\n`; }
-                else { shellOutput.innerHTML += 'touch: missing file operand\n'; }
+                if (filename) { window._shellFs[filename] = ''; shellOutput.innerHTML += escapeDiagnosticText(`[created] ${filename}\n`); }
+                else { shellOutput.innerHTML += escapeDiagnosticText('touch: missing file operand\n'); }
             } else if (baseCmd === 'mkdir') {
                 const dirname = args[1];
-                if (dirname) { window._shellFs[dirname + '/'] = null; shellOutput.innerHTML += `[created] ${dirname}/\n`; }
-                else { shellOutput.innerHTML += 'mkdir: missing operand\n'; }
+                if (dirname) { window._shellFs[dirname + '/'] = null; shellOutput.innerHTML += escapeDiagnosticText(`[created] ${dirname}/\n`); }
+                else { shellOutput.innerHTML += escapeDiagnosticText('mkdir: missing operand\n'); }
             } else if (baseCmd === 'clear') {
                 shellOutput.innerHTML = '';
             } else if (baseCmd === 'whoami') {
-                shellOutput.innerHTML += 'pilgrim\n';
+                shellOutput.innerHTML += escapeDiagnosticText('pilgrim\n');
             } else if (baseCmd === 'uname') {
-                shellOutput.innerHTML += 'Linux workspace 6.1.0-arch1 #1 SMP PREEMPT x86_64 GNU/Linux\n';
+                shellOutput.innerHTML += escapeDiagnosticText('Linux workspace 6.1.0-arch1 #1 SMP PREEMPT x86_64 GNU/Linux\n');
             } else if (baseCmd === 'python3' && args[1] === '--version') {
-                shellOutput.innerHTML += 'Python 3.12.0\n';
+                shellOutput.innerHTML += escapeDiagnosticText('Python 3.12.0\n');
             } else if (cmd.trim() === '') {
                 // empty command — do nothing
             } else {
-                shellOutput.innerHTML += `bash: ${baseCmd}: command not found\n`;
-                shellOutput.innerHTML += `(Offline mode — server unavailable. Supported: ls, pwd, echo, export, printenv, cat, touch, mkdir, clear, whoami, uname)\n`;
+                shellOutput.innerHTML += escapeDiagnosticText(`bash: ${baseCmd}: command not found\n`);
+                shellOutput.innerHTML += escapeDiagnosticText(`(Offline mode — server unavailable. Supported: ls, pwd, echo, export, printenv, cat, touch, mkdir, clear, whoami, uname)\n`);
             }
             shellOutput.scrollTop = shellOutput.scrollHeight;
         }
@@ -8076,8 +8077,8 @@ templeosInput.addEventListener("keydown", (e) => {
         if (templeosSocket && templeosSocket.readyState === WebSocket.OPEN) {
             templeosSocket.send(cmd + "\n");
         } else {
-            templeosOutput.innerHTML += `\nHolyC> ${cmd}\n`;
-            templeosOutput.innerHTML += `Compiling '${cmd}'...\n`;
+            templeosOutput.innerHTML += escapeDiagnosticText(`\nHolyC> ${cmd}\n`);
+            templeosOutput.innerHTML += escapeDiagnosticText(`Compiling '${cmd}'...\n`);
             templeosOutput.innerHTML += `Result: 0 (Success) - Verification passed.\n`;
             templeosOutput.scrollTop = templeosOutput.scrollHeight;
         }
