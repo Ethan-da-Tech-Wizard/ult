@@ -1,0 +1,12 @@
+/* Optional local fonts. Nothing here is loaded from the network and no font files ship with the game.
+   To use a pixel font, download it yourself (for example Press Start 2P, SIL Open Font License 1.1), put the
+   file in this folder, and uncomment/adapt the rule below. The names must match the first entries of the
+   --retro-font / --code-font / --ui-font stacks in ../style.css. Keep the licence file next to the font. */
+
+/*
+@font-face {
+    font-family: 'Press Start 2P';
+    src: url('PressStart2P-Regular.ttf') format('truetype');
+    font-display: swap;
+}
+*/

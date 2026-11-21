@@ -13,10 +13,10 @@
    Layering (z-index): HUD panels 10, dialogue 15, autosave toast 16, combat overlay 20, inventory/shop 25,
    prologue 30, splitter 40, settings menu and requirements modal 100, CRT scanline overlay 9999
    (pointer-events: none so it never intercepts clicks).
-   Network note: the @import below loads three Google fonts when online; offline the browser falls back to
-   the generic monospace/sans-serif fonts named in the variables.
+   Network note: nothing is fetched from third parties. The font stacks below use fonts already on the
+   computer (system monospace / sans-serif); drop your own font files into client/fonts/ and describe them in
+   client/fonts/local-fonts.css to use e.g. Press Start 2P, Fira Code or Outfit (see README, "Fonts").
 */
-@import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Fira+Code:wght@400;600&family=Outfit:wght@400;600&display=swap');
 
 /* Theme tokens (CSS custom properties) used everywhere: backgrounds, border, text and accent colours, the
    glow colour, the three font stacks and the pixel-border width. The default is the "JRPG Navy" theme; the
@@ -31,9 +31,9 @@
     --text-color: #e2e8f0;
     --accent-color: #3b82f6;
     --accent-glow: rgba(59, 130, 246, 0.4);
-    --retro-font: 'Press Start 2P', monospace;
-    --code-font: 'Fira Code', monospace;
-    --ui-font: 'Outfit', sans-serif;
+    --retro-font: 'Press Start 2P', 'Menlo', 'Consolas', 'DejaVu Sans Mono', ui-monospace, monospace;
+    --code-font: 'Fira Code', ui-monospace, 'SF Mono', 'Menlo', 'Consolas', 'DejaVu Sans Mono', monospace;
+    --ui-font: 'Outfit', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
     --shadow-color: rgba(0, 0, 0, 0.5);
     
     /* UI styling default variables */
