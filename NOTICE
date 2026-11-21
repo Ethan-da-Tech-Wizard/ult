@@ -1,0 +1,36 @@
+The Sacred Tech
+Copyright (c) 2026 Ethan-da-Tech-Wizard. Original code is MIT licensed (see LICENSE).
+
+This file lists third-party software the project depends on. The source repository does not contain copies
+of these packages, fonts or images; they are installed or supplied separately. Licence data comes from
+docs/LICENSE_REVIEW.md and docs/DEPENDENCIES.csv (registry metadata, not legal certification). If you
+distribute a binary (for example the PyInstaller build), you must include the licence texts of everything
+that binary bundles; build a per-release inventory first.
+
+Python packages (requirements.txt; installed with pip, bundled into PyInstaller builds)
+  fastapi        MIT
+  uvicorn        BSD-3-Clause
+  pydantic       MIT
+  numpy          BSD-3-Clause AND 0BSD AND MIT AND Zlib AND CC0-1.0
+
+Rust crates (client/src-tauri/Cargo.toml; only for the optional Tauri desktop wrapper)
+  tauri          Apache-2.0 OR MIT
+  tauri-build    Apache-2.0 OR MIT
+  serde          MIT OR Apache-2.0
+  serde_json     MIT OR Apache-2.0
+
+Fonts (optional, NOT bundled)
+  The default CSS uses system fonts and makes no network request. Operators may add local copies of
+  Press Start 2P, Fira Code or Outfit in client/fonts/ (see README, "Fonts"). All three are licensed under the
+  SIL Open Font License 1.1 (https://openfontlicense.org). If you ship any of them you must also ship its
+  copyright notice and the OFL text next to the font files.
+
+Sandbox image (sandbox/Dockerfile; built locally, not redistributed by this repository)
+  Arch Linux base image and the pacman/pip packages it installs (python, nodejs, tesseract, clang, git,
+  neo4j driver, pip-audit, requests, pytesseract, pybind11, ...) are under their own licences. Check them
+  before publishing a built image.
+
+Other
+  Emoji in the UI are rendered by the operating system's emoji font and are not redistributed here.
+  The TempleOS image is downloaded by setup/build_templeos_img.sh at build time (TempleOS is public domain)
+  and is not stored in this repository.
