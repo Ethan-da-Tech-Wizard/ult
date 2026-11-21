@@ -8041,7 +8041,7 @@ shellInput.addEventListener("keydown", (e) => {
                 // empty command — do nothing
             } else {
                 shellOutput.innerHTML += escapeDiagnosticText(`bash: ${baseCmd}: command not found\n`);
-                shellOutput.innerHTML += escapeDiagnosticText(`(Offline mode — server unavailable. Supported: ls, pwd, echo, export, printenv, cat, touch, mkdir, clear, whoami, uname)\n`);
+                shellOutput.innerHTML += escapeDiagnosticText(`(DEMO offline shell, not your real terminal; server unavailable. Supported: ls, pwd, echo, export, printenv, cat, touch, mkdir, clear, whoami, uname)\n`);
             }
             shellOutput.scrollTop = shellOutput.scrollHeight;
         }
@@ -8061,7 +8061,7 @@ templeosInput.addEventListener("keydown", (e) => {
         } else {
             templeosOutput.innerHTML += escapeDiagnosticText(`\nHolyC> ${cmd}\n`);
             templeosOutput.innerHTML += escapeDiagnosticText(`Compiling '${cmd}'...\n`);
-            templeosOutput.innerHTML += `Result: 0 (Success) - Verification passed.\n`;
+            templeosOutput.innerHTML += `[DEMO - nothing was run or graded] Result: 0\n`;
             templeosOutput.scrollTop = templeosOutput.scrollHeight;
         }
     }
