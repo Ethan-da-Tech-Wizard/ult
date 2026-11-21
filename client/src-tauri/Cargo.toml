@@ -12,11 +12,10 @@ edition = "2021"
 [build-dependencies]
 tauri-build = { version = "1.5" }
 
-# `api-all` enables every Tauri JavaScript API (file system, shell, ...). That is convenient for
-# development but a larger attack surface than needed for a game that only talks to its local server;
-# narrow the feature list before shipping. serde/serde_json are declared for future IPC commands (none
+# No Tauri JavaScript API features are enabled (the old `api-all` exposed file system and shell access to
+# page scripts). The game only talks to its local server; add a specific feature only if one is needed. serde/serde_json are declared for future IPC commands (none
 # exist yet).
 [dependencies]
-tauri = { version = "1.5", features = ["api-all"] }
+tauri = { version = "1.5", features = [] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
