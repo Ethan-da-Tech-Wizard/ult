@@ -7,6 +7,7 @@ The owner selected MIT for previously unlicensed original code. Existing license
 ## Preserved notices
 
 - [LICENSE](../LICENSE)
+- [NOTICE](../NOTICE) (third-party licence list)
 
 ## Dependency evidence
 
