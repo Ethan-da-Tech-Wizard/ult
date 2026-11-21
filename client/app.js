@@ -6088,40 +6088,22 @@ runBtn.addEventListener("click", async () => {
                 log.innerHTML += renderValidatorFailureCoach(player.currentChapter, data.output);
                 renderSpecialistHints(player.currentChapter, true);
             }
+        } else {
+            // Server answered with an error (for example 503: no Docker sandbox). Show its explanation.
+            let detail = `Server returned HTTP ${res.status}.`;
+            try {
+                const err = await res.json();
+                if (err && err.detail) detail = String(err.detail);
+            } catch (ignored) { /* keep the generic message */ }
+            log.innerHTML += `\n>>> Could not run your code: ${escapeDiagnosticText(detail)}\n`;
         }
     } catch (e) {
-        log.innerHTML += `[Local Server Offline] Fallback verification passed.\r\n`;
-        // Local simulation fallback for testing
-        if (!player.unlockedChapters.includes(player.currentChapter)) {
-            player.unlockedChapters.push(player.currentChapter);
-        }
-        const contractReward = completeChapterContract(player.currentChapter);
-        if (contractReward) {
-            log.innerHTML += `>>> ${contractReward.text.replace(/\n/g, "\n>>> ")}\r\n`;
-        }
-        if (player.currentChapter === 0) {
-            screenMode = 'color';
-            document.getElementById("prologue-overlay").classList.add("hidden");
-            showAutosaveIndicator("Gate Opened");
-            updateUnlockedTabs();
-            postBootIndex = -1;
-            advancePostBootDialogue();
-            uploadSaveState();
-            renderChroniclesQuestTree();
-            drawMap();
-            updateUIHeaders();
-        } else {
-            screenMode = 'color';
-            document.getElementById("prologue-overlay").classList.add("hidden");
-            showAutosaveIndicator("Gate Opened");
-            showDialogue("Offline Simulator", `Chapter ${player.currentChapter} compiled.${contractReward ? ` ${contractReward.text}` : ""} The portal is open!`);
-            showOpeningHints();
-            uploadSaveState();
-            updateUnlockedTabs();
-            renderChroniclesQuestTree();
-            drawMap();
-            updateUIHeaders();
-        }
+        // DEMO MODE: the server could not be reached, so nothing was graded. This path used to auto-pass the
+        // chapter, pay rewards and save. It now changes no progress, rewards or save data at all.
+        log.innerHTML += `\n[DEMO MODE - local server offline]\n` +
+            `Nothing was graded. No chapter was unlocked, no rewards were paid and nothing was saved.\n` +
+            `Start the game server (see README) to run your code for real.\n`;
+        showAutosaveIndicator("Demo - not saved");
     }
 });
 
