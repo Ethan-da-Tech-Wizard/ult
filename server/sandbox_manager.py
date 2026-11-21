@@ -53,7 +53,7 @@ class SandboxUnavailable(RuntimeError):
 
 
 UNAVAILABLE_MESSAGE = (
-    "Code sandbox unavailable: Docker was not found or is not running, and player code is not run directly on "
+    "Code sandbox unavailable: Docker (or the zeus-arch image) was not found, and player code is not run directly on "
     "this computer by default. To enable the sandbox: install and start Docker, then run "
     "setup/build_sandbox.sh to build the zeus-arch image. (Unsafe alternative for a throwaway machine only: "
     "start the server with ULT_ALLOW_HOST_EXEC=1 to run code as your own user with no isolation.)"
@@ -66,12 +66,19 @@ def host_exec_allowed():
 
 
 def docker_available():
-    """True when the docker CLI exists and the daemon answers (`docker info`, 10 s cap). Never raises."""
+    """True when the docker CLI exists, the daemon answers, AND the zeus-arch image has been built.
+
+    Checked with `docker info` and `docker image inspect` (10 s cap each). Never raises. A running Docker
+    without the image counts as unavailable: the 503 message tells the player to build it.
+    """
     if shutil.which("docker") is None:
         return False
     try:
-        res = subprocess.run(["docker", "info"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10)
-        return res.returncode == 0
+        for cmd in (["docker", "info"], ["docker", "image", "inspect", SANDBOX_IMAGE]):
+            res = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10)
+            if res.returncode != 0:
+                return False
+        return True
     except Exception:
         return False
 
