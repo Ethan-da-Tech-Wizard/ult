@@ -297,6 +297,19 @@ class SaveStateModel(BaseModel):
     state_json: str = "{}"
 
 
+def guard_local(request):
+    """403 unless the request passes the loopback Host/Origin/Sec-Fetch-Site checks (shell_guard.py).
+
+    Called first thing in every route that saves data, runs code or returns local state, so a web page on
+    another site (or a DNS-rebinding page) cannot drive them. Not applied to /api/health, which is a harmless
+    liveness probe the smoke scripts poll.
+    """
+    try:
+        shell_guard.require_local_request(request.headers)
+    except shell_guard.LocalOnlyError:
+        raise HTTPException(status_code=403, detail="This endpoint is only available to the local game client.")
+
+
 # Liveness probe (polled by scripts/full_stack_smoke.py and scripts/simulate_gameplay.py to wait until the
 # server is up).
 @app.get("/api/health")
@@ -333,8 +346,9 @@ def sandbox_status():
 # Self-check endpoint: lists which chapter validators and code templates exist and whether the save DB is
 # present, so a broken install is visible at /api/diagnostics.
 @app.get("/api/diagnostics")
-def diagnostics():
+def diagnostics(request: Request):
     """Comprehensive diagnostic probe validating test frameworks, templates, and database configuration."""
+    guard_local(request)
     try:
         try:
             from server import sandbox_manager
@@ -376,8 +390,9 @@ def diagnostics():
 
 # Newest save row (highest id), or {} when none.
 @app.get("/api/save")
-def get_save():
+def get_save(request: Request):
     """Retrieves the most recent player save state record from SQLite."""
+    guard_local(request)
     try:
         conn = sqlite3.connect(DB_PATH)
         conn.row_factory = sqlite3.Row
@@ -394,8 +409,9 @@ def get_save():
 
 # Lists recent save checkpoints; limit is clamped to 1-50 to bound the response size.
 @app.get("/api/saves")
-def list_saves(limit: int = 10):
+def list_saves(request: Request, limit: int = 10):
     """Lists recent save checkpoints up to the specified limit (1-50)."""
+    guard_local(request)
     try:
         limit = max(1, min(limit, 50))
         conn = sqlite3.connect(DB_PATH)
@@ -415,8 +431,9 @@ def list_saves(limit: int = 10):
 # Fetch one historical checkpoint; 404 if the id does not exist. The inner `except HTTPException: raise` stops
 # the generic handler turning the 404 into a 500.
 @app.get("/api/save/{save_id}")
-def get_save_by_id(save_id: int):
+def get_save_by_id(request: Request, save_id: int):
     """Retrieves a specific historical save state by primary key ID."""
+    guard_local(request)
     try:
         conn = sqlite3.connect(DB_PATH)
         conn.row_factory = sqlite3.Row
@@ -436,8 +453,9 @@ def get_save_by_id(save_id: int):
 # Insert a new row for every save (checkpoints) and then delete everything but the 50 newest rows, so the file
 # cannot grow without bound. Parameterised SQL throughout.
 @app.post("/api/save")
-def save_state(state: SaveStateModel):
+def save_state(state: SaveStateModel, request: Request):
     """Persists a new game save record and trims historical entries beyond the 50-row rolling window."""
+    guard_local(request)
     try:
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
@@ -501,8 +519,9 @@ def get_default_skeleton(chapter_id: int) -> str:
 # Returns the player's saved solution if it exists, otherwise the starter template (also when skeleton=true,
 # which the client uses for "reset code").
 @app.get("/api/code")
-def load_code(chapter_id: int, skeleton: bool = False):
+def load_code(request: Request, chapter_id: int, skeleton: bool = False):
     """Loads player solution code from disk, or falls back to standard skeleton template."""
+    guard_local(request)
     try:
         # filename comes from the fixed map (or an integer-based default), never from user text, so there is
         # no path-traversal risk here.
@@ -535,13 +554,24 @@ class CompileRequest(BaseModel):
 # sandbox_manager.execute_test(). Blocking subprocess work runs inside a synchronous endpoint, which FastAPI
 # executes in its thread pool, so it does not freeze the event loop.
 @app.post("/api/compile")
-def compile_code(req: CompileRequest):
-    """Writes submitted code to disk and invokes chapter validator inside Docker sandbox."""
+def compile_code(req: CompileRequest, request: Request):
+    """Writes submitted code to disk and invokes chapter validator inside the Docker sandbox.
+
+    Player code is never run on the host unless ULT_ALLOW_HOST_EXEC=1 (UNSAFE, see README "Security model").
+    Without Docker and without that opt-in this answers 503 and writes nothing.
+    """
+    guard_local(request)
     try:
         try:
             from server import sandbox_manager
         except ImportError:
             import sandbox_manager
+
+        # Refuse BEFORE touching the disk when there is nowhere safe to run the code.
+        try:
+            sandbox_manager.require_execution_backend()
+        except sandbox_manager.SandboxUnavailable as e:
+            raise HTTPException(status_code=503, detail=str(e))
 
         filename = CHAPTER_FILENAME_MAP.get(req.chapter_id, f"ch{req.chapter_id}_solution.py")
         save_path = os.path.join(sandbox_manager.RELIC_SAVE_DIR, filename)
@@ -556,8 +586,12 @@ def compile_code(req: CompileRequest):
             f.write(req.code)
 
         # Dispatch test execution through sandbox runtime manager
-        res = sandbox_manager.execute_test(req.chapter_id)
-        return res
+        try:
+            return sandbox_manager.execute_test(req.chapter_id)
+        except sandbox_manager.SandboxUnavailable as e:
+            raise HTTPException(status_code=503, detail=str(e))
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -572,12 +606,7 @@ def shell_token(request: Request):
     """Returns {"token": ...} for the terminal WebSocket handshake; 403 for non-local callers."""
     # Host header: loopback names only (rebinding defence). Origin: absent (same-origin GET) or local.
     # Sec-Fetch-Site: set by modern browsers; "cross-site" means another website initiated this request.
-    if (
-        not shell_guard.is_loopback_host(request.headers.get("host"))
-        or not shell_guard.is_local_origin(request.headers.get("origin"))
-        or request.headers.get("sec-fetch-site") == "cross-site"
-    ):
-        raise HTTPException(status_code=403, detail="Shell token is only available to the local game client.")
+    guard_local(request)
     return JSONResponse({"token": shell_guard.SHELL_TOKEN}, headers={"Cache-Control": "no-store"})
 
 
@@ -733,6 +762,12 @@ async def ws_templeos(websocket: WebSocket):
 
     Establishes an asynchronous TCP connection to the loopback telnet port 127.0.0.1:4444.
     """
+    # Same handshake checks as /ws/shell (WebSockets are exempt from CORS): refuse foreign pages.
+    try:
+        shell_guard.require_local_request(websocket.headers)
+    except shell_guard.LocalOnlyError:
+        await websocket.close(code=1008)
+        return
     await websocket.accept()
     try:
         # If nothing listens on the port the connection fails and the client gets a hint message instead of a

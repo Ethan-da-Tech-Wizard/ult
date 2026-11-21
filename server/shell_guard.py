@@ -145,3 +145,28 @@ def host_shell_allowed():
     other than the exact string "1" means no.
     """
     return os.environ.get("ZEUS_ALLOW_HOST_SHELL") == "1"
+
+
+class LocalOnlyError(PermissionError):
+    """Raised by require_local_request when an HTTP request does not look like the local game client."""
+
+
+def require_local_request(headers):
+    """Applies the Host/Origin/Sec-Fetch-Site checks to an HTTP request's headers.
+
+    Used by every route that saves data, runs code or returns local state (see server/main.py). Same rules as
+    /api/shell-token: loopback Host (DNS-rebinding defence), loopback-or-absent Origin, and not marked
+    cross-site by the browser.
+
+    Args:
+        headers: mapping with lower-case keys (Starlette's request.headers qualifies).
+
+    Raises:
+        LocalOnlyError: when any check fails.
+    """
+    if not is_loopback_host(headers.get("host")):
+        raise LocalOnlyError("Host header is not a loopback address.")
+    if not is_local_origin(headers.get("origin")):
+        raise LocalOnlyError("Origin is not a local page.")
+    if headers.get("sec-fetch-site") == "cross-site":
+        raise LocalOnlyError("Cross-site request refused.")
