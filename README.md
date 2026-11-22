@@ -70,6 +70,14 @@ The test suite requires only the Python standard library and Node.js (no externa
 
 ### Visual Diagnostics Walkthrough
 
+<p align="center">
+  <img src="docs/assets/ult_mesh_server_execution.svg" alt="Zeus Assistant Server Runtime" width="860">
+</p>
+
+<p align="center">
+  <img src="docs/assets/ult_task_coordinator.svg" alt="Autonomous Task Coordinator & Execution" width="860">
+</p>
+
 ```text
 ┌────────────────────────────────────────────────────────────────────────────┐
 │ $ python3 -B -m unittest discover -s tests -v                              │
@@ -95,7 +103,9 @@ The test suite requires only the Python standard library and Node.js (no externa
 
 ## Engineering Standards & Magi Bible
 
-All components, sandbox execution layers, and documentation adhere to the **[Magi Bible: Engineering Foundations & Safety Standards for AI Coding](MAGI_BIBLE.md)**:
+All components, sandbox execution layers, and documentation adhere to the **[Magi Bible: Engineering Foundations & Safety Standards for AI Coding](MAGI_BIBLE.md)** and **[MAGI_LOOK_HERE.md](MAGI_LOOK_HERE.md)**:
+- **[MAGI_LOOK_HERE.md](MAGI_LOOK_HERE.md)**: Universal contributor & AI agent onboarding guide, visual walkthrough requirements, zero-PII validation rules.
+- **[MAGI_BIBLE.md](MAGI_BIBLE.md)**: Core engineering foundations, multi-seat governance, and verification checklists.
 - **Rule 16 Commenting Invariant:** Code maintains thorough explanatory comments and structured headers.
 - **Fail-Closed Sandbox:** Host execution is strictly refused unless explicitly opted-in; Docker containers drop all capabilities.
 - **Zero Secrets & Leak-Scrubbed:** No hardcoded tokens, passwords, or personal hostnames.
