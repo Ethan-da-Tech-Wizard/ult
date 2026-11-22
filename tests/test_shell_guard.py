@@ -252,5 +252,9 @@ class WsShellFlow(unittest.TestCase):
 
 _real_wait_for = asyncio.wait_for
 
+def tearDownModule():
+    logging.disable(logging.NOTSET)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=1)

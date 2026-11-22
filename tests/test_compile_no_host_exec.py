@@ -25,6 +25,7 @@ class Recorder:
 
 class NoHostExec(unittest.TestCase):
     def setUp(self):
+        logging.disable(logging.NOTSET)
         os.environ.pop("ULT_ALLOW_HOST_EXEC", None)
 
     def test_docker_absent_refuses_by_default(self):

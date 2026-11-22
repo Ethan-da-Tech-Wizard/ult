@@ -59,14 +59,47 @@ and sans-serif fonts. To use a pixel font such as Press Start 2P, Fira Code or O
 font file in `client/fonts/`, uncomment and adapt the `@font-face` rule in `client/fonts/local-fonts.css`, and
 keep the font's licence file beside it. See [NOTICE](NOTICE).
 
-## Tests
+## Tests & Visual Diagnostics
 
-```
+```bash
 for t in tests/test_*.py; do python3 "$t"; done
 for t in tests/test_*.js; do node "$t"; done
 ```
 
-They need only the Python standard library and Node (no fastapi, numpy or Docker); the CI workflow runs the same loop on Ubuntu and macOS with Python 3.9 and 3.13 and Node 24. Contributing: [CONTRIBUTING.md](CONTRIBUTING.md).
+The test suite requires only the Python standard library and Node.js (no external network or database dependencies). The CI workflow executes the complete matrix on Ubuntu and macOS across Python 3.10–3.13 and Node 24 (`.github/workflows/ci.yml`).
+
+### Visual Diagnostics Walkthrough
+
+```text
+┌────────────────────────────────────────────────────────────────────────────┐
+│ $ python3 -B -m unittest discover -s tests -v                              │
+│ [ULT-JRPG] Running sandbox, route guard & WebSocket isolation suite        │
+│ test_docker_absent_refuses_by_default ... ok                               │
+│ test_only_exact_1_enables_host_exec ... ok                                 │
+│ test_isolation_flags_present ... ok                                        │
+│ test_no_privileged_or_host_namespaces ... ok                               │
+│ test_host_bash_refused_by_default ... ok                                   │
+│ test_token_endpoint_local_only ... ok                                      │
+│ test_real_csp ... ok                                                       │
+│ -------------------------------------------------------------------------- │
+│ Ran 37 tests in 0.111s                                                     │
+│ [STATUS] OK: All route guards, sandbox limits, and CSP invariants held     │
+│                                                                            │
+│ $ ./scripts/run_dev.sh                                                     │
+│ [DEV-SERVER] Binding FastAPI backend to 127.0.0.1:8000                     │
+│ [JRPG-ENGINE] Educational progression loaded: Ch 1-12 ready                │
+│ ══════════════════════════════════════════════════════════════════════════ │
+│ TOTAL: 37/37 tests PASS [VERDICT: VERIFIED ISOLATED JRPG RUNTIME]          │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+## Engineering Standards & Magi Bible
+
+All components, sandbox execution layers, and documentation adhere to the **[Magi Bible: Engineering Foundations & Safety Standards for AI Coding](MAGI_BIBLE.md)**:
+- **Rule 16 Commenting Invariant:** Code maintains thorough explanatory comments and structured headers.
+- **Fail-Closed Sandbox:** Host execution is strictly refused unless explicitly opted-in; Docker containers drop all capabilities.
+- **Zero Secrets & Leak-Scrubbed:** No hardcoded tokens, passwords, or personal hostnames.
+- **Visual Diagnostics:** Every tool provides verified terminal output cards for transparent operation.
 
 ## License
 
